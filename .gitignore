@@ -4,3 +4,8 @@ __pycache__/
 *.pyo
 .DS_Store
 *.log
+.pytest_cache/
+
+# Large data files (FIDE player lists ~200MB)
+data/*.txt
+players_list_foa*.txt

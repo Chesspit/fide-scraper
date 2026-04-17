@@ -1,0 +1,37 @@
+scraper:
+  rate_limit:
+    min_sleep: 1.2
+    max_sleep: 2.5
+  backfill_rate_limit:
+    min_sleep: 2.0
+    max_sleep: 4.0
+  retry:
+    max_attempts: 3
+    backoff_base: 4       # Sekunden: 1s, 4s, 16s
+  timeout: 15
+
+groups:
+  female_top:
+    sex: F
+    min_rating: 2400
+    max_rating: 2600
+    sample_size: all      # vollständige Population
+  male_control:
+    sex: M
+    min_rating: 2400
+    max_rating: 2600
+    sample_size: 130
+    sampling:
+      method: age_matched # Geburtsjahr-Dekaden proportional zu female_top
+      seed: 42            # für Reproduzierbarkeit
+
+periods:
+  mode: latest            # "latest" | "range" | "list"
+  # from: 2022-01-01      # nur bei mode: range
+  # to: 2025-10-01
+  # list:                  # nur bei mode: list
+  #   - 2025-01-01
+  #   - 2025-04-01
+
+data:
+  players_file: data/players_list_foa_2026-04.txt

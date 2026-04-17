@@ -1,0 +1,29 @@
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_DB: fidedb
+      POSTGRES_USER: fide
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - fide_pgdata:/var/lib/postgresql/data
+      - ./migrations:/migrations
+    ports:
+      - "127.0.0.1:5433:5432"
+    restart: unless-stopped
+
+  scraper:
+    build:
+      context: .
+      dockerfile: scraper/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://fide:${DB_PASSWORD}@db:5432/fidedb
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data:ro
+    depends_on:
+      - db
+    profiles: ["manual"]
+
+volumes:
+  fide_pgdata:

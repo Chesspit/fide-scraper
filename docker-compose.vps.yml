@@ -1,0 +1,12 @@
+services:
+  scraper:
+    build:
+      context: .
+      dockerfile: scraper/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data:ro
+    network_mode: host
+    profiles: ["manual"]

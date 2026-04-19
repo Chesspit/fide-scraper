@@ -32,6 +32,10 @@ Zwei Gruppen:
   **+150 Spieler** erweitert (`scripts/extend_male_control.py --n 150 --seed 43`,
   disjunkt zur ersten Stichprobe, nur aktive Spieler) → **280 Spieler** insgesamt.
   Pool: **2.685 Männer** in dieser Rating-Range.
+- **elite_2600**: Zusatzgruppe aller Spieler mit `std_rating ≥ 2600` — **202 Spieler**
+  (153 aktiv, 49 inaktiv). Dient als „obere Vergleichsschicht" für Analysen, in denen
+  female_top-Spielerinnen gegen stärkere Gegner antreten. Backfill 2015-01 → 2026-03
+  abgeschlossen am 2026-04-19.
 
 Der initiale Seed erfolgt aus der globalen FIDE-Download-Liste (`players_list_foa.txt`),
 gefiltert nach `SEX='F'` bzw. `SEX='M'` und `STD BETWEEN 2400 AND 2600`.
@@ -92,7 +96,8 @@ fide-scraper/
 │   ├── 03_tournament_frequency.ipynb
 │   ├── 04_rating_progression.ipynb
 │   ├── 05_rating_change_sums.ipynb     ← Σ rating_change_weighted (Jahr/Gesamt, Splits)
-│   └── 06_age_cohorts.ipynb            ← Alters-Kohorten (Anker 2015) + Spieler-Tabelle
+│   ├── 06_age_cohorts.ipynb            ← Alters-Kohorten (Anker 2015) + Spieler-Tabelle
+│   └── 07_peer_performance.ipynb       ← female_top: Partien + Elo-Erfolg nach Kohorte × Stärke × Gegner-Geschlecht
 ├── tests/
 │   ├── fixtures/           ← gespeicherte HTML-Responses für Parser-Tests
 │   ├── test_parser.py
@@ -168,7 +173,8 @@ CREATE INDEX ON players (analysis_group) WHERE analysis_group IS NOT NULL;
 
 `analysis_group` unterscheidet die Gruppen:
 - `female_top` — Spielerinnen mit ELO 2400–2600 (64 Spielerinnen)
-- `male_control` — Männer mit ELO 2400–2600, age-matched (130 Spieler)
+- `male_control` — Männer mit ELO 2400–2600, age-matched (280 Spieler nach Extension)
+- `elite_2600` — alle Spieler mit ELO ≥ 2600 (202 Spieler, obere Vergleichsschicht)
 - `NULL` — alle übrigen Spieler (dienen als Lookup für Gegner-Auflösung)
 
 **scrape_periods** — welche (player, period)-Kombinationen bereits gescraped wurden:
@@ -712,27 +718,28 @@ Vier Notebooks in `notebooks/`, die auf die Views zugreifen und visualisieren:
 | `04_rating_progression.ipynb` | `v_rating_progression` | Linienplot Rating über Zeit (Median + Quantile pro Gruppe) |
 | `05_rating_change_sums.ipynb` | direktes SQL auf `game_results` | Σ `rating_change_weighted` pro Jahr/gesamt; Splits nach Gegner-Geschlecht, Farbe, Stärke-Bucket |
 | `06_age_cohorts.ipynb`        | direktes SQL auf `game_results` | Alters-Kohorten (Anker **2015**: <20, 20–30, 30–40, 40–50, >50); Heatmap Kohorte × Jahr; Spieler-Tabelle (CSV-Export) |
+| `07_peer_performance.ipynb`   | direktes SQL auf `game_results` | Nur `female_top`: Partien-Anzahl, Σ `rating_change_weighted`, Ø pro Partie — aufgeteilt nach Kohorte (Anker 2015) × Stärke-Bucket (±80 Elo: stärker/gleich/schwächer) × Gegner-Geschlecht (F/M). Nur aufgelöste Gegner. Export als XLSX + CSVs. |
 
 Alle Notebooks nutzen:
 - `psycopg2` für DB-Verbindung — liest `DATABASE_URL` aus `.env.notebook`
   (zeigt typischerweise auf `localhost:5434`, gepatcht via `scripts/tunnel.sh` zur VPS-DB)
 - `pandas` für Datenhandling
 - `matplotlib` + `seaborn` für Plots
-- Notebooks 05/06 werden aus `_generate_05.py` / `_generate_06.py` generiert
-  (Quelle der Wahrheit), Notebooks 01–04 aus `_generate_notebooks.py`.
+- Notebooks 05/06/07 werden aus `_generate_05.py` / `_generate_06.py` / `_generate_07.py`
+  generiert (Quelle der Wahrheit), Notebooks 01–04 aus `_generate_notebooks.py`.
 
 ---
 
-## Aktueller Datensatz-Stand (2026-04-19)
+## Aktueller Datensatz-Stand (2026-04-19, nach elite_2600-Backfill)
 
-- **Range:** 2015-01-01 – 2025-12-01 (132 Perioden)
-- **158.429 Partien** in `game_results`
-- **Auflösung:** 132.804 / 158.429 (83,8 %) Gegner-FIDE-IDs aufgelöst,
-  25.625 (16,2 %) unresolved (überwiegend indische Namen)
-- **Spieler aktiv:** female_top 43, male_control 236 (siehe Tabelle in
-  „Bekannte Limitationen → Inaktive Spieler im initialen Seed")
+- **Range:** 2015-01-01 – 2026-03-01 (135 Perioden)
+- **280.218 Partien** in `game_results`
+- **Auflösung:** 232.215 / 280.218 (82,9 %) Gegner-FIDE-IDs aufgelöst,
+  48.003 (17,1 %) unresolved (überwiegend indische Namen)
+- **Spieler aktiv:** female_top 43, male_control 236, elite_2600 153
 - **Backfill-Historie:** 2022-01→2025-04 (initial), 2020-01→2021-12, 2020-01→2025-12 (mit
-  +150 Männern), 2015-01→2019-12 — siehe `memory/project_backfill.md` für Details
+  +150 Männern), 2015-01→2019-12, 2015-01→2026-03 (elite_2600, zweiphasig) —
+  siehe `memory/project_backfill.md` für Details
 
 ---
 

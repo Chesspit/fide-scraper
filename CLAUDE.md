@@ -27,8 +27,10 @@ Zwei Gruppen:
 - **female_top**: Alle aktiven Spielerinnen mit aktuellem Standard-ELO 2400–2600
   (Beispiele: Ju Wenjun, Hou Yifan, Koneru Humpy, Lei Tingjie, Aleksandra Goryachkina)
   Datenstand April 2026: **64 Spielerinnen** — vollständige Population, kein Sampling nötig.
-- **male_control**: 130 männliche Spieler mit ELO 2400–2600 als Kontrollgruppe,
-  age-matched zur Frauen-Gruppe (siehe Sampling-Strategie unten).
+- **male_control**: ursprünglich 130 männliche Spieler mit ELO 2400–2600 als Kontrollgruppe,
+  age-matched zur Frauen-Gruppe (siehe Sampling-Strategie unten). Im April 2026 um
+  **+150 Spieler** erweitert (`scripts/extend_male_control.py --n 150 --seed 43`,
+  disjunkt zur ersten Stichprobe, nur aktive Spieler) → **280 Spieler** insgesamt.
   Pool: **2.685 Männer** in dieser Rating-Range.
 
 Der initiale Seed erfolgt aus der globalen FIDE-Download-Liste (`players_list_foa.txt`),
@@ -88,7 +90,9 @@ fide-scraper/
 │   ├── 01_opponent_structure.ipynb
 │   ├── 02_rating_volatility.ipynb
 │   ├── 03_tournament_frequency.ipynb
-│   └── 04_rating_progression.ipynb
+│   ├── 04_rating_progression.ipynb
+│   ├── 05_rating_change_sums.ipynb     ← Σ rating_change_weighted (Jahr/Gesamt, Splits)
+│   └── 06_age_cohorts.ipynb            ← Alters-Kohorten (Anker 2015) + Spieler-Tabelle
 ├── tests/
 │   ├── fixtures/           ← gespeicherte HTML-Responses für Parser-Tests
 │   ├── test_parser.py
@@ -99,10 +103,12 @@ fide-scraper/
 │   ├── players_list_foa_2026-04.txt   ← FIDE-Download April 2026 (aktuell)
 │   └── players_list_foa_YYYY-MM.txt   ← historische Snapshots zur Validierung
 └── scripts/
-    ├── seed_players.py     ← FIDE-Liste importieren + Sampling + Lookup-Tabelle
+    ├── seed_players.py             ← FIDE-Liste importieren + Sampling + Lookup-Tabelle
+    ├── extend_male_control.py      ← Kontrollgruppe um +N age-matched Spieler erweitern
     ├── import_rating_snapshots.py  ← historische TXT-Dateien → rating_history
     ├── resolve_opponents.py        ← Gegner-FIDE-IDs per Name+Fed+Rating nachschlagen
-    └── backfill.py         ← Historische Daten nachladen
+    ├── backfill.py                 ← Historische Daten nachladen
+    └── tunnel.sh                   ← SSH-Tunnel localhost:5434 → VPS DB für Notebooks
 ```
 
 ---
@@ -629,6 +635,10 @@ Fixture-Datei: `/tmp/fide_calc_sample.html` → `tests/fixtures/` kopieren.
 SQL-Views für die vier Kernfragen. Greifen auf `game_results`, `players`,
 `scrape_periods` und `rating_history` zu.
 
+**Wichtig:** Alle Views filtern `p.active = TRUE`, damit laut FIDE aktuell inaktive
+Spieler (Flag `i`/`wi`) aus den Auswertungen ausgeschlossen werden — siehe Sektion
+"Bekannte Limitationen des Datensatzes".
+
 ```sql
 -- Gegnerstruktur: Durchschnitts-Rating der Gegner vs. eigenes Rating pro Gruppe
 CREATE OR REPLACE VIEW v_opponent_strength AS
@@ -642,6 +652,7 @@ SELECT
 FROM game_results gr
 JOIN players p USING (fide_id)
 LEFT JOIN rating_history rh ON rh.fide_id = gr.fide_id AND rh.period = gr.period
+WHERE p.active = TRUE AND p.analysis_group IS NOT NULL
 GROUP BY p.analysis_group, gr.fide_id, gr.period, rh.std_rating;
 
 -- Rating-Volatilität: mittlere absolute Rating-Änderung, normalisiert nach K-Faktor
@@ -658,6 +669,7 @@ SELECT
 FROM game_results gr
 JOIN players p USING (fide_id)
 LEFT JOIN scrape_periods sp ON sp.fide_id = gr.fide_id AND sp.period = gr.period
+WHERE p.active = TRUE AND p.analysis_group IS NOT NULL
 GROUP BY p.analysis_group, gr.fide_id, gr.period, sp.k_factor;
 
 -- Turnierfrequenz: Anzahl Partien pro Periode pro Gruppe
@@ -670,6 +682,7 @@ SELECT
     COUNT(DISTINCT gr.tournament_name) AS num_tournaments
 FROM game_results gr
 JOIN players p USING (fide_id)
+WHERE p.active = TRUE AND p.analysis_group IS NOT NULL
 GROUP BY p.analysis_group, gr.fide_id, gr.period;
 
 -- Rating-Progression: Rating-Verlauf über Zeit
@@ -683,6 +696,7 @@ SELECT
         OVER (PARTITION BY rh.fide_id ORDER BY rh.period) AS rating_delta_from_start
 FROM rating_history rh
 JOIN players p USING (fide_id)
+WHERE p.active = TRUE AND p.analysis_group IS NOT NULL
 ORDER BY rh.fide_id, rh.period;
 ```
 
@@ -690,17 +704,35 @@ ORDER BY rh.fide_id, rh.period;
 
 Vier Notebooks in `notebooks/`, die auf die Views zugreifen und visualisieren:
 
-| Notebook | View | Visualisierung |
-|----------|------|----------------|
+| Notebook | Quelle | Visualisierung |
+|----------|--------|----------------|
 | `01_opponent_structure.ipynb` | `v_opponent_strength` | Boxplot avg_opponent_diff pro Gruppe; Histogramm Gegner-Ratings |
-| `02_rating_volatility.ipynb` | `v_rating_volatility` | Vergleich normalized_volatility pro Gruppe; Zeitreihe |
+| `02_rating_volatility.ipynb`  | `v_rating_volatility` | Vergleich normalized_volatility pro Gruppe; Zeitreihe |
 | `03_tournament_frequency.ipynb` | `v_tournament_frequency` | Boxplot Partien/Monat pro Gruppe; Saisonalität |
 | `04_rating_progression.ipynb` | `v_rating_progression` | Linienplot Rating über Zeit (Median + Quantile pro Gruppe) |
+| `05_rating_change_sums.ipynb` | direktes SQL auf `game_results` | Σ `rating_change_weighted` pro Jahr/gesamt; Splits nach Gegner-Geschlecht, Farbe, Stärke-Bucket |
+| `06_age_cohorts.ipynb`        | direktes SQL auf `game_results` | Alters-Kohorten (Anker **2015**: <20, 20–30, 30–40, 40–50, >50); Heatmap Kohorte × Jahr; Spieler-Tabelle (CSV-Export) |
 
 Alle Notebooks nutzen:
-- `psycopg2` für DB-Verbindung (liest DATABASE_URL aus `.env`)
+- `psycopg2` für DB-Verbindung — liest `DATABASE_URL` aus `.env.notebook`
+  (zeigt typischerweise auf `localhost:5434`, gepatcht via `scripts/tunnel.sh` zur VPS-DB)
 - `pandas` für Datenhandling
 - `matplotlib` + `seaborn` für Plots
+- Notebooks 05/06 werden aus `_generate_05.py` / `_generate_06.py` generiert
+  (Quelle der Wahrheit), Notebooks 01–04 aus `_generate_notebooks.py`.
+
+---
+
+## Aktueller Datensatz-Stand (2026-04-19)
+
+- **Range:** 2015-01-01 – 2025-12-01 (132 Perioden)
+- **158.429 Partien** in `game_results`
+- **Auflösung:** 132.804 / 158.429 (83,8 %) Gegner-FIDE-IDs aufgelöst,
+  25.625 (16,2 %) unresolved (überwiegend indische Namen)
+- **Spieler aktiv:** female_top 43, male_control 236 (siehe Tabelle in
+  „Bekannte Limitationen → Inaktive Spieler im initialen Seed")
+- **Backfill-Historie:** 2022-01→2025-04 (initial), 2020-01→2021-12, 2020-01→2025-12 (mit
+  +150 Männern), 2015-01→2019-12 — siehe `memory/project_backfill.md` für Details
 
 ---
 
@@ -721,6 +753,69 @@ Alle Notebooks nutzen:
 13. **Phase 7**: Tests schreiben (Parser-Fixtures, DB-Integration, Sampling-Validierung)
 14. **Phase 8**: `002_analysis_views.sql` deployen
 15. **Phase 8**: Jupyter Notebooks erstellen und erste Auswertungen fahren
+
+---
+
+## Bekannte Limitationen des Datensatzes
+
+### Gegner-Auflösung: Zweifelhafte Mehrfachmatches
+
+`scripts/resolve_opponents.py` arbeitet bei mehreren Kandidaten mit demselben
+`name + federation` per Closest-Rating **ohne harte Toleranz**. Das löst Fälle wie
+Stocek (diff=52) und Nagy (diff=105), bei denen Rating-Drift zwischen Spielzeit
+und April-2026-Snapshot die Zuordnung verhindert hätte.
+
+Einige Treffer haben jedoch große Rating-Abstände (>200), was auf falsche
+Namensgleichheit hindeutet — z.B. `Petrov, Nikita (RUS)` mit 6 Kandidaten, bester
+Abstand 1017. Diese Zeilen sind in `game_results.opponent_fide_id` eingetragen,
+inhaltlich aber zweifelhaft. Künftig per Query identifizierbar:
+
+```sql
+SELECT gr.opponent_name, gr.opponent_federation,
+       gr.opponent_rating, p.std_rating,
+       ABS(gr.opponent_rating - p.std_rating) AS diff
+FROM game_results gr
+JOIN players p ON p.fide_id = gr.opponent_fide_id
+WHERE ABS(gr.opponent_rating - p.std_rating) > 200
+ORDER BY diff DESC;
+```
+
+Nach dem 2015–2019-Backfill (Stand 2026-04-19) bleiben **25.625 Zeilen (16,2 %
+von 158.429 Partien)** unresolved — überwiegend indische Spieler mit abweichender
+Schreibweise. Fuzzy-Matching ist nicht implementiert.
+
+### Inaktive Spieler im initialen Seed (2026-04)
+
+Der initiale Seed (2026-04-17) hat die `Flag`-Spalte der FIDE-TXT-Datei nicht ausgelesen.
+Dadurch sind in beiden Analyse-Gruppen Spieler enthalten, die FIDE aktuell als **inaktiv**
+markiert (Flag `i` oder `wi`, z.B. die Polgar-Schwestern, Xie Jun, Chiburdanidze,
+Kosintsevas). Der Flag-Parser wurde am 2026-04-18 nachgezogen
+(`seed_players.py --refresh-metadata`); die `players.active`-Spalte reflektiert seitdem
+den FIDE-Status aus April 2026. Die ursprüngliche `analysis_group`-Zuordnung wurde
+**bewusst nicht** neu ausgeführt; die spätere Erweiterung um +150 Männer
+(`extend_male_control.py`) hat dagegen von Anfang an nur aktive Spieler gesampelt.
+
+**Ist-Stand (nach Extension 2026-04-18 + 2015–2019-Backfill 2026-04-19):**
+
+| Gruppe         | seeded | aktiv (FIDE 2026-04) | inaktiv |
+|----------------|-------:|---------------------:|--------:|
+| female_top     |     64 |                   43 |      21 |
+| male_control   |    280 |                  236 |      44 |
+
+Die 17 Spieler, die als "inaktiv" markiert sind, aber im Backfill-Range (2022–2025)
+Partien gespielt haben, sind in 2025/2026 inaktiv geworden — sie tauchen in späteren
+Perioden nicht mehr auf.
+
+**Konsequenzen für die Analyse:**
+
+- Alle SQL-Views in `migrations/002_analysis_views.sql` **müssen** nach `analysis_group`
+  UND `active = TRUE` filtern, damit die Auswertung nur aktuell aktive Spieler umfasst.
+- Das Age-Matching der Kontrollgruppe basiert auf der Geburtsjahr-Verteilung **aller 64
+  Frauen** (inkl. inaktiver). Eine strengere Auswertung müsste die Verteilung auf die
+  43 aktiven Frauen neu rechnen und ggf. Männer nachsampeln — wurde bewusst zurückgestellt.
+- Für künftige Seeds (z.B. auf neueren TXT-Snapshots) wird `active` nun automatisch
+  korrekt gesetzt. Das Sampling selbst filtert inaktive Spieler derzeit noch nicht aus;
+  bei einem künftigen Re-Seed sollte `scripts/seed_players.py` entsprechend erweitert werden.
 
 ---
 

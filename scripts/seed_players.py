@@ -28,6 +28,7 @@ DEFAULT_COLUMNS = {
     "women_title": (89, 92),
     "std_rating": (113, 118),
     "birth_year": (152, 156),
+    "flag": (158, 162),
 }
 
 
@@ -46,11 +47,12 @@ def detect_columns_from_header(header_line: str) -> dict:
         "women_title": "WTit",
         "std_rating": "SRtng",
         "birth_year": "B-day",
+        "flag": "Flag",
     }
     # Expected widths for each field
     widths = {
         "id": 15, "name": 61, "federation": 3, "sex": 1,
-        "title": 3, "women_title": 3, "std_rating": 5, "birth_year": 4,
+        "title": 3, "women_title": 3, "std_rating": 5, "birth_year": 4, "flag": 4,
     }
 
     for key, marker in markers.items():
@@ -98,6 +100,10 @@ def parse_player_line(line: str, columns: dict) -> dict | None:
     title = extract("title") or None
     women_title = extract("women_title") or None
 
+    flag = extract("flag").lower() if "flag" in columns else ""
+    # FIDE flags: 'i' = inactive, 'wi' = woman inactive. Anything else → active.
+    active = flag not in ("i", "wi")
+
     return {
         "fide_id": int(fide_id_str),
         "name": name,
@@ -107,6 +113,7 @@ def parse_player_line(line: str, columns: dict) -> dict | None:
         "women_title": women_title,
         "std_rating": std_rating,
         "birth_year": birth_year,
+        "active": active,
     }
 
 
@@ -216,9 +223,9 @@ def bulk_upsert_players(conn, players: list[dict], batch_size: int = 5000):
     """Bulk upsert players using executemany in batches."""
     sql = """
         INSERT INTO players (fide_id, name, federation, title, women_title,
-                             sex, birth_year, std_rating, updated_at)
+                             sex, birth_year, std_rating, active, updated_at)
         VALUES (%(fide_id)s, %(name)s, %(federation)s, %(title)s, %(women_title)s,
-                %(sex)s, %(birth_year)s, %(std_rating)s, NOW())
+                %(sex)s, %(birth_year)s, %(std_rating)s, %(active)s, NOW())
         ON CONFLICT (fide_id) DO UPDATE SET
             name = EXCLUDED.name,
             federation = EXCLUDED.federation,
@@ -227,6 +234,7 @@ def bulk_upsert_players(conn, players: list[dict], batch_size: int = 5000):
             sex = EXCLUDED.sex,
             birth_year = EXCLUDED.birth_year,
             std_rating = EXCLUDED.std_rating,
+            active = EXCLUDED.active,
             updated_at = NOW()
     """
     total = 0
@@ -276,6 +284,9 @@ def main():
     parser.add_argument("--max-rating", type=int, help="Override maximum rating")
     parser.add_argument("--seed", type=int, help="Random seed for sampling")
     parser.add_argument("--file", type=str, help="Path to FIDE TXT file")
+    parser.add_argument("--refresh-metadata", action="store_true",
+                        help="Only upsert player metadata (active flag, ratings, etc.); "
+                             "do not touch analysis_group assignments")
     args = parser.parse_args()
 
     # Resolve config
@@ -302,9 +313,21 @@ def main():
     conn = psycopg2.connect(get_database_url())
     try:
         # Import all players into DB
-        if not args.group:
+        if not args.group or args.refresh_metadata:
             logger.info("Importing all %d players into database...", len(all_players))
             bulk_upsert_players(conn, all_players)
+
+        if args.refresh_metadata:
+            active_count = sum(1 for p in all_players if p["active"])
+            inactive_count = len(all_players) - active_count
+            print(f"\n{'='*50}")
+            print(f"Metadata refresh complete:")
+            print(f"  Total players upserted: {len(all_players):,}")
+            print(f"  Active:   {active_count:,}")
+            print(f"  Inactive: {inactive_count:,}")
+            print(f"  analysis_group assignments left untouched.")
+            print(f"{'='*50}")
+            return
 
         # Filter for analysis groups
         women = [

@@ -26,6 +26,7 @@ FIDE-TXT convention differences that plague Indian names: calc-HTML writes
 
 import argparse
 import logging
+import re
 import sys
 from bisect import bisect_left
 from collections import defaultdict
@@ -35,6 +36,11 @@ from pathlib import Path
 import psycopg2
 import psycopg2.extras
 
+try:
+    from rapidfuzz import fuzz as _fuzz
+except ImportError:
+    _fuzz = None
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scraper.config import get_database_url
@@ -42,14 +48,22 @@ from scraper.config import get_database_url
 logger = logging.getLogger(__name__)
 
 
-def normalize_name(name: str | None) -> str:
-    """Lowercase, strip commas, collapse whitespace.
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 
-    Matches "Gukesh, D" ↔ "Gukesh D", "Sethuraman, S.p." ↔ "Sethuraman, S.P.".
+
+def normalize_name(name: str | None) -> str:
+    """Lowercase, replace any non-alphanumeric run with a single space.
+
+    Matches:
+      "Gukesh, D" ↔ "Gukesh D"
+      "Tabatabaei, M.amin" ↔ "Tabatabaei, M. Amin"
+      "L`ami, Erwin" ↔ "L'Ami, Erwin"
+      "Daulyte-Cornette, Deimante" ↔ "Daulyte Cornette Deimante"
     """
     if not name:
         return ""
-    return " ".join(name.replace(",", "").lower().split())
+    cleaned = _NON_ALNUM_RE.sub(" ", name.lower())
+    return cleaned.strip()
 
 
 def build_candidate_maps(conn) -> tuple[dict, dict]:
@@ -180,12 +194,112 @@ def pick_closest_period_aware(
     return best_id, best_diff
 
 
+def build_token_index(by_name: dict, min_token_len: int = 3) -> dict[str, set]:
+    """Inverted index: token -> set of normalized names containing that token.
+
+    Only tokens of length >= min_token_len (default 3) are indexed, to skip
+    initials and single letters that would blow up the candidate pool.
+    """
+    idx: dict[str, set] = defaultdict(set)
+    for norm_name in by_name:
+        for tok in norm_name.split():
+            if len(tok) >= min_token_len:
+                idx[tok].add(norm_name)
+    return idx
+
+
+def fuzzy_match(
+    opp_norm: str,
+    opp_rating: int | None,
+    game_period: date,
+    token_index: dict,
+    by_name: dict,
+    rh_index: dict,
+    score_threshold: int,
+    rating_tolerance: int,
+) -> tuple[int | None, int, float, str | None]:
+    """Stage-3 fuzzy match. Returns (fide_id, score, rating_diff, matched_name).
+
+    Candidate generation: intersect the token-inverted-index lookups across
+    all tokens in `opp_norm` of length >= 3. This gives names sharing every
+    long token with the opponent (handles extra-token case like
+    "Jones Gawain C B" ⊆ "Maroroa Jones Gawain C B").
+
+    Scoring: rapidfuzz WRatio (combines token_set, token_sort, partial_ratio,
+    ratio). Candidates below `score_threshold` are dropped.
+
+    Disambiguation: period-accurate rating within `rating_tolerance` Elo.
+    Tiebreaker: higher score, then lower rating diff.
+    """
+    if _fuzz is None:
+        return None, 0, -1.0, None
+    if opp_rating is None:
+        return None, 0, -1.0, None
+
+    tokens = [t for t in opp_norm.split() if len(t) >= 3]
+    if not tokens:
+        return None, 0, -1.0, None
+
+    # Pass A: intersect — all long tokens must appear in candidate.
+    # Handles field-swap, extra-token, word-order variants.
+    cand_names: set | None = None
+    missing_token = False
+    for tok in tokens:
+        names = token_index.get(tok)
+        if not names:
+            missing_token = True
+            break
+        cand_names = names.copy() if cand_names is None else cand_names & names
+        if not cand_names:
+            break
+
+    # Pass B: fallback — intersection empty (transliteration like
+    # Ivanchuk Vassily↔Vasyl, abbreviation like Harikrishna P↔Pentala).
+    # Use the RAREST token as anchor (distinctive surname, not a common
+    # given name like 'andrey'). Using a frequent token as anchor
+    # produces false positives (e.g. Vovk Andrey → Baryshpolets Andrey).
+    if not cand_names or missing_token:
+        anchor = min(tokens, key=lambda t: len(token_index.get(t, ())))
+        cand_names = token_index.get(anchor, set())
+        if not cand_names:
+            return None, 0, -1.0, None
+
+    best_id = None
+    best_score = 0
+    best_diff: float = float("inf")
+    best_name = None
+
+    for name in cand_names:
+        score = _fuzz.WRatio(opp_norm, name)
+        if score < score_threshold:
+            continue
+        for cand in by_name[name]:
+            fide_id, std_rating = cand[0], cand[1]
+            rating_then = rating_at_period(rh_index, fide_id, game_period, std_rating)
+            if rating_then is None:
+                continue
+            diff = abs(rating_then - opp_rating)
+            if diff > rating_tolerance:
+                continue
+            # Prefer higher score; tie-break on lower rating diff
+            if score > best_score or (score == best_score and diff < best_diff):
+                best_id = fide_id
+                best_score = score
+                best_diff = diff
+                best_name = name
+
+    return best_id, best_score, best_diff if best_id is not None else -1.0, best_name
+
+
 def resolve_opponents(
     conn,
     period: str | None = None,
     dry_run: bool = False,
     fed_fallback_tolerance: int = 100,
     exact_tolerance: int | None = None,
+    fuzzy: bool = False,
+    fuzzy_threshold: int = 88,
+    fuzzy_rating_tolerance: int = 100,
 ):
     where_clause = "WHERE gr.opponent_fide_id IS NULL"
     params: list = []
@@ -220,9 +334,23 @@ def resolve_opponents(
     for cands in by_name.values():
         relevant_fids.update(c[0] for c in cands)
 
+    # For fuzzy stage we may touch ANY fide_id in by_name, so expand the set.
+    if fuzzy:
+        for cands in by_name.values():
+            relevant_fids.update(c[0] for c in cands)
+
     logger.info("Loading rating_history for %d candidate fide_ids...", len(relevant_fids))
     rh_index = build_rating_history_index(conn, relevant_fids)
     logger.info("  %d fide_ids have rating_history entries", len(rh_index))
+
+    token_index: dict = {}
+    if fuzzy:
+        if _fuzz is None:
+            logger.error("--fuzzy requested but rapidfuzz is not installed")
+            sys.exit(1)
+        logger.info("Building token-inverted index for fuzzy stage...")
+        token_index = build_token_index(by_name)
+        logger.info("  %d indexed tokens (len>=3)", len(token_index))
 
     logger.info("Fetching unresolved game_results...")
     with conn.cursor() as cur:
@@ -238,12 +366,14 @@ def resolve_opponents(
 
     resolved_exact = 0
     resolved_fallback = 0
+    resolved_fuzzy = 0
     unresolvable = 0
     not_found = 0
     updates: list[tuple[int, int]] = []
 
     wide_match_samples: list[tuple] = []
     fallback_samples: list[tuple] = []
+    fuzzy_samples: list[tuple] = []
     no_match_samples: list[tuple] = []
 
     for row_id, opp_name, opp_fed, opp_rating, game_period in unresolved:
@@ -273,31 +403,43 @@ def resolve_opponents(
 
         # Stage 2: fed-fallback (name only, rating-bounded, period-aware)
         cands_any_fed = by_name.get(norm, [])
-        if not cands_any_fed:
-            not_found += 1
-            if len(no_match_samples) < 15:
-                no_match_samples.append((opp_name, opp_fed, opp_rating))
-            continue
-
-        best_id, best_diff = pick_closest_period_aware(
-            cands_any_fed, opp_rating, game_period, rh_index,
-            max_diff=fed_fallback_tolerance,
-        )
-        if best_id is None:
-            not_found += 1
-            if len(no_match_samples) < 15:
-                no_match_samples.append((opp_name, opp_fed, opp_rating))
-            continue
-
-        updates.append((best_id, row_id))
-        resolved_fallback += 1
-        if len(fallback_samples) < 15:
-            matched_fed = next(
-                (fed for fid, _, fed in cands_any_fed if fid == best_id), None
+        if cands_any_fed:
+            best_id, best_diff = pick_closest_period_aware(
+                cands_any_fed, opp_rating, game_period, rh_index,
+                max_diff=fed_fallback_tolerance,
             )
-            fallback_samples.append(
-                (opp_name, opp_fed, opp_rating, matched_fed, best_diff)
+            if best_id is not None:
+                updates.append((best_id, row_id))
+                resolved_fallback += 1
+                if len(fallback_samples) < 15:
+                    matched_fed = next(
+                        (fed for fid, _, fed in cands_any_fed if fid == best_id), None
+                    )
+                    fallback_samples.append(
+                        (opp_name, opp_fed, opp_rating, matched_fed, best_diff)
+                    )
+                continue
+
+        # Stage 3: fuzzy (opt-in) — handles field-order swap, extra surname
+        # tokens, transliteration. Guarded tightly by period-accurate rating.
+        if fuzzy:
+            fz_id, fz_score, fz_diff, fz_name = fuzzy_match(
+                norm, opp_rating, game_period, token_index, by_name, rh_index,
+                score_threshold=fuzzy_threshold,
+                rating_tolerance=fuzzy_rating_tolerance,
             )
+            if fz_id is not None:
+                updates.append((fz_id, row_id))
+                resolved_fuzzy += 1
+                if len(fuzzy_samples) < 20:
+                    fuzzy_samples.append(
+                        (opp_name, opp_fed, opp_rating, fz_name, fz_score, fz_diff)
+                    )
+                continue
+
+        not_found += 1
+        if len(no_match_samples) < 15:
+            no_match_samples.append((opp_name, opp_fed, opp_rating))
 
     if not dry_run and updates:
         logger.info("Applying %d updates...", len(updates))
@@ -311,12 +453,14 @@ def resolve_opponents(
                 )
 
     action = "Would update" if dry_run else "Updated"
-    total_resolved = resolved_exact + resolved_fallback
+    total_resolved = resolved_exact + resolved_fallback + resolved_fuzzy
     pct = total_resolved / total_unresolved * 100 if total_unresolved else 0
     print(f"\nResults:")
     print(f"  Total unresolved:      {total_unresolved}")
     print(f"  {action} (exact):      {resolved_exact}")
     print(f"  {action} (fed-fallback): {resolved_fallback} (tolerance ±{fed_fallback_tolerance})")
+    if fuzzy:
+        print(f"  {action} (fuzzy):      {resolved_fuzzy} (score≥{fuzzy_threshold}, ±{fuzzy_rating_tolerance})")
     print(f"  {action} (total):      {total_resolved} ({pct:.1f}%)")
     print(f"  Unresolvable:          {unresolvable}")
     print(f"  Not found:             {not_found}")
@@ -330,6 +474,11 @@ def resolve_opponents(
         print("\n  Sample fed-fallback matches (candidate federation differs):")
         for name, fed, rating, matched_fed, diff in fallback_samples:
             print(f"    {name} ({fed}→{matched_fed}, {rating}) — diff={diff}")
+
+    if fuzzy_samples:
+        print("\n  Sample fuzzy matches (opp_name → matched_name, score, rating diff):")
+        for name, fed, rating, matched, score, diff in fuzzy_samples:
+            print(f"    {name} ({fed}, {rating}) → {matched} — score={score:.0f}, diff={diff:.0f}")
 
     if no_match_samples:
         print("\n  Sample no-match:")
@@ -358,9 +507,29 @@ def main():
     parser.add_argument(
         "--exact-tolerance",
         type=int,
-        default=None,
+        default=300,
         help="Max |rating diff| for exact (name+fed) matches with multiple candidates. "
-             "Default: no limit (pick closest).",
+             "Default 300 (period-accurate, guards against zero-rating namesake collisions).",
+    )
+    parser.add_argument(
+        "--fuzzy",
+        action="store_true",
+        help="Enable Stage-3 fuzzy matching (handles name field-order swap, "
+             "extra surname tokens, transliteration). Requires rapidfuzz.",
+    )
+    parser.add_argument(
+        "--fuzzy-threshold",
+        type=int,
+        default=83,
+        help="Minimum rapidfuzz WRatio for fuzzy matches (default 83). "
+             "Empirically: 85 catches transliteration + hyphenation, 83 adds "
+             "abbreviation cases (Shankland Samuel L↔Sam), 80 adds noise.",
+    )
+    parser.add_argument(
+        "--fuzzy-rating-tolerance",
+        type=int,
+        default=100,
+        help="Max |rating diff| for fuzzy matches, period-accurate (default 100)",
     )
     args = parser.parse_args()
 
@@ -372,6 +541,9 @@ def main():
             dry_run=args.dry_run,
             fed_fallback_tolerance=args.fed_fallback_tolerance,
             exact_tolerance=args.exact_tolerance,
+            fuzzy=args.fuzzy,
+            fuzzy_threshold=args.fuzzy_threshold,
+            fuzzy_rating_tolerance=args.fuzzy_rating_tolerance,
         )
     finally:
         conn.close()

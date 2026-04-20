@@ -345,7 +345,10 @@ def main():
     # Load all players
     all_players = load_players_from_file(filepath)
 
-    conn = psycopg2.connect(get_database_url())
+    conn = psycopg2.connect(
+        get_database_url(),
+        options="-c statement_timeout=900000",
+    )
     try:
         # Import all players into DB
         if not args.group or args.refresh_metadata:

@@ -48,7 +48,10 @@ def main():
 
     all_players = load_players_from_file(filepath)
 
-    conn = psycopg2.connect(get_database_url())
+    conn = psycopg2.connect(
+        get_database_url(),
+        options="-c statement_timeout=900000",
+    )
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT fide_id FROM players WHERE analysis_group = 'male_control'")

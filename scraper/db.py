@@ -8,8 +8,17 @@ from scraper.config import get_database_url
 logger = logging.getLogger(__name__)
 
 
+# 15 min cap. Everything legitimate (INSERTs, get_pending_periods cross-join,
+# rating_history full scan) completes in seconds; this is a safety net against
+# runaway queries like the 2026-04-20 ANY(huge_array) incident.
+_STATEMENT_TIMEOUT_MS = 15 * 60 * 1000
+
+
 def get_connection():
-    return psycopg2.connect(get_database_url())
+    return psycopg2.connect(
+        get_database_url(),
+        options=f"-c statement_timeout={_STATEMENT_TIMEOUT_MS}",
+    )
 
 
 def upsert_games(cur, games: list[dict]) -> int:

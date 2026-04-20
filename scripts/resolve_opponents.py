@@ -93,30 +93,57 @@ def build_candidate_maps(conn) -> tuple[dict, dict]:
     return by_name_fed, by_name
 
 
+_LARGE_ID_SET_THRESHOLD = 500_000
+
+
 def build_rating_history_index(conn, fide_ids: set[int]) -> dict[int, tuple[list, list]]:
     """Load rating_history.published_rating for the given fide_ids.
 
     Returns `{fide_id: (sorted_periods, ratings_parallel)}`. The two lists are
     aligned by index and sorted by period ascending, so we can use bisect_left
     to find the closest snapshot period for any game period in O(log n).
+
+    For very large `fide_ids` sets (e.g. fuzzy mode passes ~1.78M IDs), the
+    `ANY(%s)` filter forces Postgres to deserialize a huge array and build a
+    hash join — that caused the 2026-04-20 CPU spike. Above
+    `_LARGE_ID_SET_THRESHOLD` we full-scan instead and filter in Python.
     """
     if not fide_ids:
         return {}
 
+    use_sql_filter = len(fide_ids) <= _LARGE_ID_SET_THRESHOLD
+    logger.info(
+        "  rating_history load: %d target fide_ids → %s",
+        len(fide_ids),
+        "ANY() filter" if use_sql_filter else "full scan + Python filter",
+    )
+
     by_fid: dict[int, list] = defaultdict(list)
     with conn.cursor(name="rh_stream") as cur:
         cur.itersize = 50000
-        cur.execute(
-            """
-            SELECT fide_id, period, published_rating
-            FROM rating_history
-            WHERE published_rating IS NOT NULL
-              AND fide_id = ANY(%s)
-            """,
-            (list(fide_ids),),
-        )
-        for fide_id, period, rating in cur:
-            by_fid[fide_id].append((period, rating))
+        if use_sql_filter:
+            cur.execute(
+                """
+                SELECT fide_id, period, published_rating
+                FROM rating_history
+                WHERE published_rating IS NOT NULL
+                  AND fide_id = ANY(%s)
+                """,
+                (list(fide_ids),),
+            )
+            for fide_id, period, rating in cur:
+                by_fid[fide_id].append((period, rating))
+        else:
+            cur.execute(
+                """
+                SELECT fide_id, period, published_rating
+                FROM rating_history
+                WHERE published_rating IS NOT NULL
+                """
+            )
+            for fide_id, period, rating in cur:
+                if fide_id in fide_ids:
+                    by_fid[fide_id].append((period, rating))
 
     result: dict[int, tuple[list, list]] = {}
     for fide_id, entries in by_fid.items():
@@ -533,7 +560,10 @@ def main():
     )
     args = parser.parse_args()
 
-    conn = psycopg2.connect(get_database_url())
+    conn = psycopg2.connect(
+        get_database_url(),
+        options="-c statement_timeout=900000",  # 15 min, see scraper/db.py
+    )
     try:
         resolve_opponents(
             conn,

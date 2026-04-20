@@ -9,9 +9,11 @@ __pycache__/
 *.log
 .pytest_cache/
 
-# Large data files (FIDE player lists ~200MB)
+# Large data files (FIDE player lists ~200MB uncompressed / ~30-50MB zipped)
 data/*.txt
+data/*.zip
 players_list_foa*.txt
+players_list_foa*.zip
 
 # Notebook-generated CSV exports
 notebooks/*.csv

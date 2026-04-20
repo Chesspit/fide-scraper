@@ -4,9 +4,12 @@
 import argparse
 import logging
 import random
+import re
 import sys
+import zipfile
 from collections import defaultdict
 from pathlib import Path
+from typing import Iterator
 
 import psycopg2
 import psycopg2.extras
@@ -17,6 +20,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scraper.config import config, get_database_url
 
 logger = logging.getLogger(__name__)
+
+# Historical FIDE lists use month-based rating column labels (e.g. "FEB15", "JAN26").
+# Current lists use "SRtng". The detector below tries "SRtng" first, then the pattern.
+MONTH_RATING_PATTERN = re.compile(
+    r"\b(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}\b"
+)
 
 # Column positions in FIDE fixed-width TXT file (0-indexed, verified April 2026)
 DEFAULT_COLUMNS = {
@@ -35,7 +44,9 @@ DEFAULT_COLUMNS = {
 def detect_columns_from_header(header_line: str) -> dict:
     """Try to detect column positions from the header line.
 
-    Falls back to DEFAULT_COLUMNS if detection fails.
+    Handles both current FIDE format (SRtng rating column) and historical
+    format (month-based rating column, e.g. FEB15/JAN26). Falls back to
+    DEFAULT_COLUMNS if detection fails.
     """
     cols = {}
     markers = {
@@ -45,27 +56,51 @@ def detect_columns_from_header(header_line: str) -> dict:
         "sex": "Sex",
         "title": "Tit",
         "women_title": "WTit",
-        "std_rating": "SRtng",
         "birth_year": "B-day",
         "flag": "Flag",
     }
-    # Expected widths for each field
     widths = {
         "id": 15, "name": 61, "federation": 3, "sex": 1,
-        "title": 3, "women_title": 3, "std_rating": 5, "birth_year": 4, "flag": 4,
+        "title": 3, "women_title": 3, "birth_year": 4, "flag": 4,
     }
 
     for key, marker in markers.items():
         pos = header_line.find(marker)
         if pos >= 0:
-            cols[key] = (pos, pos + widths.get(key, len(marker)))
+            cols[key] = (pos, pos + widths[key])
+
+    # Rating column: prefer "SRtng" (current), fall back to month-based label
+    rating_pos = header_line.find("SRtng")
+    rating_marker = "SRtng"
+    if rating_pos < 0:
+        m = MONTH_RATING_PATTERN.search(header_line)
+        if m:
+            rating_pos = m.start()
+            rating_marker = m.group()
+    if rating_pos >= 0:
+        cols["std_rating"] = (rating_pos, rating_pos + 5)
 
     if len(cols) >= 6:
-        logger.info("Detected column positions from header: %s", cols)
+        logger.info("Detected column positions (rating col: %s): %s", rating_marker, cols)
         return cols
 
     logger.warning("Could not detect all columns from header, using defaults")
     return DEFAULT_COLUMNS
+
+
+def open_player_list(filepath: Path) -> Iterator[str]:
+    """Yield text lines from a FIDE player list (TXT or ZIP containing a TXT)."""
+    if filepath.suffix.lower() == ".zip":
+        with zipfile.ZipFile(filepath) as zf:
+            inner_names = [n for n in zf.namelist() if n.lower().endswith(".txt")]
+            if not inner_names:
+                raise ValueError(f"No .txt file inside {filepath}")
+            with zf.open(inner_names[0]) as fp:
+                for raw in fp:
+                    yield raw.decode("latin-1", errors="replace")
+    else:
+        with open(filepath, encoding="latin-1") as f:
+            yield from f
 
 
 def parse_player_line(line: str, columns: dict) -> dict | None:
@@ -118,18 +153,18 @@ def parse_player_line(line: str, columns: dict) -> dict | None:
 
 
 def load_players_from_file(filepath: Path) -> list[dict]:
-    """Parse the FIDE TXT file and return all player dicts."""
+    """Parse a FIDE TXT or ZIP file and return all player dicts."""
     logger.info("Reading %s ...", filepath)
 
-    with open(filepath, encoding="latin-1") as f:
-        header = f.readline()
-        columns = detect_columns_from_header(header)
+    lines = open_player_list(filepath)
+    header = next(lines)
+    columns = detect_columns_from_header(header)
 
-        players = []
-        for line in f:
-            p = parse_player_line(line, columns)
-            if p:
-                players.append(p)
+    players = []
+    for line in lines:
+        p = parse_player_line(line.rstrip("\n\r"), columns)
+        if p:
+            players.append(p)
 
     logger.info("Parsed %d players from file", len(players))
     return players

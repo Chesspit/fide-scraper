@@ -7,7 +7,13 @@ import sys
 from datetime import date, timedelta
 
 from scraper.config import config
-from scraper.db import get_connection, get_pending_periods, save_period, save_period_no_data
+from scraper.db import (
+    ensure_connection,
+    get_connection,
+    get_pending_periods,
+    save_period,
+    save_period_no_data,
+)
 from scraper.fetcher import fetch_calculations, sleep_between_requests
 from scraper.parser import parse_calculations
 
@@ -82,7 +88,7 @@ def cmd_run(args):
                 html = fetch_calculations(fide_id, period_str)
 
                 if not html or not html.strip():
-                    save_period_no_data(conn, fide_id, period_str)
+                    conn = save_period_no_data(conn, fide_id, period_str)
                     logger.info("  → no data")
                     continue
 
@@ -91,17 +97,18 @@ def cmd_run(args):
                 )
 
                 if not games:
-                    save_period_no_data(conn, fide_id, period_str)
+                    conn = save_period_no_data(conn, fide_id, period_str)
                     logger.info("  → no games parsed")
                     continue
 
-                save_period(conn, fide_id, period_str, games, k_factor, own_rating)
+                conn = save_period(conn, fide_id, period_str, games, k_factor, own_rating)
                 logger.info("  → %d games, K=%s, Ro=%s", len(games), k_factor, own_rating)
 
             except Exception:
                 logger.exception(
                     "  → ERROR for fide_id=%s period=%s", fide_id, period_str
                 )
+                conn = ensure_connection(conn)
 
             sleep_between_requests(backfill=backfill)
 

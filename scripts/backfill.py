@@ -8,7 +8,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scraper.db import get_connection, get_pending_periods, save_period, save_period_no_data
+from scraper.db import (
+    ensure_connection,
+    get_connection,
+    get_pending_periods,
+    save_period,
+    save_period_no_data,
+)
 from scraper.fetcher import fetch_calculations, sleep_between_requests
 from scraper.main import generate_period_range
 from scraper.parser import parse_calculations
@@ -53,23 +59,24 @@ def main():
                 html = fetch_calculations(fide_id, period_str)
 
                 if not html or not html.strip():
-                    save_period_no_data(conn, fide_id, period_str)
+                    conn = save_period_no_data(conn, fide_id, period_str)
                     logger.info("  → no data")
                     continue
 
                 games, k_factor, own_rating = parse_calculations(html, fide_id, period_str)
 
                 if not games:
-                    save_period_no_data(conn, fide_id, period_str)
+                    conn = save_period_no_data(conn, fide_id, period_str)
                     logger.info("  → no games parsed")
                     continue
 
-                save_period(conn, fide_id, period_str, games, k_factor, own_rating)
+                conn = save_period(conn, fide_id, period_str, games, k_factor, own_rating)
                 logger.info("  → %d games, K=%s, Ro=%s", len(games), k_factor, own_rating)
 
             except Exception:
                 errors += 1
                 logger.exception("  → ERROR for fide_id=%s period=%s", fide_id, period_str)
+                conn = ensure_connection(conn)
 
             sleep_between_requests(backfill=True)
 

@@ -21,6 +21,32 @@ def get_connection():
     )
 
 
+def _is_connection_broken(conn) -> bool:
+    """True if the connection is closed or in an unrecoverable state."""
+    if conn is None or conn.closed:
+        return True
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return False
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        return True
+
+
+def ensure_connection(conn):
+    """Return a live connection, reopening if the current one is broken."""
+    if not _is_connection_broken(conn):
+        return conn
+    logger.warning("DB connection broken; opening a fresh one")
+    try:
+        if conn is not None:
+            conn.close()
+    except Exception:
+        pass
+    return get_connection()
+
+
 def upsert_games(cur, games: list[dict]) -> int:
     """Insert games into game_results. Returns number of rows inserted."""
     if not games:
@@ -78,6 +104,22 @@ def mark_period_scraped(
     )
 
 
+def _do_save_period(
+    conn,
+    fide_id: int,
+    period: str,
+    games: list[dict],
+    k_factor: int | None,
+    own_rating: int | None,
+):
+    with conn:
+        with conn.cursor() as cur:
+            inserted = upsert_games(cur, games)
+            upsert_rating_history(cur, fide_id, period, own_rating)
+            mark_period_scraped(cur, fide_id, period, "ok", k_factor)
+    return inserted
+
+
 def save_period(
     conn,
     fide_id: int,
@@ -89,37 +131,67 @@ def save_period(
     """Save all data for a (fide_id, period) in a single transaction.
 
     On success: games + rating_history + scrape_periods(status='ok').
-    On error: rollback games/rating, still mark scrape_periods(status='error').
+    On connection loss: reopen once and retry.
+    On other error: rollback games/rating, still mark scrape_periods(status='error').
+    Returns the (possibly reopened) connection — callers should reassign.
     """
     try:
-        with conn:
-            with conn.cursor() as cur:
-                inserted = upsert_games(cur, games)
-                upsert_rating_history(cur, fide_id, period, own_rating)
-                mark_period_scraped(cur, fide_id, period, "ok", k_factor)
-        logger.info(
-            "Saved fide_id=%s period=%s: %d games, K=%s, Ro=%s",
-            fide_id, period, inserted, k_factor, own_rating,
+        inserted = _do_save_period(
+            conn, fide_id, period, games, k_factor, own_rating
+        )
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        logger.warning(
+            "Connection lost saving fide_id=%s period=%s (%s); reconnecting and retrying",
+            fide_id, period, exc.__class__.__name__,
+        )
+        conn = ensure_connection(conn)
+        inserted = _do_save_period(
+            conn, fide_id, period, games, k_factor, own_rating
         )
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         logger.exception(
             "Error saving fide_id=%s period=%s — marking as error", fide_id, period
         )
         try:
+            conn = ensure_connection(conn)
             with conn:
                 with conn.cursor() as cur:
                     mark_period_scraped(cur, fide_id, period, "error", k_factor)
         except Exception:
             logger.exception("Could not mark period as error")
-        raise
+        return conn
+
+    logger.info(
+        "Saved fide_id=%s period=%s: %d games, K=%s, Ro=%s",
+        fide_id, period, inserted, k_factor, own_rating,
+    )
+    return conn
 
 
 def save_period_no_data(conn, fide_id: int, period: str):
-    """Mark a period as having no data (empty calculations page)."""
-    with conn:
-        with conn.cursor() as cur:
-            mark_period_scraped(cur, fide_id, period, "no_data")
+    """Mark a period as having no data (empty calculations page).
+
+    Returns the (possibly reopened) connection — callers should reassign.
+    """
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                mark_period_scraped(cur, fide_id, period, "no_data")
+        return conn
+    except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+        logger.warning(
+            "Connection lost marking no_data fide_id=%s period=%s (%s); reconnecting",
+            fide_id, period, exc.__class__.__name__,
+        )
+        conn = ensure_connection(conn)
+        with conn:
+            with conn.cursor() as cur:
+                mark_period_scraped(cur, fide_id, period, "no_data")
+        return conn
 
 
 def get_pending_periods(

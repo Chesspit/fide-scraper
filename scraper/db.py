@@ -222,7 +222,7 @@ def get_pending_periods(
                 SELECT p.fide_id, per.period
                 FROM players p
                 CROSS JOIN unnest(%s::date[]) AS per(period)
-                WHERE p.analysis_group IS NOT NULL
+                WHERE (p.analysis_group IS NOT NULL OR p.swiss_2026 = TRUE)
                   AND NOT EXISTS (
                     SELECT 1 FROM scrape_periods sp
                     WHERE sp.fide_id = p.fide_id AND sp.period = per.period

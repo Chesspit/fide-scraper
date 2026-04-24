@@ -83,10 +83,11 @@ scraper:
 
 | Gruppe | Kriterium | Spieler (aktiv/inaktiv) | Beschreibung |
 |---|---|---|---|
-| `female_top` | ELO 2400–2600, Geschlecht F | 43 / 21 | Vollständige Population |
+| `female_top` | ELO 2400–2600, Geschlecht F | 45 / 21 | Vollständige Population; 2 Spielerinnen 2026-04-24 nachgetragen (Moser AUT, Khurtsidze GEO) |
 | `male_control` | ELO 2400–2600, Geschlecht M, age-matched | 435 / 44 | Proportional zur Altersverteilung der Frauen gesampelt (Seed 42/43/44), drei Erweiterungen → 479 total |
 | `elite_2600` | ELO ≥ 2600 | 153 / 49 | Obere Vergleichsschicht |
 | `swiss_2026` | SMM 2026 NLA + NLB, erste 20 Teams | 338 / 11 (349 exkl.) | Boolean-Flag `swiss_2026`; 13 Spieler überschneiden sich mit anderen Gruppen |
+| `female_2200` | ELO 2200–2399, Geschlecht F, aktiv | 321 / 0 | Erweiterungsgruppe; Backfill 2010-01–2026-03 gestartet 2026-04-24 (~52h) |
 
 Das Age-Matching der Kontrollgruppe orientiert sich an der Geburtsjahr-Dekaden-
 Verteilung der 64 Frauen, damit altersbedingte Effekte (K-Faktor, Karrierephase)
@@ -318,6 +319,8 @@ docker compose -f /opt/fide-scraper/docker-compose.yml run --no-deps --rm \
 | Analyse-Notebooks 01–07 starten | Hoch | ⬜ Daten + QC vollständig validiert |
 | NB08 (QC) neu generieren | Mittel | ⬜ Zahlen nach Bug-Fix aktualisieren |
 | resolve_opponents erneut ausführen | Mittel | ✅ 97,7 % aufgelöst (war 74,4 %) |
+| female_2200 Backfill | Hoch | ⏳ läuft auf VPS (~52h, 62.206 Perioden) |
+| female_top nachgetragen (Moser, Khurtsidze) | — | ✅ erledigt 2026-04-24 |
 | April 2026 scrapen | Niedrig | ⬜ beseitigt 1.094 Missing-Period-Warnings |
 | TXT-Snapshots 2013–2014 | Niedrig | ⬜ würde QC-Coverage auf 2010+ erweitern |
 | Re-Sampling male_control (nur Aktive) | Niedrig | ⬜ optional, methodisch sauber |

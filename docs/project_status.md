@@ -84,9 +84,9 @@ scraper:
 | Gruppe | Kriterium | Spieler (aktiv/inaktiv) | Beschreibung |
 |---|---|---|---|
 | `female_top` | ELO 2400–2600, Geschlecht F | 43 / 21 | Vollständige Population |
-| `male_control` | ELO 2400–2600, Geschlecht M, age-matched | 236 / 44 (+ 199 inaktiv) | Proportional zur Altersverteilung der Frauen gesampelt (Seed 42/43/44) |
+| `male_control` | ELO 2400–2600, Geschlecht M, age-matched | 435 / 44 | Proportional zur Altersverteilung der Frauen gesampelt (Seed 42/43/44), drei Erweiterungen → 479 total |
 | `elite_2600` | ELO ≥ 2600 | 153 / 49 | Obere Vergleichsschicht |
-| `swiss_2026` | SMM 2026 NLA + NLB, erste 20 Teams | 362 (davon 349 ohne andere Gruppe) | Boolean-Flag `swiss_2026`; Überlappung mit anderen Gruppen möglich |
+| `swiss_2026` | SMM 2026 NLA + NLB, erste 20 Teams | 338 / 11 (349 exkl.) | Boolean-Flag `swiss_2026`; 13 Spieler überschneiden sich mit anderen Gruppen |
 
 Das Age-Matching der Kontrollgruppe orientiert sich an der Geburtsjahr-Dekaden-
 Verteilung der 64 Frauen, damit altersbedingte Effekte (K-Faktor, Karrierephase)

@@ -28,14 +28,18 @@ Zwei Gruppen:
   (Beispiele: Ju Wenjun, Hou Yifan, Koneru Humpy, Lei Tingjie, Aleksandra Goryachkina)
   Datenstand April 2026: **64 Spielerinnen** — vollständige Population, kein Sampling nötig.
 - **male_control**: ursprünglich 130 männliche Spieler mit ELO 2400–2600 als Kontrollgruppe,
-  age-matched zur Frauen-Gruppe (siehe Sampling-Strategie unten). Im April 2026 um
-  **+150 Spieler** erweitert (`scripts/extend_male_control.py --n 150 --seed 43`,
-  disjunkt zur ersten Stichprobe, nur aktive Spieler) → **280 Spieler** insgesamt.
-  Pool: **2.685 Männer** in dieser Rating-Range.
+  age-matched zur Frauen-Gruppe (siehe Sampling-Strategie unten). In zwei Schritten erweitert:
+  +150 Spieler (seed 43, April 2026) und +199 Spieler (seed 44, April 2026) →
+  **479 Spieler** insgesamt (435 aktiv, 44 inaktiv). Pool: **2.685 Männer** in dieser Range.
 - **elite_2600**: Zusatzgruppe aller Spieler mit `std_rating ≥ 2600` — **202 Spieler**
   (153 aktiv, 49 inaktiv). Dient als „obere Vergleichsschicht" für Analysen, in denen
-  female_top-Spielerinnen gegen stärkere Gegner antreten. Backfill 2015-01 → 2026-03
-  abgeschlossen am 2026-04-19.
+  female_top-Spielerinnen gegen stärkere Gegner antreten. Backfill 2010-01 → 2026-03
+  abgeschlossen am 2026-04-24.
+- **swiss_2026**: Spieler der Schweizer Mannschaftsmeisterschaft 2026 (NLA + NLB, erste
+  20 Teams) — **349 Spieler** exklusiv (338 aktiv, 11 inaktiv; 13 weitere Spieler
+  überschneiden sich mit anderen Gruppen). Implementiert als Boolean-Flag `swiss_2026`
+  in `players`, nicht als `analysis_group`-Wert. Backfill 2010-01 → 2026-03
+  abgeschlossen am 2026-04-23.
 
 Der initiale Seed erfolgt aus der globalen FIDE-Download-Liste (`players_list_foa.txt`),
 gefiltert nach `SEX='F'` bzw. `SEX='M'` und `STD BETWEEN 2400 AND 2600`.
@@ -173,7 +177,7 @@ CREATE INDEX ON players (analysis_group) WHERE analysis_group IS NOT NULL;
 
 `analysis_group` unterscheidet die Gruppen:
 - `female_top` — Spielerinnen mit ELO 2400–2600 (64 Spielerinnen)
-- `male_control` — Männer mit ELO 2400–2600, age-matched (280 Spieler nach Extension)
+- `male_control` — Männer mit ELO 2400–2600, age-matched (479 Spieler nach Erweiterungen)
 - `elite_2600` — alle Spieler mit ELO ≥ 2600 (202 Spieler, obere Vergleichsschicht)
 - `NULL` — alle übrigen Spieler (dienen als Lookup für Gegner-Auflösung)
 
@@ -816,12 +820,14 @@ den FIDE-Status aus April 2026. Die ursprüngliche `analysis_group`-Zuordnung wu
 **bewusst nicht** neu ausgeführt; die spätere Erweiterung um +150 Männer
 (`extend_male_control.py`) hat dagegen von Anfang an nur aktive Spieler gesampelt.
 
-**Ist-Stand (nach Extension 2026-04-18 + 2015–2019-Backfill 2026-04-19):**
+**Ist-Stand (nach allen Erweiterungen, Stand 2026-04-24):**
 
 | Gruppe         | seeded | aktiv (FIDE 2026-04) | inaktiv |
 |----------------|-------:|---------------------:|--------:|
 | female_top     |     64 |                   43 |      21 |
-| male_control   |    280 |                  236 |      44 |
+| male_control   |    479 |                  435 |      44 |
+| elite_2600     |    202 |                  153 |      49 |
+| swiss_2026     |    349 |                  338 |      11 |
 
 Die 17 Spieler, die als "inaktiv" markiert sind, aber im Backfill-Range (2022–2025)
 Partien gespielt haben, sind in 2025/2026 inaktiv geworden — sie tauchen in späteren

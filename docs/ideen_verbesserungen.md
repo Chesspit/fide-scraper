@@ -164,7 +164,116 @@ nützlich für Feedback von Dritten und als Begleitmedium zu einer Publikation.
 
 ---
 
+## D — Erweiterung der weiblichen Population
+
+### D1. Frauen ELO 2200–2400 *(Priorität 1)*
+
+Die natürlichste Erweiterung der Kernfrage. Aktuell ist `female_top` auf 2400–2600
+beschränkt — eine relativ willkürliche Grenze. Mit ~120 aktiven Spielerinnen in diesem
+Band liesse sich zeigen, ob die beobachteten Muster spezifisch für die Spitze sind
+oder über alle Leistungsebenen gelten. Ergänzt durch age-matched `male_control`
+für dieselbe ELO-Range.
+
+### D2. Frauen ELO 2000–2200 *(Priorität 2)*
+
+Deutlich grössere Gruppe (~250 Spielerinnen), die den Massenbereich des
+Frauenschachs abdeckt. Mehr statistische Power, direkter Vergleich mit der
+sub-elite-Ebene.
+
+### D3. Inaktive Spitzenspielerinnen mit historisch hohem Rating *(Priorität 2)*
+
+Judit Polgar (aktiv bis 2014, Peak ~2735), Susan Polgar, Xie Jun, Chiburdanidze —
+FIDE-inaktiv, aber zwischen 2010 und 2014 noch gescrapt werden können. Adressiert
+den Survivorship-Bias: ohne sie sieht man nur die aktuelle Generation.
+
+### D4. Spielerinnen, die aus dem 2400-Fenster herausgefallen sind *(Priorität 3)*
+
+Spielerinnen, die 2015–2020 bei 2400+ waren, heute aber nicht mehr. Identifizierbar
+via `rating_history.published_rating`. Diese fehlen durch Survivorship-Bias — und
+könnten genau die sein, bei denen strukturelle Benachteiligung wirksam war.
+
+### D5. Women's Grand Prix Teilnehmerinnen *(Priorität 4)*
+
+Die ~30–40 Spielerinnen des FIDE Women's Grand Prix sind definiert elite.
+Grosse Überschneidung mit `female_top`, aber mit explizitem Turniersystem-Kontext.
+
+---
+
+## E — Allgemeine Spielergruppen jenseits der Geschlechterfrage
+
+### E1. Alle aktiven GMs — Altern und Leistungspeak *(Priorität 1)*
+
+**Forschungsfrage:** Wann erreicht ein Spieler sein Rating-Maximum, wie lange hält
+es sich, und wie verläuft der Abstieg? Gibt es universelle Kurven oder unterscheiden
+sich diese nach Nationalität, Titelklasse, K-Faktor-Geschichte?
+
+~1.800 aktive GMs — die vollständige Profi-Population. Das Elo-System macht den
+Leistungsabfall direkt quantifizierbar, für Schach bisher kaum auf
+Einzelpartien-Ebene untersucht.
+
+### E2. COVID und der Online-Schock *(Priorität 1)*
+
+**Forschungsfrage:** Wie hat die Verlagerung zu Online-Turnieren 2020–2022
+verschiedene Spielergruppen unterschiedlich getroffen? Wer profitierte (jüngere
+Spieler?), wer verlor (ältere Spieler? Spieler aus Regionen ohne gute
+Internetinfrastruktur)?
+
+Kein neues Scraping nötig für die Hauptanalyse — Zeitreihe auf den bestehenden
+696.820 Partien. Erweiterung: Spieler aus afrikanischen Föderationen oder
+Zentralasien als Infrastruktur-Kontrollgruppe.
+
+### E3. Alle aktiven IMs — IM als Durchgangsstation oder Endpunkt *(Priorität 2)*
+
+**Forschungsfrage:** Wieviele IMs schaffen den Sprung zum GM, wann im
+Karriereverlauf, und was unterscheidet die Erfolgreichen? Gibt es
+Gegnerstruktur-Muster, die den Durchbruch vorhersagen?
+
+~4.000 aktive IMs ohne GM-Titel. Klar definierbare Outcome-Variable (GM-Titel
+ja/nein), lange Beobachtungsperiode vorhanden. Grösste hier vorgeschlagene
+Scraping-Aufgabe.
+
+### E4. Die 2300-Schwelle *(Priorität 2)*
+
+**Forschungsfrage:** Um 2300 stagnieren aussergewöhnlich viele Spieler jahrelang.
+Ist das ein strukturelles Phänomen — andere Gegnerfelder, andere Turniertypen,
+andere Volatilität — oder reine Selektion?
+
+Zwei Gruppen: Spieler, die seit ≥ 3 Jahren zwischen 2250 und 2350 stehen
+(~1.000–2.000 weltweit), und Spieler, die 2300 in denselben Jahren überwunden
+haben. Der Übergang Hobby→Profi passiert genau hier.
+
+### E5. Talententwicklung — Jugenddurchbruch *(Priorität 2)*
+
+**Forschungsfrage:** Welche Spieler, die mit 14 Jahren 2000+ hatten, erreichen
+später 2500+? Was unterscheidet ihre Spielergebnisse in der Aufstiegsphase?
+
+Alle Spieler, die vor dem 18. Geburtstag 2000+ erreicht haben — identifizierbar
+via `birth_year` + `rating_history`. Ergänzt durch eine Stagnations-Kontrollgruppe
+(seit 5+ Jahren auf demselben Rating-Level).
+
+### E6. Nationale Schachsysteme im Vergleich *(Priorität 3)*
+
+**Forschungsfrage:** Produzieren Länder mit staatlich geförderten Programmen
+(Russland, China, Usbekistan, Aserbaidschan) messbar anders strukturierte
+Karriereverläufe als Länder ohne (Schweiz, Deutschland, USA)?
+
+~100–300 Spieler pro Zielföderation, 6–8 Länder. `swiss_2026` liefert bereits
+eine Schweizer Baseline.
+
+### E7. Langlebigkeit in den Top 100 *(Priorität 3)*
+
+**Forschungsfrage:** Wie lange bleiben Top-100-Spieler in den Top 100? Gibt es
+Vorläufer-Signale für den Abstieg in den Spielergebnissen?
+
+Alle Spieler, die zwischen 2010 und 2026 irgendwann in der FIDE-Top-100 waren
+(~150–200 Spieler, stark überlappend mit `elite_2600`). Kleiner Aufwand,
+da grösster Teil bereits gescrapt.
+
+---
+
 ## Zusammenfassung nach Impact
+
+### Analytische Verbesserungen & Datenbasis (A–C)
 
 | Massnahme | Aufwand | Analysegewinn | Priorität |
 |---|---|---|---|
@@ -183,3 +292,20 @@ nützlich für Feedback von Dritten und als Begleitmedium zu einer Publikation.
 | Regionale Analyse (A4) | mittel | Kontextualisierung | Niedrig |
 | Dashboard (C2) | gross | Reichweite | Niedrig |
 | Publikation (C1) | gross | Sichtbarkeit | Niedrig |
+
+### Neue Spielergruppen (D–E)
+
+| Gruppe | Spieler (ca.) | Scraping-Aufwand | Neue Fragestellung | Priorität |
+|---|---|---|---|---|
+| Frauen 2200–2400 + Kontrolle (D1) | ~240 | mittel | Muster über ELO-Bänder | **1** |
+| Alle GMs — Altern (E1) | ~1.800 | gross | Leistungspeak & Abstieg | **1** |
+| COVID-Analyse bestehend + Infra (E2) | ~200 neu | klein | Online vs. OTB Effekte | **1** |
+| Frauen 2000–2200 + Kontrolle (D2) | ~500 | gross | Breite Masse | **2** |
+| Alle IMs — Durchbruch (E3) | ~4.000 | sehr gross | IM→GM Konversion | **2** |
+| 2300-Schwelle (E4) | ~2.000 | gross | Stagnationsphänomen | **2** |
+| Jugenddurchbruch (E5) | ~500 | mittel | Talententwicklung | **2** |
+| Inaktive Spitzenspielerinnen (D3) | ~15 | klein | Survivorship-Bias | **2** |
+| Gefallene 2400er-Spielerinnen (D4) | ~40 | mittel | Selektionseffekte | **3** |
+| Nationale Systeme (E6) | ~1.200 | gross | Förderprogramm-Effekt | **3** |
+| Top-100 Langlebigkeit (E7) | ~200 | klein | Abstiegsmuster | **3** |
+| Women's Grand Prix (D5) | ~35 | klein | Elite-Kontext | **4** |

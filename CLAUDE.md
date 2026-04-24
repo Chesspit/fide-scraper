@@ -738,6 +738,8 @@ Alle Notebooks nutzen:
 
 - **Range:** 2010-01-01 – 2026-03-01 (196 Perioden)
 - **696.820 Partien** in `game_results`
+- **Gegner-Auflösung:** 681.096 / 696.820 (**97,7 %**) aufgelöst (Stand 2026-04-24,
+  nach period-aware Re-Run mit 66 Snapshots + Fuzzy-Matching)
 - **Spieler:** female_top 64 (43 aktiv), male_control 479 (236 aktiv),
   elite_2600 202 (153 aktiv), swiss_2026 349 exklusiv (1.094 total)
 - **Backfill-Historie:** 2022-01→2025-04 (initial), 2020-01→2021-12, 2020-01→2025-12 (+150

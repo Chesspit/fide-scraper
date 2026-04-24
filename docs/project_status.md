@@ -203,6 +203,7 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 | Kennzahl | Wert |
 |---|---|
 | **Gesamt-Partien** | **696.820** |
+| **Gegner aufgelöst** | **681.096 (97,7 %)** |
 | **Spieler mit Daten** | **1.094** |
 | **Perioden** | **196 (2010-01 bis 2026-03)** |
 
@@ -316,7 +317,7 @@ docker compose -f /opt/fide-scraper/docker-compose.yml run --no-deps --rm \
 |---|---|---|
 | Analyse-Notebooks 01–07 starten | Hoch | ⬜ Daten + QC vollständig validiert |
 | NB08 (QC) neu generieren | Mittel | ⬜ Zahlen nach Bug-Fix aktualisieren |
-| resolve_opponents erneut ausführen | Mittel | ⬜ period-accurate Ratings jetzt vollständiger |
+| resolve_opponents erneut ausführen | Mittel | ✅ 97,7 % aufgelöst (war 74,4 %) |
 | April 2026 scrapen | Niedrig | ⬜ beseitigt 1.094 Missing-Period-Warnings |
 | TXT-Snapshots 2013–2014 | Niedrig | ⬜ würde QC-Coverage auf 2010+ erweitern |
 | Re-Sampling male_control (nur Aktive) | Niedrig | ⬜ optional, methodisch sauber |

@@ -64,11 +64,16 @@ der eigentliche statistische Test für die Kernthese.
 
 ### B1. Gegner-Geschlecht materialisieren *(klein, hoher Gewinn)*
 
-Mit 97,7 % Auflösung kann für fast jede Partie das Geschlecht des Gegners per JOIN
-auf `players.sex` bestimmt werden. Eine materialisierte Spalte `opponent_sex` in
-`game_results` — oder eine View — würde Notebook 07 robuster machen und Fragen
-ermöglichen wie: Spielen Frauen bei gleicher ELO öfter gegen andere Frauen als
-Männer gegen andere Männer?
+Das Gegner-Geschlecht ist bereits zu 98,1 % bestimmbar — kein fehlendes Datum,
+sondern ein JOIN-Aufwand:
+- 97,7 % via `opponent_fide_id → players.sex` (TXT-Datei enthält `SEX` für alle
+  1,83 Mio. Spieler)
+- 0,3 % zusätzlich via `opponent_women_title IS NOT NULL` (Frauentitel im
+  gescrapten HTML)
+- Nur 1,9 % wirklich unbekannt (ungelöst + kein Frauentitel, überwiegend Männer)
+
+Eine materialisierte Spalte `opponent_sex` in `game_results` würde Notebook 07
+und alle Folgeanalysen deutlich vereinfachen — statt JOIN bei jeder Abfrage.
 
 ### B2. Wide-gap-Matches flaggen *(klein, Datenqualität)*
 

@@ -751,13 +751,25 @@ Alle Notebooks nutzen:
   `migrations/006_qc_correction_column.sql`, `scripts/quality_check.py`,
   `notebooks/08_qc_elo_analysis.ipynb`
 - **TXT-Snapshots:** 66 Perioden in `data/` (Jan+Apr+Jul+Okt 2015–2025, monatlich ab Okt 2023)
-- **Ergebnisse:** 69.041 Fenster — OK 60,7 % | Warn 23,6 % | Error 15,7 % | Median |Δ| 2,5
+- **Ergebnisse (nach Bug-Fix):** 69.041 Fenster — **OK 98,5 %** | Warn 1,1 % | Error 0,4 %
+  | Median |Δ| 0,1
+- **Bug-Fix 2026-04-24:** Off-by-one in der Perioden-Bedingung. `scraped_change` wurde mit
+  `period >= T1 AND period < T2` summiert, korrekt ist `period > T1 AND period <= T2`.
+  Begründung: games in Periode T produzieren `published_rating[T]`, also entspricht die
+  Differenz `published[T2] − published[T1]` den Spielergebnissen in Perioden (T1, T2].
+  Vor dem Fix: 60,7 % OK. Nach Fix: 98,5 % OK — die meisten früheren „Errors" waren
+  Rauschen durch den Randeffekt, keine echten Scraping-Fehler.
 - **Correction-System:** `rating_corrections`-Tabelle mit FIDE-Einmalkorrektur März 2024
   (+0,4 × (2000 − Post-Game-Rating) für alle Spieler < 2000). 379.276 Einträge.
   `quality_check.py` berücksichtigt bekannte Korrekturen im Delta (Flag auf `delta − correction`).
 - **FIDE-Korrektur März 2024:** Beschlossen Dez 2023, wirksam 2024-03-01. Betrifft nur sub-2000
   Spieler. Unsere Hauptgruppen (≥ 2400) unberührt; 57 swiss_2026-Spieler (Rating 1308–1996)
-  sind betroffen — Korrekturen exakt per Snapshot-Delta berechnet.
+  betroffen — Korrekturen exakt per Snapshot-Delta berechnet.
+- **Verbleibende 257 Errors (0,4 %):**
+  - Spiegel-Deltas (z.B. Radzimski ±186, Smirnov ±92): FIDE verbucht Korrektur in T, dreht
+    sie in T+1 um — echtes FIDE-Problem
+  - 2026-03→2026-04-Fenster (1.094×): April 2026 noch nicht gescrapt — erwartet
+  - Einzelfälle: verspätete FIDE-Turnierverarbeitung
 
 ---
 

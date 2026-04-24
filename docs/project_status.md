@@ -255,32 +255,34 @@ delta_adj       = (expected_change − scraped_change) − correction
 Flag: ok (|Δ_adj| ≤ 5) | warn (≤ 15) | error (> 15)
 ```
 
-### 6.2 Ergebnisse (69.041 Fenster, Stand 2026-04-24)
+### 6.2 Ergebnisse (69.041 Fenster, Stand 2026-04-24, nach Bug-Fix)
 
 | Jahr | Fenster | OK% | Warn | Error | Avg\|Δ\| |
 |---|---|---|---|---|---|
-| 2015 | 3.867 | 53,2% | 954 | 857 | 11,9 |
-| 2016 | 3.997 | 52,6% | 1.076 | 820 | 11,2 |
-| 2017 | 4.088 | 54,1% | 1.085 | 791 | 11,4 |
-| 2018 | 4.167 | 56,3% | 1.045 | 775 | 9,8 |
-| 2019 | 4.215 | 54,6% | 1.076 | 836 | 10,6 |
-| 2020 | 4.253 | 80,0% | 536 | 314 | 4,4 |
-| 2021 | 4.272 | 74,9% | 600 | 471 | 5,7 |
-| 2022 | 4.291 | 60,1% | 1.002 | 710 | 9,1 |
-| 2023 | 6.493 | 60,3% | 1.611 | 968 | 8,0 |
-| 2024 | 13.027 | 60,1% | 3.209 | 1.993 | 8,3 |
-| 2025 | 13.091 | 60,2% | 3.314 | 1.894 | 7,3 |
-| 2026 | 3.280 | 62,6% | 797 | 431 | 6,9 |
-| **Gesamt** | **69.041** | **60,7%** | **16.305** | **10.860** | **8,4** |
+| 2015 | 3.867 | 99,6% | 10 | 7 | 0,4 |
+| 2016 | 3.997 | 99,8% | 4 | 3 | 0,3 |
+| 2017 | 4.088 | 99,8% | 7 | 0 | 0,3 |
+| 2018 | 4.167 | 99,9% | 3 | 2 | 0,3 |
+| 2019 | 4.215 | 99,9% | 2 | 2 | 0,3 |
+| 2020 | 4.253 | 100,0% | 1 | 0 | 0,1 |
+| 2021 | 4.272 | 100,0% | 0 | 2 | 0,1 |
+| 2022 | 4.291 | 99,7% | 4 | 7 | 0,3 |
+| 2023 | 6.493 | 99,8% | 10 | 1 | 0,2 |
+| 2024 | 13.027 | 95,6% | 434 | 135 | 1,2 |
+| 2025 | 13.091 | 99,9% | 8 | 3 | 0,1 |
+| 2026 | 3.280 | 89,1% | 264 | 95 | 1,9 |
+| **Gesamt** | **69.041** | **98,5%** | **747** | **257** | **0,5** |
 
-### 6.3 Bekannte Ursachen für Abweichungen
+> **Vor dem Bug-Fix** (falsche Perioden-Bedingung `>= T1 / < T2`): 60,7% OK, 15,7% Error.
+> Nach Fix (`> T1 / <= T2`): 98,5% OK. Die meisten früheren „Errors" waren Randeffekt-Rauschen.
 
-1. **FIDE Bonus-Punkte bis Juli 2017** — erklärt schlechtere Qualität 2015–2017
-2. **Verspätete Turnierverarbeitung** — Spiegel-Deltas (Garv Rai ±418, Radzimski ±345)
-3. **FIDE Einmalkorrektur März 2024** — +0,4×(2000−Rating) für sub-2000-Spieler; in
-   `rating_corrections` erfasst und im QC automatisch berücksichtigt
-4. **Rating-Floor-Absenkung 1200→1000** (2022/2023) — betrifft Spieler < 2000
-5. **Partien mit Ratingdifferenz >400** (\*-Marker) — FIDE-Wertungsregel unklar
+### 6.3 Verbleibende Abweichungen (257 Errors, 0,4%)
+
+1. **Spiegel-Deltas** — FIDE verbucht eine Korrektur in Periode T und dreht sie in T+1 um.
+   Typisch bei verspäteter Turnierverarbeitung. Beispiele: Radzimski (±186), Smirnov (±92).
+2. **2026-03→2026-04-Fenster** — April 2026 noch nicht gescrapt; 1.094 Spieler mit
+   `missing_periods=1`. Erwartet, wird nach nächstem monatlichem Scraping verschwinden.
+3. **Einzelfälle** — verspätete Turniere, retroaktive FIDE-Korrekturen.
 
 ### 6.4 FIDE Einmalkorrektur März 2024 — Details
 
@@ -310,9 +312,11 @@ docker compose -f /opt/fide-scraper/docker-compose.yml run --no-deps --rm \
 
 ## 7. Offene Punkte
 
-| Aufgabe | Status |
-|---|---|
-| Analyse-Notebooks 01–07 | ⬜ Daten vollständig, bereit zum Start |
-| NB08 (QC) neu generieren | ⬜ spiegelt jetzt 69.041 Fenster + Correction-Spalte |
-| TXT-Snapshots 2013–2014 | ⬜ würde QC-Coverage auf 2010+ erweitern |
-| Re-Sampling male_control (nur Aktive) | ⬜ optional, methodisch sauber |
+| Aufgabe | Priorität | Status |
+|---|---|---|
+| Analyse-Notebooks 01–07 starten | Hoch | ⬜ Daten + QC vollständig validiert |
+| NB08 (QC) neu generieren | Mittel | ⬜ Zahlen nach Bug-Fix aktualisieren |
+| resolve_opponents erneut ausführen | Mittel | ⬜ period-accurate Ratings jetzt vollständiger |
+| April 2026 scrapen | Niedrig | ⬜ beseitigt 1.094 Missing-Period-Warnings |
+| TXT-Snapshots 2013–2014 | Niedrig | ⬜ würde QC-Coverage auf 2010+ erweitern |
+| Re-Sampling male_control (nur Aktive) | Niedrig | ⬜ optional, methodisch sauber |

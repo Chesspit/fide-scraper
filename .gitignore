@@ -12,6 +12,7 @@ __pycache__/
 # Large data files (FIDE player lists ~200MB uncompressed / ~30-50MB zipped)
 data/*.txt
 data/*.zip
+data/*.pdf
 players_list_foa*.txt
 players_list_foa*.zip
 

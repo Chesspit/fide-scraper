@@ -730,16 +730,30 @@ Alle Notebooks nutzen:
 
 ---
 
-## Aktueller Datensatz-Stand (2026-04-19, nach elite_2600-Backfill)
+## Aktueller Datensatz-Stand (2026-04-24)
 
-- **Range:** 2015-01-01 – 2026-03-01 (135 Perioden)
-- **280.218 Partien** in `game_results`
-- **Auflösung:** 232.215 / 280.218 (82,9 %) Gegner-FIDE-IDs aufgelöst,
-  48.003 (17,1 %) unresolved (überwiegend indische Namen)
-- **Spieler aktiv:** female_top 43, male_control 236, elite_2600 153
-- **Backfill-Historie:** 2022-01→2025-04 (initial), 2020-01→2021-12, 2020-01→2025-12 (mit
-  +150 Männern), 2015-01→2019-12, 2015-01→2026-03 (elite_2600, zweiphasig) —
-  siehe `memory/project_backfill.md` für Details
+- **Range:** 2010-01-01 – 2026-03-01 (196 Perioden)
+- **696.820 Partien** in `game_results`
+- **Spieler:** female_top 64 (43 aktiv), male_control 479 (236 aktiv),
+  elite_2600 202 (153 aktiv), swiss_2026 349 exklusiv (1.094 total)
+- **Backfill-Historie:** 2022-01→2025-04 (initial), 2020-01→2021-12, 2020-01→2025-12 (+150
+  Männer), 2015-01→2019-12, 2015-01→2026-03 (elite_2600 + swiss_2026),
+  2011-01→2014-12 (alle Gruppen), 2010-01→2010-12 (alle Gruppen, abgeschlossen 2026-04-24)
+  — siehe `memory/project_backfill.md` für Details
+
+### QC-System (Stand 2026-04-24)
+
+- **Dateien:** `migrations/004_qc_table.sql`, `migrations/005_rating_corrections.sql`,
+  `migrations/006_qc_correction_column.sql`, `scripts/quality_check.py`,
+  `notebooks/08_qc_elo_analysis.ipynb`
+- **TXT-Snapshots:** 66 Perioden in `data/` (Jan+Apr+Jul+Okt 2015–2025, monatlich ab Okt 2023)
+- **Ergebnisse:** 69.041 Fenster — OK 60,7 % | Warn 23,6 % | Error 15,7 % | Median |Δ| 2,5
+- **Correction-System:** `rating_corrections`-Tabelle mit FIDE-Einmalkorrektur März 2024
+  (+0,4 × (2000 − Post-Game-Rating) für alle Spieler < 2000). 379.276 Einträge.
+  `quality_check.py` berücksichtigt bekannte Korrekturen im Delta (Flag auf `delta − correction`).
+- **FIDE-Korrektur März 2024:** Beschlossen Dez 2023, wirksam 2024-03-01. Betrifft nur sub-2000
+  Spieler. Unsere Hauptgruppen (≥ 2400) unberührt; 57 swiss_2026-Spieler (Rating 1308–1996)
+  sind betroffen — Korrekturen exakt per Snapshot-Delta berechnet.
 
 ---
 

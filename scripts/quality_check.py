@@ -69,6 +69,9 @@ pairs AS (
     WHERE next_period IS NOT NULL
 ),
 scraped AS (
+    -- Sum games in periods (T1, T2]: the games in period T produced the
+    -- published_rating for T, so the change from published[T1] to
+    -- published[T2] equals SUM of games where T1 < period <= T2.
     SELECT
         gr.fide_id,
         p.period_start,
@@ -77,8 +80,8 @@ scraped AS (
     FROM pairs p
     JOIN game_results gr
       ON  gr.fide_id = p.fide_id
-      AND gr.period >= p.period_start
-      AND gr.period <  p.period_end
+      AND gr.period >  p.period_start
+      AND gr.period <= p.period_end
     GROUP BY gr.fide_id, p.period_start, p.period_end
 ),
 missing AS (
@@ -91,8 +94,8 @@ missing AS (
     FROM pairs p
     CROSS JOIN LATERAL (
         SELECT generate_series(
-            p.period_start,
-            p.period_end - INTERVAL '1 month',
+            p.period_start + INTERVAL '1 month',
+            p.period_end,
             INTERVAL '1 month'
         )::date AS m
     ) months

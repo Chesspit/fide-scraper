@@ -35,7 +35,21 @@ def main():
                         help="End period (YYYY-MM-01)")
     parser.add_argument("--fide-ids", nargs="+", type=int,
                         help="Specific FIDE IDs (default: all analysis players)")
+    parser.add_argument("--shard", metavar="N/M",
+                        help="Process only shard N of M (e.g. --shard 1/2 or --shard 2/2). "
+                             "Uses round-robin split so both shards finish at the same time. "
+                             "Run on different machines to avoid increased load on one IP.")
     args = parser.parse_args()
+
+    # Parse shard argument
+    shard_n, shard_m = 1, 1
+    if args.shard:
+        try:
+            shard_n, shard_m = (int(x) for x in args.shard.split("/"))
+            if not (1 <= shard_n <= shard_m) or shard_m < 1:
+                raise ValueError
+        except ValueError:
+            parser.error("--shard must be N/M with 1 ≤ N ≤ M (e.g. --shard 1/2)")
 
     periods = generate_period_range(args.from_date, args.to_date)
     logger.info("Backfill range: %s to %s (%d periods)", args.from_date, args.to_date, len(periods))
@@ -43,6 +57,13 @@ def main():
     conn = get_connection()
     try:
         pending = get_pending_periods(conn, periods, args.fide_ids)
+
+        # Apply round-robin shard split: shard N/M takes every M-th item starting at N-1
+        if shard_m > 1:
+            pending = pending[shard_n - 1 :: shard_m]
+            logger.info("Shard %d/%d: %d of %d total pending periods",
+                        shard_n, shard_m, len(pending), len(pending) * shard_m)
+
         total = len(pending)
 
         if total == 0:

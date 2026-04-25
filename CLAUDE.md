@@ -734,45 +734,37 @@ Alle Notebooks nutzen:
 
 ---
 
-## Aktueller Datensatz-Stand (2026-04-24)
+## Aktueller Datensatz-Stand (2026-04-25)
 
 - **Range:** 2010-01-01 – 2026-03-01 (196 Perioden)
-- **696.820 Partien** in `game_results`
-- **Gegner-Auflösung:** 681.096 / 696.820 (**97,7 %**) aufgelöst (Stand 2026-04-24,
-  nach period-aware Re-Run mit 66 Snapshots + Fuzzy-Matching)
-- **Spieler:** female_top 66 (inkl. Moser/Khurtsidze nachgetragen), male_control 479,
-  elite_2600 202, swiss_2026 349 exklusiv, female_2200 321 (neu 2026-04-24, Backfill läuft)
-  — 1.417 total
-- **Backfill-Historie:** 2022-01→2025-04 (initial), 2020-01→2021-12, 2020-01→2025-12 (+150
-  Männer), 2015-01→2019-12, 2015-01→2026-03 (elite_2600 + swiss_2026),
-  2011-01→2014-12 (alle Gruppen), 2010-01→2010-12 (alle Gruppen, abgeschlossen 2026-04-24)
-  — siehe `memory/project_backfill.md` für Details
+- **696.820+ Partien** in `game_results` (wächst mit female_2200-Backfill)
+- **Gegner-Auflösung:** 681.096 / 696.820 (**97,7 %**) aufgelöst — nach period-aware
+  Re-Run mit 164 Snapshots + Fuzzy-Matching. Wird nach female_2200-Backfill aktualisiert.
+- **Spieler:** female_top 66, male_control 479, elite_2600 202, swiss_2026 349 exklusiv,
+  female_2200 321 (⏳ Backfill ~43 %, ETA heute Abend) — **1.417 total**
+- **Neue Spalten in `game_results`** (migrations 007–009):
+  - `opponent_sex` (CHAR 1) — 98,1 % befüllt
+  - `tournament_type` — `open` | `women` | `team` | `women_team` | `closed` | `knockout`
+  - `expected_score` — Elo-Erwartungswert: 1/(1+10^((opp−own)/400))
+  - `over_performance` — result − expected_score
+  - `opponent_match_quality` — `ok` | `wide_gap` (diff>200) | `unresolved`
 
-### QC-System (Stand 2026-04-24)
+### QC-System (Stand 2026-04-25)
 
-- **Dateien:** `migrations/004_qc_table.sql`, `migrations/005_rating_corrections.sql`,
-  `migrations/006_qc_correction_column.sql`, `scripts/quality_check.py`,
-  `notebooks/08_qc_elo_analysis.ipynb`
-- **TXT-Snapshots:** 66 Perioden in `data/` (Jan+Apr+Jul+Okt 2015–2025, monatlich ab Okt 2023)
-- **Ergebnisse (nach Bug-Fix):** 69.041 Fenster — **OK 98,5 %** | Warn 1,1 % | Error 0,4 %
-  | Median |Δ| 0,1
-- **Bug-Fix 2026-04-24:** Off-by-one in der Perioden-Bedingung. `scraped_change` wurde mit
-  `period >= T1 AND period < T2` summiert, korrekt ist `period > T1 AND period <= T2`.
-  Begründung: games in Periode T produzieren `published_rating[T]`, also entspricht die
-  Differenz `published[T2] − published[T1]` den Spielergebnissen in Perioden (T1, T2].
-  Vor dem Fix: 60,7 % OK. Nach Fix: 98,5 % OK — die meisten früheren „Errors" waren
-  Rauschen durch den Randeffekt, keine echten Scraping-Fehler.
-- **Correction-System:** `rating_corrections`-Tabelle mit FIDE-Einmalkorrektur März 2024
-  (+0,4 × (2000 − Post-Game-Rating) für alle Spieler < 2000). 379.276 Einträge.
-  `quality_check.py` berücksichtigt bekannte Korrekturen im Delta (Flag auf `delta − correction`).
-- **FIDE-Korrektur März 2024:** Beschlossen Dez 2023, wirksam 2024-03-01. Betrifft nur sub-2000
-  Spieler. Unsere Hauptgruppen (≥ 2400) unberührt; 57 swiss_2026-Spieler (Rating 1308–1996)
-  betroffen — Korrekturen exakt per Snapshot-Delta berechnet.
-- **Verbleibende 257 Errors (0,4 %):**
-  - Spiegel-Deltas (z.B. Radzimski ±186, Smirnov ±92): FIDE verbucht Korrektur in T, dreht
-    sie in T+1 um — echtes FIDE-Problem
-  - 2026-03→2026-04-Fenster (1.094×): April 2026 noch nicht gescrapt — erwartet
-  - Einzelfälle: verspätete FIDE-Turnierverarbeitung
+- **Dateien:** `migrations/004–006`, `scripts/quality_check.py`, `notebooks/08_qc_elo_analysis.ipynb`
+- **TXT-Snapshots:** **164 Perioden** in `data/` — **Sep 2012 – Apr 2026, monatlich lückenlos**
+  (Jan–Aug 2012 folgen separat; ältere Formate in Prüfung)
+  - Parser-Fix 2026-04-25: `re.IGNORECASE` für pre-2015-Dateinamen (z.B. `sep12`)
+  - Dedup-Fix 2026-04-25: ältere FIDE-Listen enthalten gelegentlich doppelte fide_ids
+- **Ergebnisse (Stand 2026-04-25, 213.942 Fenster):**
+  OK **93,9 %** | Warn 2,6 % | Error 3,5 % | Median |Δ| 0,0
+  - 2012–2015: >99 % OK (exzellent)
+  - 2017–2019: ~90 % OK — erhöhte Fehlerrate, Untersuchung ausstehend
+  - female_2200-Errors: Backfill läuft noch → löst sich nach Abschluss auf
+  - Nach female_2200-Backfill: QC-Rebuild erwartet wieder ~98 %+
+- **Bug-Fix 2026-04-24:** Off-by-one in Perioden-Bedingung: `>= T1 / < T2` → `> T1 / <= T2`
+- **FIDE-Korrektur März 2024:** +0,4×(2000−Post-Game) für sub-2000-Spieler; in
+  `rating_corrections` erfasst, QC berücksichtigt Korrekturen automatisch
 
 ---
 

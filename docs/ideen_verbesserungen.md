@@ -1,6 +1,6 @@
 # Ideen für Verbesserungen
 
-Stand: 24. April 2026
+Stand: 25. April 2026
 
 ---
 
@@ -100,7 +100,7 @@ FIDE-gewerteten Partien gespielt. Die No-data-Rate pro Gruppe und Zeitraum ist
 selbst ein Indikator für Turnierfrequenz und -verfügbarkeit — besonders relevant
 für 2010–2014 und den COVID-Einbruch 2020.
 
-### B4. Dynamische Gruppenzugehörigkeit *(gross, methodisch wichtig)*
+### B4. Dynamische Gruppenzugehörigkeit *(gross, methodisch wichtig — jetzt direkt umsetzbar)*
 
 Die aktuelle Logik friert den ELO-Stand April 2026 ein. Ein Spieler mit heutigem
 Rating 2420 ist in `male_control`, war aber 2012 vielleicht bei 1900. Sauberer wäre
@@ -113,17 +113,15 @@ FROM rating_history
 WHERE published_rating BETWEEN 2400 AND 2600
 ```
 
-Die Datenbasis dafür existiert bereits in der DB — es wäre ein Schema-Umbau,
-kein neues Scraping.
+**Stand 2026-04-25:** Mit 164 monatlichen Snapshots (Sep 2012 – Apr 2026, ab 2026 bis 2006
+erweitert) ist die Datenbasis vollständig vorhanden. Kein neues Scraping nötig —
+nur ein Schema-Umbau.
 
-### B5. TXT-Snapshots 2010–2014 beschaffen *(mittel)*
+### B5. TXT-Snapshots *(teilweise erledigt)*
 
-Für die Perioden 2010–2014 fehlen QC-Referenzwerte und period-accurate Ratings für
-den Resolver. Die FIDE-Archive haben diese Dateien
-(z.B. `standard_jan13frl.zip`). Damit liessen sich:
-- QC auf die vollen 196 Perioden ausdehnen
-- Resolver für ältere Gegner verbessern
-- Survivorship-Bias für 2010–2014 quantifizieren
+- ✅ **Sep 2012 – Apr 2026: vollständig monatlich** (164 Dateien, importiert 2026-04-25)
+- ⏳ **Jan–Aug 2012:** Dateien vorhanden, Format-Test ausstehend
+- ⏳ **2006–2011:** Dateien vorhanden (schrittweise Format-Prüfung), ab 2026 importierbar
 
 ### B6. Turnierkategorie nachscrapen *(gross, zentral)*
 
@@ -141,12 +139,25 @@ Eine regelbasierte Klassifikation auf `tournament_name` (Keywords: „Online",
 „Titled Tuesday", „Lichess", „Chess.com") würde den COVID-Ausreisser in den Daten
 sauber erklären und eine separate Auswertung ermöglichen.
 
-### B8. Survivorship-Bias quantifizieren
+### B8. Survivorship-Bias quantifizieren *(jetzt direkt umsetzbar)*
 
 Alle 1.094 Spieler existieren im April-2026-Snapshot. Spieler, die zwischen 2010
 und 2025 die 2400-Grenze temporär überschritten haben, aber 2026 nicht mehr dort
-sind, fehlen komplett. Eine Abfrage auf `rating_history` nach historischen Peaks
-könnte diese Population identifizieren und den Bias abschätzen.
+sind, fehlen komplett.
+
+**Stand 2026-04-25:** Mit monatlicher ELO-Historie seit Sep 2012 ist diese Abfrage
+direkt möglich — ohne neues Scraping:
+
+```sql
+-- Alle Frauen, die jemals ≥ 2400 hatten (historische female_top-Population)
+SELECT DISTINCT rh.fide_id, p.name, MAX(rh.published_rating) AS peak_rating
+FROM rating_history rh JOIN players p USING (fide_id)
+WHERE p.sex = 'F' AND rh.published_rating >= 2400
+GROUP BY rh.fide_id, p.name
+ORDER BY peak_rating DESC;
+```
+
+Ergibt die "wahre" female_top-Population 2012–2026, nicht nur den 2026-Snapshot.
 
 ---
 
@@ -276,27 +287,192 @@ da grösster Teil bereits gescrapt.
 
 ---
 
+## F — Analysen auf Basis der monatlichen ELO-Historie
+
+> **Kernidee:** `rating_history.published_rating` ist mit 164 Monats-Snapshots
+> (Sep 2012 – Apr 2026, ab 2026 bis 2006 erweitert) für ~1,8 Mio. Spieler vorhanden.
+> Das ist ein **eigenständiger Analysedatensatz** — unabhängig vom Scraping der
+> Einzelpartien. Die folgenden Analysen sind rein SQL-basiert auf `rating_history`
+> und `players`, kein neues Scraping nötig.
+
+---
+
+### F1. Alters-Rating-Kurven für die Gesamtpopulation
+
+**Forschungsfrage:** Wann erreicht ein Schachspieler typischerweise seinen
+Leistungspeak, wie lange hält er an, und wie verläuft der Abstieg? Unterscheiden
+sich diese Kurven nach Geschlecht, Nationalität, Titelklasse?
+
+Mit 20 Jahren monatlicher Daten für 1,8 Mio. Spieler lassen sich für jeden Spieler
+Alters-Rating-Kurven ableiten. Das ist die beste Datenbasis, die für diese Frage je
+verfügbar war — und für Schach bisher nicht systematisch ausgewertet wurde.
+
+```sql
+-- Rating nach Alter pro Spieler (Basis für Kurvenanpassung)
+SELECT p.fide_id, p.sex, p.federation,
+       EXTRACT(YEAR FROM rh.period) - p.birth_year AS age,
+       MAX(rh.published_rating)                     AS rating_at_age
+FROM rating_history rh JOIN players p USING(fide_id)
+WHERE p.birth_year > 0 AND rh.published_rating IS NOT NULL
+GROUP BY 1, 2, 3, 4
+```
+
+**Kein neues Scraping nötig. Direkt umsetzbar.**
+
+---
+
+### F2. Historische weibliche Population — die "wahre female_top"
+
+**Problem:** `female_top` bildet nur Spielerinnen ab, die 2026 noch aktiv und im
+Rating-Band 2400–2600 sind. Spielerinnen, die dort 2013–2020 waren und danach
+abstiegen oder aufhörten, sind komplett unsichtbar.
+
+**Lösung:** `rating_history` liefert für jede Frau mit bekannter FIDE-ID ihren
+monatlichen ELO-Verlauf. Damit kann die vollständige historische Population
+der Frauen ≥ 2400 identifiziert werden:
+
+- Wie viele Frauen waren in jedem Monat seit 2012 im 2400-Band?
+- Wie lange blieben sie dort?
+- Wer hat die 2400-Grenze überschritten und wo ist sie heute?
+
+Diese Population ist für den Geschlechtervergleich methodisch sauberer als der
+April-2026-Snapshot. **Kein Scraping nötig — nur `rating_history` + `players`.**
+
+---
+
+### F3. Rating-Mobilität — wer steigt auf, wer steigt ab?
+
+**Forschungsfrage:** Wie hoch ist die Fluktuation in verschiedenen ELO-Bändern?
+Welcher Anteil der Spieler in einem Band ist im nächsten Monat noch dort?
+Unterscheidet sich die Mobilität nach Geschlecht oder Nationalität?
+
+```sql
+-- Monatliche Ein-/Austritte im Band 2400-2600 nach Geschlecht
+SELECT period, p.sex,
+       SUM(CASE WHEN rh.published_rating BETWEEN 2400 AND 2600 THEN 1 ELSE 0 END) AS im_band
+FROM rating_history rh JOIN players p USING(fide_id)
+WHERE rh.published_rating IS NOT NULL
+GROUP BY 1, 2
+```
+
+Mobilitätsanalyse auf 20 Jahren Monatsdaten ist methodisch robust genug für
+eine **wissenschaftliche Publikation** (Abschnitt C1).
+
+---
+
+### F4. Frauenanteil nach ELO-Band über Zeit — der "Glass Ceiling"-Trend
+
+**Forschungsfrage:** Wie hat sich der Frauenanteil in verschiedenen ELO-Bändern
+von 2006 bis 2026 entwickelt? Ist die "gläserne Decke" bei bestimmten Ratings
+stabiler, dünner oder dicker geworden?
+
+```sql
+SELECT period,
+       CASE WHEN published_rating >= 2600 THEN '2600+'
+            WHEN published_rating >= 2400 THEN '2400-2599'
+            WHEN published_rating >= 2200 THEN '2200-2399'
+            WHEN published_rating >= 2000 THEN '2000-2199'
+       END AS band,
+       AVG(CASE WHEN p.sex='F' THEN 1.0 ELSE 0.0 END) AS frauenanteil
+FROM rating_history rh JOIN players p USING(fide_id)
+WHERE published_rating >= 2000
+GROUP BY 1, 2 ORDER BY 1, 2
+```
+
+Reine `rating_history`-Abfrage. Ergibt 20-Jahres-Zeitreihe ohne neues Scraping.
+
+---
+
+### F5. Nationale Entwicklungswellen
+
+**Forschungsfrage:** Welche Länder haben seit 2006 den grössten Zuwachs an
+Spielern über bestimmten ELO-Schwellen (2000, 2200, 2400) erzielt? Welche
+Länder "verlieren" Spitzenspieler durch Emigration oder Inaktivität?
+
+Direkter Indikator für die Effektivität nationaler Förderprogramme — ohne
+Einzelpartien-Scraping auswertbar. Besonders interessant für den Vergleich
+China vs. Indien (beide mit rasant wachsenden Spielerpopulationen).
+
+---
+
+### F6. ELO-Inflation über Generationen
+
+**Forschungsfrage:** Ist ein Rating von 2500 heute dasselbe wie ein Rating von
+2500 im Jahr 2006? Oder gibt es systematische Inflation durch die Ausweitung
+der FIDE-Spielerbasis?
+
+Methode: Vergleiche Kohorten von Spielern, die in verschiedenen Jahren erstmals
+2000+ erreichten. Halten sie ihr Rating länger oder kürzer? Steigen sie im Mittel
+höher? Eine Antwort auf diese Frage ist methodisch zentral für alle Zeitreihen-
+vergleiche im Projekt.
+
+---
+
+### F7. Survivorship-freie weibliche Studiengruppe
+
+Die Kombination aus F2 (historische Population) und vorhandenem Scraping ermöglicht:
+
+1. Identifikation aller Frauen, die seit 2012 jemals 2400+ hatten (~150–200 Spielerinnen
+   statt 66)
+2. Für noch nicht gescrapte: gezieltes Nachscrapen der aktiven Perioden
+3. Ergibt eine vollständige, survivorship-freie Studiengruppe
+
+Das ist die methodisch stärkste Grundlage für den Geschlechtervergleich — und
+erfordert deutlich weniger Scraping als eine komplette Neudefinition der Gruppen.
+
+---
+
+### Einordnung: Was die ELO-Historie ermöglicht vs. was Scraping braucht
+
+| Analyse | Nur `rating_history` | Scraping nötig |
+|---|---|---|
+| Alters-Rating-Kurven (F1) | ✅ | — |
+| Historische Population (F2, B8) | ✅ | — |
+| Rating-Mobilität (F3) | ✅ | — |
+| Frauenanteil-Trend (F4) | ✅ | — |
+| Nationale Wellen (F5) | ✅ | — |
+| ELO-Inflation (F6) | ✅ | — |
+| Gegnerstruktur-Analyse | — | ✅ |
+| Performance vs. Erwartung | — | ✅ |
+| Turniertyp-Analyse | — | ✅ |
+| Karriere-Persistenz mit Spielen | — | ✅ |
+
+---
+
 ## Zusammenfassung nach Impact
 
 ### Analytische Verbesserungen & Datenbasis (A–C)
 
-| Massnahme | Aufwand | Analysegewinn | Priorität |
-|---|---|---|---|
-| Gegner-Sex materialisieren (B1) | klein | direkt für NB07 | Hoch |
-| Wide-gap-Matches flaggen (B2) | klein | Datenqualität NB07 | Hoch |
-| Performance vs. Erwartung (A2) | klein | neue Kerndimension | Hoch |
-| Open/Frauenturnier-Split (A1) | mittel | zentral für Interpretation | Hoch |
-| No-data-Rate analysieren (B3) | klein | neue Dimension | Mittel |
-| Online vs. OTB (B7) | mittel | COVID-Bereinigung | Mittel |
-| TXT-Snapshots 2010–2014 (B5) | mittel | QC + Resolver | Mittel |
-| Regressionsmodell (A6) | mittel | statistischer Haupttest | Mittel |
-| Karriere-Persistenz (A3) | mittel | neue Fragestellung | Mittel |
-| Turnierkategorie scrapen (B6) | gross | ermöglicht A1 vollständig | Mittel |
-| Dynamische Gruppenzugehörigkeit (B4) | gross | methodisch sauber | Niedrig |
-| Survivorship-Bias (B8) | mittel | Validierung | Niedrig |
-| Regionale Analyse (A4) | mittel | Kontextualisierung | Niedrig |
-| Dashboard (C2) | gross | Reichweite | Niedrig |
-| Publikation (C1) | gross | Sichtbarkeit | Niedrig |
+| Massnahme | Aufwand | Analysegewinn | Priorität | Status |
+|---|---|---|---|---|
+| Gegner-Sex materialisieren (B1) | klein | direkt für NB07 | Hoch | ✅ erledigt |
+| Wide-gap-Matches flaggen (B2) | klein | Datenqualität NB07 | Hoch | ✅ erledigt |
+| Performance vs. Erwartung (A2) | klein | neue Kerndimension | Hoch | ✅ erledigt |
+| Open/Frauenturnier-Split (A1) | mittel | zentral für Interpretation | Hoch | ✅ erledigt |
+| tournament_type closed/knockout | klein | Formatanalyse | Hoch | ✅ erledigt |
+| No-data-Rate analysieren (B3) | klein | neue Dimension | Mittel | ⬜ |
+| Online vs. OTB (B7) | mittel | COVID-Bereinigung | Mittel | ⬜ |
+| TXT-Snapshots 2010–2014 (B5) | mittel | QC + Resolver | Mittel | ✅ Sep 2012+ |
+| Regressionsmodell (A6) | mittel | statistischer Haupttest | Mittel | ⬜ |
+| Karriere-Persistenz (A3) | mittel | neue Fragestellung | Mittel | ⬜ |
+| Dynamische Gruppenzugehörigkeit (B4) | SQL | methodisch sauber | Mittel | ⬜ jetzt möglich |
+| Survivorship-Bias (B8) | SQL | Validierung | Mittel | ⬜ jetzt möglich |
+| Regionale Analyse (A4) | mittel | Kontextualisierung | Niedrig | ⬜ |
+| Turnierkategorie scrapen (B6) | gross | vollständige Formatklassif. | Niedrig | ⬜ |
+| Dashboard (C2) | gross | Reichweite | Niedrig | ⬜ |
+| Publikation (C1) | gross | Sichtbarkeit | Niedrig | ⬜ |
+
+### ELO-Historie-Analysen (F) — kein neues Scraping nötig
+
+| Analyse | Datenbasis | Aufwand | Publikationsreif | Priorität |
+|---|---|---|---|---|
+| Alters-Rating-Kurven (F1) | rating_history + players | klein | **Ja** | **1** |
+| Frauenanteil-Trend / Glass Ceiling (F4) | rating_history + players | klein | **Ja** | **1** |
+| Historische female_top Population (F2) | rating_history + players | klein | Ja | **1** |
+| Rating-Mobilität (F3) | rating_history + players | mittel | Ja | **2** |
+| ELO-Inflation über Generationen (F6) | rating_history + players | mittel | **Ja** | **2** |
+| Survivorship-freie Studiengruppe (F7) | rating_history + wenig Scraping | mittel | — | **2** |
+| Nationale Entwicklungswellen (F5) | rating_history + players | mittel | Ja | **3** |
 
 ### Neue Spielergruppen (D–E)
 

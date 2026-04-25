@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 # Historical FIDE lists use month-based rating column labels (e.g. "FEB15", "JAN26").
 # Current lists use "SRtng". The detector below tries "SRtng" first, then the pattern.
 MONTH_RATING_PATTERN = re.compile(
-    r"\b(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}\b"
+    r"\b(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}\b",
+    re.IGNORECASE  # pre-2015 FIDE files use lowercase (e.g. "sep12")
 )
 
 # Column positions in FIDE fixed-width TXT file (0-indexed, verified April 2026)

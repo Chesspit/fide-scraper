@@ -149,11 +149,13 @@ def insert_new_players(conn, players: list[dict]) -> int:
 
 def upsert_rating_history(conn, players: list[dict], period: str) -> int:
     """Upsert published_rating for every fide_id in the snapshot."""
-    rows = [
-        (p["fide_id"], period, p["std_rating"])
-        for p in players
-        if p["std_rating"]
-    ]
+    # Deduplicate by fide_id — older FIDE files occasionally list a player twice.
+    # Keep the last occurrence (dict preserves insertion order in Python 3.7+).
+    seen: dict[int, tuple] = {}
+    for p in players:
+        if p["std_rating"]:
+            seen[p["fide_id"]] = (p["fide_id"], period, p["std_rating"])
+    rows = list(seen.values())
     if not rows:
         return 0
 

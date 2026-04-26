@@ -410,26 +410,38 @@ eine **wissenschaftliche Publikation** (Abschnitt C1).
 
 ---
 
-### F4. Frauenanteil nach ELO-Band über Zeit — der "Glass Ceiling"-Trend
+### F4. Rating-Schwellen-Analyse: Inflation + Geschlechtsverteilung (kombiniert)
 
-**Forschungsfrage:** Wie hat sich der Frauenanteil in verschiedenen ELO-Bändern
-von 2006 bis 2026 entwickelt? Ist die "gläserne Decke" bei bestimmten Ratings
-stabiler, dünner oder dicker geworden?
+**Forschungsfragen (in einer Analyse):**
+1. Wie viele Spieler stehen in jedem Monat über 2200 / 2300 / 2400 / 2500 / 2600 / 2700 / 2800?
+2. Wie verteilt sich das nach Geschlecht?
+3. Gibt es Rating-Inflation? (absolute Zahlen steigen → mehr Spieler auf hohem Niveau)
+4. Bereinigte Sicht: (Spieler ≥X) / (alle Gerateten) — wächst der Anteil?
+
+**Ergibt 14 Zeitreihen** (7 Schwellen × 2 Geschlechter) von Jan 2006 bis Apr 2026.
+
+Daraus direkt ablesbar:
+- **Inflation:** absolute Kurve bei ≥2600 steigt → mehr Spieler auf Elite-Niveau
+- **Glass Ceiling:** Frauen-Kurve bei ≥2400 flacht ab → die Decke bleibt
+- **Geschlechtsschere:** Abstand der M/F-Kurven bei jeder Schwelle
 
 ```sql
-SELECT period,
-       CASE WHEN published_rating >= 2600 THEN '2600+'
-            WHEN published_rating >= 2400 THEN '2400-2599'
-            WHEN published_rating >= 2200 THEN '2200-2399'
-            WHEN published_rating >= 2000 THEN '2000-2199'
-       END AS band,
-       AVG(CASE WHEN p.sex='F' THEN 1.0 ELSE 0.0 END) AS frauenanteil
+SELECT period, p.sex,
+       SUM(CASE WHEN published_rating >= 2800 THEN 1 END) AS ge_2800,
+       SUM(CASE WHEN published_rating >= 2700 THEN 1 END) AS ge_2700,
+       SUM(CASE WHEN published_rating >= 2600 THEN 1 END) AS ge_2600,
+       SUM(CASE WHEN published_rating >= 2500 THEN 1 END) AS ge_2500,
+       SUM(CASE WHEN published_rating >= 2400 THEN 1 END) AS ge_2400,
+       SUM(CASE WHEN published_rating >= 2300 THEN 1 END) AS ge_2300,
+       SUM(CASE WHEN published_rating >= 2200 THEN 1 END) AS ge_2200
 FROM rating_history rh JOIN players p USING(fide_id)
-WHERE published_rating >= 2000
-GROUP BY 1, 2 ORDER BY 1, 2
+WHERE published_rating IS NOT NULL
+GROUP BY period, p.sex
+ORDER BY period, p.sex
 ```
 
-Reine `rating_history`-Abfrage. Ergibt 20-Jahres-Zeitreihe ohne neues Scraping.
+Reine `rating_history`-Abfrage. **Ersetzt F4 (Glass Ceiling) vollständig** —
+die Geschlechterkomponente ist darin enthalten. Kein separates Glass-Ceiling-Kapitel nötig.
 
 ---
 

@@ -737,7 +737,7 @@ Alle Notebooks nutzen:
 ## Aktueller Datensatz-Stand (2026-04-26)
 
 - **Range:** 2010-01-01 – 2026-03-01 (196 Perioden)
-- **935.162 Partien** in `game_results`
+- **986.403 Partien** in `game_results`
 - **Gegner-Auflösung:** 911.359 / 935.162 (**97,5 %**) aufgelöst
 - **Spieler:** female_top 66, male_control 479, elite_2600 202, swiss_2026 349 exklusiv,
   female_2200 321 ✅ — **1.417 total**
@@ -757,9 +757,9 @@ Alle Notebooks nutzen:
   - Okt 2023 – Apr 2026: vollständig monatlich
   - Skip-Logik 2026-04-26: bereits importierte Perioden werden übersprungen
 - **Ergebnisse (Stand 2026-04-26, 242.028 Fenster):**
-  OK **96,6 %** | Warn 1,7 % | Error 1,7 % | Avg |Δ| 0,9
-  - 2010–2026: 99,8–100 % OK (scraping + snapshots vollständig)
-  - 2006–2009: 44–60 % OK (erwartet: keine Scraping-Daten → MissingP = alle Fenster)
+  OK **97,6 %** | Warn 1,2 % | Error 1,2 % | Avg |Δ| 0,7
+  - 2009–2026: 99,8–100 % OK (2009 nach Backfill validiert, MissingP = 0)
+  - 2006–2008: 44–59 % OK (kein Scraping → MissingP = alle Fenster)
   - 2026: MissingP durch April 2026 noch nicht gescrapt
 - **Bug-Fix 2026-04-24:** Off-by-one in Perioden-Bedingung: `>= T1 / < T2` → `> T1 / <= T2`
 - **FIDE-Korrektur März 2024:** +0,4×(2000−Post-Game) für sub-2000-Spieler; in

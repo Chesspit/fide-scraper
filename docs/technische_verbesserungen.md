@@ -51,45 +51,53 @@ psql postgresql://fide:nimzo194.@localhost:5434/fidedb -c \
 
 ### 0.2 Parallelbetrieb: Gruppen-Zuweisung (--group)
 
-Jede Maschine bekommt eine oder mehrere feste Gruppen. Sauberer als `--shard`
-(round-robin), weil jede Maschine völlig unabhängig arbeitet — kein Ausfall
-einer Maschine beeinflusst die anderen.
+Jede Maschine bekommt eine oder mehrere Gruppen zugeteilt. Jede Maschine
+arbeitet vollständig unabhängig — kein Ausfall einer Maschine beeinflusst
+die anderen. **--shard ist dabei nicht nötig.**
 
-**Empfohlene Aufteilung (3 Maschinen):**
+**Typische Aufteilung bei neuen Gruppen (3 Maschinen):**
 
 ```bash
-# VPS (SSH, tmux) — grosse Gruppen
+# VPS (SSH, tmux) — läuft immer stabil
 docker compose -f /opt/fide-scraper/docker-compose.yml run --no-deps --rm \
   -e DATABASE_URL=postgresql://fide:nimzo194.@10.0.3.1:5432/fidedb \
   scraper python scripts/backfill.py \
   --from 2010-01-01 --to 2026-03-01 \
-  --group male_control elite_2600 \
+  --group neue_gruppe_A \
   > /opt/fide-scraper/backfill_vps.log 2>&1
 
-# Mac Mini (Terminal, via Tunnel)
+# Mac Mini (Terminal, Tunnel offen)
 DATABASE_URL=postgresql://fide:nimzo194.@localhost:5434/fidedb \
   python3 scripts/backfill.py \
   --from 2010-01-01 --to 2026-03-01 \
-  --group female_top female_2200 \
+  --group neue_gruppe_B \
   >> /tmp/backfill_mac_mini.log 2>&1 &
 
-# MacBook Pro (Terminal, via Tunnel, optional mit NordVPN)
+# MacBook Pro (Terminal, Tunnel offen, optional NordVPN)
 DATABASE_URL=postgresql://fide:nimzo194.@localhost:5434/fidedb \
   python3 scripts/backfill.py \
   --from 2010-01-01 --to 2026-03-01 \
-  --group swiss_2026 \
+  --group neue_gruppe_C \
   >> /tmp/backfill_macbook_pro.log 2>&1 &
 ```
 
 **Verfügbare Gruppen:** `female_top`, `male_control`, `elite_2600`,
-`female_2200`, `swiss_2026`
+`female_2200`, `swiss_2026` — und jede künftige neue Gruppe.
 
-**Kombination mit --shard** (bei sehr grossen Gruppen):
+**Wann ist --shard zusätzlich sinnvoll?**
+Nur wenn eine einzelne neue Gruppe sehr gross ist (> 300 Spieler) und
+eine Maschine allein zu lange brauchen würde:
+
 ```bash
-# male_control ist gross (479 Spieler) → aufteilen:
---group male_control --shard 1/2   # Mac Mini
---group male_control --shard 2/2   # MacBook Pro
+# Beispiel: neue Gruppe mit 600 Spielern, ~37h auf einer Maschine → mit --shard auf 12h:
+--group grosse_neue_gruppe --shard 1/3   # VPS
+--group grosse_neue_gruppe --shard 2/3   # Mac Mini
+--group grosse_neue_gruppe --shard 3/3   # MacBook Pro
 ```
+
+**Faustregel:**
+- Gruppe < 300 Spieler → eine Maschine, kein --shard nötig
+- Gruppe > 300 Spieler → --shard über verfügbare Maschinen
 
 ### 0.3 Warum nicht vom Mac?
 

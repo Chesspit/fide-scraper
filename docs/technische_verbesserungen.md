@@ -1,6 +1,81 @@
 # Technische Verbesserungen
 
-Stand: 25. April 2026
+Stand: 26. April 2026
+
+---
+
+## 0. Backfill-Workflow: VPS als primäre Scraping-Maschine
+
+Backfills sollten **immer vom VPS** aus gestartet werden — nicht vom Mac über
+den SSH-Tunnel. Der VPS läuft 24/7, hat eine stabile Verbindung zur lokalen DB
+und ist unabhängig von Mac-Ruhemodus oder Tunnel-Unterbrüchen.
+
+### 0.1 Ablauf (du führst das selbst aus)
+
+**Schritt 1 — SSH ins VPS** (Terminal auf dem Mac):
+```bash
+ssh pit@187.124.181.116
+```
+
+**Schritt 2 — tmux-Session starten** (Prozess läuft weiter nach Ausloggen):
+```bash
+tmux new -s backfill
+```
+
+**Schritt 3 — Backfill starten:**
+```bash
+docker compose -f /opt/fide-scraper/docker-compose.yml run --no-deps --rm \
+  -e DATABASE_URL=postgresql://fide:nimzo194.@10.0.3.1:5432/fidedb \
+  scraper python scripts/backfill.py --from 2010-01-01 --to 2026-03-01 \
+  > /opt/fide-scraper/backfill_$(date +%Y-%m-%d).log 2>&1
+```
+
+**Schritt 4 — Session loslassen** (Prozess läuft weiter):
+```
+Ctrl+B, dann D
+```
+
+**Session später wieder anzeigen:**
+```bash
+ssh pit@187.124.181.116
+tmux attach -t backfill
+```
+
+**Fortschritt prüfen** (vom Mac via Tunnel):
+```bash
+tail -5 /opt/fide-scraper/backfill_YYYY-MM-DD.log   # via SSH
+# oder via Tunnel:
+psql postgresql://fide:nimzo194.@localhost:5434/fidedb -c \
+  "SELECT COUNT(*), ROUND(100.0*COUNT(*)/TOTAL,1) AS pct FROM scrape_periods ..."
+```
+
+### 0.2 Parallelbetrieb: VPS + Mac (--shard)
+
+Für grosse Backfills (> 1 Tag) können VPS und Mac parallel laufen:
+
+```bash
+# VPS (SSH, tmux) — erste Hälfte
+docker compose ... python scripts/backfill.py --from ... --to ... --shard 1/2
+
+# Mac Mini (Terminal, via Tunnel) — zweite Hälfte
+DATABASE_URL=postgresql://fide:nimzo194.@localhost:5434/fidedb \
+  python3 scripts/backfill.py --from ... --to ... --shard 2/2
+```
+
+Jede Maschine nutzt ihre eigene IP → kein erhöhtes FIDE-Blocking-Risiko.
+Das MacBook Pro kann als dritte Instanz (--shard 1/3, 2/3, 3/3) hinzukommen.
+
+### 0.3 Warum nicht vom Mac?
+
+| Kriterium | Mac via Tunnel | VPS direkt |
+|---|---|---|
+| Stabilität | ❌ Tunnel kann abbrechen | ✅ Direkt, kein Tunnel |
+| Ruhemodus | ❌ Mac schläft → Prozess stoppt | ✅ Läuft 24/7 |
+| DB-Latenz | ❌ Tunnel-Overhead | ✅ Lokales Netz |
+| Geschwindigkeit | gleich | gleich |
+
+**NordVPN:** Sinnvoll als Backup-IP für das MacBook Pro bei parallelem Betrieb
+oder falls FIDE einmal eine IP drosselt. Nicht als primäres Optimierungswerkzeug.
 
 ---
 

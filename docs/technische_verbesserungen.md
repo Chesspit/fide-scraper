@@ -49,21 +49,47 @@ psql postgresql://fide:nimzo194.@localhost:5434/fidedb -c \
   "SELECT COUNT(*), ROUND(100.0*COUNT(*)/TOTAL,1) AS pct FROM scrape_periods ..."
 ```
 
-### 0.2 Parallelbetrieb: VPS + Mac (--shard)
+### 0.2 Parallelbetrieb: Gruppen-Zuweisung (--group)
 
-Für grosse Backfills (> 1 Tag) können VPS und Mac parallel laufen:
+Jede Maschine bekommt eine oder mehrere feste Gruppen. Sauberer als `--shard`
+(round-robin), weil jede Maschine völlig unabhängig arbeitet — kein Ausfall
+einer Maschine beeinflusst die anderen.
+
+**Empfohlene Aufteilung (3 Maschinen):**
 
 ```bash
-# VPS (SSH, tmux) — erste Hälfte
-docker compose ... python scripts/backfill.py --from ... --to ... --shard 1/2
+# VPS (SSH, tmux) — grosse Gruppen
+docker compose -f /opt/fide-scraper/docker-compose.yml run --no-deps --rm \
+  -e DATABASE_URL=postgresql://fide:nimzo194.@10.0.3.1:5432/fidedb \
+  scraper python scripts/backfill.py \
+  --from 2010-01-01 --to 2026-03-01 \
+  --group male_control elite_2600 \
+  > /opt/fide-scraper/backfill_vps.log 2>&1
 
-# Mac Mini (Terminal, via Tunnel) — zweite Hälfte
+# Mac Mini (Terminal, via Tunnel)
 DATABASE_URL=postgresql://fide:nimzo194.@localhost:5434/fidedb \
-  python3 scripts/backfill.py --from ... --to ... --shard 2/2
+  python3 scripts/backfill.py \
+  --from 2010-01-01 --to 2026-03-01 \
+  --group female_top female_2200 \
+  >> /tmp/backfill_mac_mini.log 2>&1 &
+
+# MacBook Pro (Terminal, via Tunnel, optional mit NordVPN)
+DATABASE_URL=postgresql://fide:nimzo194.@localhost:5434/fidedb \
+  python3 scripts/backfill.py \
+  --from 2010-01-01 --to 2026-03-01 \
+  --group swiss_2026 \
+  >> /tmp/backfill_macbook_pro.log 2>&1 &
 ```
 
-Jede Maschine nutzt ihre eigene IP → kein erhöhtes FIDE-Blocking-Risiko.
-Das MacBook Pro kann als dritte Instanz (--shard 1/3, 2/3, 3/3) hinzukommen.
+**Verfügbare Gruppen:** `female_top`, `male_control`, `elite_2600`,
+`female_2200`, `swiss_2026`
+
+**Kombination mit --shard** (bei sehr grossen Gruppen):
+```bash
+# male_control ist gross (479 Spieler) → aufteilen:
+--group male_control --shard 1/2   # Mac Mini
+--group male_control --shard 2/2   # MacBook Pro
+```
 
 ### 0.3 Warum nicht vom Mac?
 

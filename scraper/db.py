@@ -194,13 +194,42 @@ def save_period_no_data(conn, fide_id: int, period: str):
         return conn
 
 
+def get_fide_ids_for_groups(conn, groups: list[str]) -> list[int]:
+    """Return fide_ids for the given group names.
+
+    Accepts analysis_group values ('female_top', 'male_control', 'elite_2600',
+    'female_2200') and the special value 'swiss_2026' for the boolean-flag group.
+    """
+    analysis_groups = [g for g in groups if g != "swiss_2026"]
+    include_swiss   = "swiss_2026" in groups
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT fide_id FROM players
+            WHERE (%s AND analysis_group = ANY(%s))
+               OR (%s AND swiss_2026 = TRUE)
+            ORDER BY fide_id
+            """,
+            (bool(analysis_groups), analysis_groups or [""], include_swiss),
+        )
+        return [row[0] for row in cur.fetchall()]
+
+
 def get_pending_periods(
-    conn, periods: list[str], fide_ids: list[int] | None = None
+    conn,
+    periods: list[str],
+    fide_ids: list[int] | None = None,
+    groups: list[str] | None = None,
 ) -> list[tuple[int, str]]:
     """Return (fide_id, period) pairs not yet in scrape_periods.
 
-    If fide_ids is None, uses all players with analysis_group IS NOT NULL.
+    Priority: fide_ids > groups > all analysis players.
+    groups accepts analysis_group values plus 'swiss_2026'.
     """
+    if groups and not fide_ids:
+        fide_ids = get_fide_ids_for_groups(conn, groups)
+
     with conn.cursor() as cur:
         if fide_ids:
             cur.execute(

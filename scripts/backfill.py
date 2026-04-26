@@ -35,6 +35,9 @@ def main():
                         help="End period (YYYY-MM-01)")
     parser.add_argument("--fide-ids", nargs="+", type=int,
                         help="Specific FIDE IDs (default: all analysis players)")
+    parser.add_argument("--group", nargs="+", metavar="GROUP",
+                        help="Only scrape specific groups: female_top male_control "
+                             "elite_2600 female_2200 swiss_2026 (space-separated)")
     parser.add_argument("--shard", metavar="N/M",
                         help="Process only shard N of M (e.g. --shard 1/2 or --shard 2/2). "
                              "Uses round-robin split so both shards finish at the same time. "
@@ -56,7 +59,7 @@ def main():
 
     conn = get_connection()
     try:
-        pending = get_pending_periods(conn, periods, args.fide_ids)
+        pending = get_pending_periods(conn, periods, args.fide_ids, args.group)
 
         # Apply round-robin shard split: shard N/M takes every M-th item starting at N-1
         if shard_m > 1:

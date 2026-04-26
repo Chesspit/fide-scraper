@@ -45,10 +45,33 @@ DEFAULT_COLUMNS = {
 def detect_columns_from_header(header_line: str) -> dict:
     """Try to detect column positions from the header line.
 
-    Handles both current FIDE format (SRtng rating column) and historical
-    format (month-based rating column, e.g. FEB15/JAN26). Falls back to
-    DEFAULT_COLUMNS if detection fails.
+    Handles three formats:
+    - Current (SRtng rating col, Sex/WTit present)
+    - Historical 2012-2015 (month-based rating col e.g. FEB15, Sex/WTit present)
+    - Pre-2013 legacy (month-based e.g. sep09, NO Sex/WTit, shorter layout)
+    Falls back to DEFAULT_COLUMNS if detection fails.
     """
+    # ── Pre-2013 legacy format: "ID number" (lowercase n), no Sex/WTit ──────
+    # Header example: "ID number Name                              TitlFed  Sep09 GamesBorn  Flag"
+    if "ID number" in header_line:
+        cols = {
+            "id":          (0,  9),
+            "name":        (10, 44),
+            "title":       (44, 47),
+            "federation":  (48, 51),
+            "birth_year":  (64, 68),
+            "flag":        (70, 74),
+        }
+        m = MONTH_RATING_PATTERN.search(header_line)
+        if m:
+            cols["std_rating"] = (m.start(), m.start() + 5)
+            logger.info("Detected pre-2013 column layout (rating col: %s, no Sex/WTit): %s",
+                        m.group(), cols)
+            return cols
+        logger.warning("Pre-2013 header found but no rating column detected")
+        return DEFAULT_COLUMNS
+
+    # ── Current and 2012-2015 formats ────────────────────────────────────────
     cols = {}
     markers = {
         "id": "ID Number",
@@ -105,13 +128,19 @@ def open_player_list(filepath: Path) -> Iterator[str]:
 
 
 def parse_player_line(line: str, columns: dict) -> dict | None:
-    """Parse a single line from the FIDE TXT file into a player dict."""
-    if len(line) < 100:
+    """Parse a single line from the FIDE TXT file into a player dict.
+
+    Pre-2013 files have shorter lines and no Sex/WTit columns — those
+    fields default to None and are handled gracefully.
+    """
+    # Pre-2013 lines can be as short as ~60 chars; newer format needs ~100.
+    min_len = 55 if "sex" not in columns else 100
+    if len(line) < min_len:
         return None
 
     def extract(key):
         start, end = columns[key]
-        return line[start:end].strip()
+        return line[start:end].strip() if len(line) > start else ""
 
     fide_id_str = extract("id")
     if not fide_id_str or not fide_id_str.isdigit():
@@ -121,20 +150,23 @@ def parse_player_line(line: str, columns: dict) -> dict | None:
     if not name:
         return None
 
-    rating_str = extract("std_rating")
+    rating_str = extract("std_rating") if "std_rating" in columns else ""
     try:
         std_rating = int(rating_str) if rating_str else 0
     except ValueError:
         std_rating = 0
 
-    birth_str = extract("birth_year")
+    birth_str = extract("birth_year") if "birth_year" in columns else ""
     try:
         birth_year = int(birth_str) if birth_str and len(birth_str) == 4 else None
     except ValueError:
         birth_year = None
 
-    title = extract("title") or None
-    women_title = extract("women_title") or None
+    title = extract("title") if "title" in columns else None
+    title = title or None
+
+    women_title = extract("women_title") if "women_title" in columns else None
+    women_title = women_title or None
 
     flag = extract("flag").lower() if "flag" in columns else ""
     # FIDE flags: 'i' = inactive, 'wi' = woman inactive. Anything else → active.
@@ -143,8 +175,8 @@ def parse_player_line(line: str, columns: dict) -> dict | None:
     return {
         "fide_id": int(fide_id_str),
         "name": name,
-        "federation": extract("federation") or None,
-        "sex": extract("sex") or None,
+        "federation": extract("federation") if "federation" in columns else None,
+        "sex": extract("sex") if "sex" in columns else None,
         "title": title,
         "women_title": women_title,
         "std_rating": std_rating,

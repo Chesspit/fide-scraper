@@ -46,7 +46,9 @@ logger = logging.getLogger(__name__)
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 CURRENT_PATTERN = re.compile(r"players_list_foa_(\d{4})-(\d{2})\.(?:txt|zip)$", re.IGNORECASE)
-FIDE_PATTERN = re.compile(r"standard_([a-z]{3})(\d{2})frl\.(?:txt|zip)$", re.IGNORECASE)
+FIDE_PATTERN    = re.compile(r"standard_([a-z]{3})(\d{2})frl\.(?:txt|zip)$", re.IGNORECASE)
+# Pre-2013 files lack the "standard_" prefix (e.g. sep09frl.zip, aug12frl.zip)
+FIDE_OLD_PATTERN = re.compile(r"^([a-z]{3})(\d{2})frl\.(?:txt|zip)$", re.IGNORECASE)
 
 MONTH_MAP = {
     "jan": "01", "feb": "02", "mar": "03", "apr": "04",
@@ -56,12 +58,20 @@ MONTH_MAP = {
 
 
 def period_from_filename(filepath: Path) -> str | None:
-    """Extract period (YYYY-MM-01) from filename, supporting both naming conventions."""
+    """Extract period (YYYY-MM-01) from filename, supporting all naming conventions."""
     name = filepath.name
     m = CURRENT_PATTERN.search(name)
     if m:
         return f"{m.group(1)}-{m.group(2)}-01"
     m = FIDE_PATTERN.search(name)
+    if m:
+        month = MONTH_MAP.get(m.group(1).lower())
+        if not month:
+            return None
+        year = 2000 + int(m.group(2))
+        return f"{year}-{month}-01"
+    # Pre-2013 files without "standard_" prefix (e.g. sep09frl.zip)
+    m = FIDE_OLD_PATTERN.search(name)
     if m:
         month = MONTH_MAP.get(m.group(1).lower())
         if not month:

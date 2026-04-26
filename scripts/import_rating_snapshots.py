@@ -181,7 +181,22 @@ def upsert_rating_history(conn, players: list[dict], period: str) -> int:
     return len(rows)
 
 
-def import_snapshot(conn, filepath: Path, period: str):
+def period_already_imported(conn, period: str) -> bool:
+    """Return True if rating_history already has published_rating rows for this period."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM rating_history WHERE period = %s AND published_rating IS NOT NULL LIMIT 1",
+            (period,),
+        )
+        return cur.fetchone() is not None
+
+
+def import_snapshot(conn, filepath: Path, period: str, force: bool = False):
+    if not force and period_already_imported(conn, period):
+        logger.info("Skipping %s (period=%s already imported — use --force to re-import)",
+                    filepath.name, period)
+        return
+
     logger.info("Reading %s (period=%s)...", filepath.name, period)
     players = parse_snapshot(filepath)
     logger.info("  Parsed %d players", len(players))
@@ -229,9 +244,10 @@ def main():
         description="Import historical FIDE snapshots into players + rating_history"
     )
     parser.add_argument("--file", type=str, help="Import a specific file")
-    parser.add_argument(
-        "--validate", action="store_true", help="Show scraped-vs-published mismatches"
-    )
+    parser.add_argument("--validate", action="store_true",
+                        help="Show scraped-vs-published mismatches")
+    parser.add_argument("--force", action="store_true",
+                        help="Re-import already-imported periods (default: skip)")
     args = parser.parse_args()
 
     conn = psycopg2.connect(
@@ -248,7 +264,7 @@ def main():
                     "Expected: players_list_foa_YYYY-MM.{txt,zip} or standard_mmmYYfrl.{txt,zip}"
                 )
                 sys.exit(1)
-            import_snapshot(conn, filepath, period)
+            import_snapshot(conn, filepath, period, force=args.force)
         else:
             snapshots = find_snapshot_files(DATA_DIR)
             if not snapshots:
@@ -257,7 +273,7 @@ def main():
 
             logger.info("Found %d snapshot files", len(snapshots))
             for filepath, period in snapshots:
-                import_snapshot(conn, filepath, period)
+                import_snapshot(conn, filepath, period, force=args.force)
 
         if args.validate:
             show_validation(conn)

@@ -751,15 +751,16 @@ Alle Notebooks nutzen:
 ### QC-System (Stand 2026-04-25)
 
 - **Dateien:** `migrations/004–006`, `scripts/quality_check.py`, `notebooks/08_qc_elo_analysis.ipynb`
-- **TXT-Snapshots:** **164 Perioden** in `data/` — **Sep 2012 – Apr 2026, monatlich lückenlos**
-  (Jan–Aug 2012 folgen separat; ältere Formate in Prüfung)
-  - Parser-Fix 2026-04-25: `re.IGNORECASE` für pre-2015-Dateinamen (z.B. `sep12`)
-  - Dedup-Fix 2026-04-25: ältere FIDE-Listen enthalten gelegentlich doppelte fide_ids
-- **Ergebnisse (Stand 2026-04-26, 213.942 Fenster):**
-  OK **99,3 %** | Warn 0,5 % | Error 0,2 % | Avg |Δ| 0,3
-  - 2012–2023: >99 % OK (exzellent)
-  - 2024: 95 % OK (Spiegel-Deltas female_2200)
-  - 2026: 88,6 % (MissingP: April 2026 noch nicht gescrapt)
+- **TXT-Snapshots:** **195 Perioden** in `data/` — **Jan 2006 – Apr 2026**
+  - Jan 2006 – Aug 2012: quartalsweise (kein `standard_`-Präfix, kein Sex/WTit-Feld)
+  - Sep 2012 – Sep 2023: monatlich (mit einzelnen Lücken)
+  - Okt 2023 – Apr 2026: vollständig monatlich
+  - Skip-Logik 2026-04-26: bereits importierte Perioden werden übersprungen
+- **Ergebnisse (Stand 2026-04-26, 242.028 Fenster):**
+  OK **96,6 %** | Warn 1,7 % | Error 1,7 % | Avg |Δ| 0,9
+  - 2010–2026: 99,8–100 % OK (scraping + snapshots vollständig)
+  - 2006–2009: 44–60 % OK (erwartet: keine Scraping-Daten → MissingP = alle Fenster)
+  - 2026: MissingP durch April 2026 noch nicht gescrapt
 - **Bug-Fix 2026-04-24:** Off-by-one in Perioden-Bedingung: `>= T1 / < T2` → `> T1 / <= T2`
 - **FIDE-Korrektur März 2024:** +0,4×(2000−Post-Game) für sub-2000-Spieler; in
   `rating_corrections` erfasst, QC berücksichtigt Korrekturen automatisch

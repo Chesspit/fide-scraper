@@ -203,8 +203,8 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 
 | Kennzahl | Wert |
 |---|---|
-| **Gesamt-Partien** | **986.403** |
-| **Gegner aufgelöst** | **97,5 %** |
+| **Gesamt-Partien** | **997.967+** (wächst mit male_control-Backfill) |
+| **Gegner aufgelöst** | **96,4 %** (sinkt vorübergehend, steigt nach resolve_opponents) |
 | **Spieler gesamt** | **1.583** |
 | **Perioden** | **208 (2009-01 bis 2026-03)** |
 
@@ -215,7 +215,7 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 | Gruppe | Spieler | Range | Status |
 |---|---|---|---|
 | female_top | 66 | 2009-01 – 2026-03 | ✅ complete |
-| male_control | 649 | 2009-01 – 2026-03 | ⏳ running (+170 neu) |
+| male_control | 649 | 2009-01 – 2026-03 | ⏳ ~77 %, ETA 2026-04-27 04:30 |
 | elite_2600 | 202 | 2009-01 – 2026-03 | ✅ complete |
 | female_2200 | 321 | 2009-01 – 2026-03 | ✅ complete |
 | swiss_2026 | 349 | 2009-01 – 2026-03 | ✅ complete |
@@ -338,9 +338,10 @@ docker compose -f /opt/fide-scraper/docker-compose.yml run --no-deps --rm \
 
 | Aufgabe | Priorität | Status |
 |---|---|---|
-| male_control Backfill (+170) | Hoch | ⏳ läuft auf VPS (~ETA morgen früh) |
-| male_2200 Backfill starten | Hoch | ⬜ nach male_control: `backfill_group.sh male_2200` |
-| Notebooks 01–09 ausführen | Hoch | ⬜ bereit |
+| male_control Backfill (+170) | Hoch | ⏳ ~77 %, ETA 04:30 Uhr |
+| Nach Abschluss: resolve + QC-Rebuild | Hoch | ⬜ automatisch anstoßen |
+| male_2200 Backfill starten | Hoch | ⬜ `ssh pit@... && bash backfill_group.sh male_2200` |
+| Notebooks 01–09 ausführen | Hoch | ⬜ bereit (NB09 neu: Rating-Geschichte) |
 | no_data-Ursachen klassifizieren (B3) | Mittel | ⬜ View implementieren |
 | Nächste Analysegruppen definieren | Mittel | ⬜ nach Analyse-Phase |
 | April 2026 scrapen | Niedrig | ⬜ ab Mai verfügbar |

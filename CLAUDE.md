@@ -737,11 +737,13 @@ Alle Notebooks nutzen:
 ## Aktueller Datensatz-Stand (2026-04-26)
 
 - **Range:** 2010-01-01 – 2026-03-01 (196 Perioden)
-- **986.403+ Partien** in `game_results` (wächst mit male_control-Backfill)
+- **997.967+ Partien** in `game_results` (wächst mit male_control-Backfill, ~77 %)
 - **Gegner-Auflösung:** 911.359 / 935.162 (**97,5 %**) aufgelöst
-- **Spieler:** female_top 66, male_control 649 (⏳ Backfill läuft), elite_2600 202,
-  swiss_2026 349 exklusiv, female_2200 321 ✅, male_2200 170 (⬜ pending) — **1.583 total**
-- **Neue Tabelle:** `groups` (Migration 010) — zentrale Gruppenübersicht mit Status
+- **Spieler:** female_top 66 ✅, male_control 649 ⏳ (Backfill ~77 %, ETA 04:30),
+  elite_2600 202 ✅, swiss_2026 349 exklusiv ✅, female_2200 321 ✅,
+  male_2200 170 ⬜ (pending) — **1.583 total**
+- **Tabelle `groups`** (Migration 010) — zentrale Gruppenübersicht mit Backfill-Status
+- **VPS-Backfill-Script:** `/opt/fide-scraper/backfill_group.sh GRUPPE [FROM] [TO]`
 - **Neue Spalten in `game_results`** (migrations 007–009):
   - `opponent_sex` (CHAR 1) — 98,1 % befüllt
   - `tournament_type` — `open` | `women` | `team` | `women_team` | `closed` | `knockout`

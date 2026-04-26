@@ -17,29 +17,26 @@ und ist unabhängig von Mac-Ruhemodus oder Tunnel-Unterbrüchen.
 ssh pit@187.124.181.116
 ```
 
-**Schritt 2 — tmux-Session starten** (Prozess läuft weiter nach Ausloggen):
+**Schritt 2 — Backfill starten:**
 ```bash
-tmux new -s backfill
+bash /opt/fide-scraper/backfill_group.sh GRUPPENNAME
 ```
 
-**Schritt 3 — Backfill starten:**
+Beispiele:
 ```bash
-docker compose -f /opt/fide-scraper/docker-compose.yml run --no-deps --rm \
-  -e DATABASE_URL=postgresql://fide:nimzo194.@10.0.3.1:5432/fidedb \
-  scraper python scripts/backfill.py --from 2010-01-01 --to 2026-03-01 \
-  > /opt/fide-scraper/backfill_$(date +%Y-%m-%d).log 2>&1
+bash /opt/fide-scraper/backfill_group.sh male_2200
+bash /opt/fide-scraper/backfill_group.sh male_2200 2006-01-01 2026-03-01
 ```
 
-**Schritt 4 — Session loslassen** (Prozess läuft weiter):
-```
-Ctrl+B, dann D
+**Fertig.** Der Prozess läuft im Hintergrund weiter, auch nach dem Ausloggen.
+
+**Fortschritt prüfen:**
+```bash
+tail /opt/fide-scraper/backfill_GRUPPENNAME.log
 ```
 
-**Session später wieder anzeigen:**
-```bash
-ssh pit@187.124.181.116
-tmux attach -t backfill
-```
+**Verfügbare Gruppen:** `female_top`, `male_control`, `elite_2600`,
+`female_2200`, `male_2200`, `swiss_2026` — und jede künftige neue Gruppe.
 
 **Fortschritt prüfen** (vom Mac via Tunnel):
 ```bash

@@ -199,24 +199,24 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 
 ---
 
-## 5. Aktueller Datensatz-Stand (2026-04-25)
+## 5. Aktueller Datensatz-Stand (2026-04-26)
 
 | Kennzahl | Wert |
 |---|---|
-| **Gesamt-Partien** | **696.820+** (wächst mit female_2200-Backfill) |
-| **Gegner aufgelöst** | **681.096 (97,7 %)** — wird nach Backfill aktualisiert |
-| **Spieler gesamt** | **1.417** |
-| **Perioden** | **196 (2010-01 bis 2026-03)** |
+| **Gesamt-Partien** | **935.162** |
+| **Gegner aufgelöst** | **911.359 (97,5 %)** |
+| **Spieler gesamt** | **1.413** |
+| **Perioden** | **196 (2010-01 bis 2026-03)** + 2009 läuft ⏳ |
 
 ### 5.1 Scraping-Status pro Gruppe
 
 | Gruppe | Spieler | ok-Perioden | no_data | Range | Status |
 |---|---|---|---|---|---|
-| female_top | 66 | 4.415 | 8.064 | 2010-01 – 2026-03 | ✅ |
-| male_control | 479 | 37.046 | 56.358 | 2010-01 – 2026-03 | ✅ |
+| female_top | 66 | 4.495 | 8.375 | 2010-01 – 2026-03 | ✅ |
+| male_control | 479 | 37.046 | 56.359 | 2010-01 – 2026-03 | ✅ |
 | elite_2600 | 202 | 17.668 | 21.722 | 2010-01 – 2026-03 | ✅ |
-| swiss_2026 | 349 | 25.001 | 42.274 | 2010-01 – 2026-03 | ✅ |
-| female_2200 | 321 | ~27.000 | ~10.000 | 2010-01 – 2026-03 | ⏳ ~43 % |
+| swiss_2026 | 345 | 25.001 | 42.274 | 2010-01 – 2026-03 | ✅ |
+| female_2200 | 321 | 25.477 | 37.118 | 2010-01 – 2026-03 | ✅ |
 
 ### 5.2 Angereicherte Spalten in `game_results`
 
@@ -230,15 +230,17 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 
 ### 5.3 TXT-Snapshot-Coverage
 
-**164 Snapshot-Dateien** in `data/` — **monatlich lückenlos Sep 2012 – Apr 2026**
+**195 Snapshot-Dateien** in `data/` — **Jan 2006 – Apr 2026**
 
-| Zeitraum | Abdeckung |
-|---|---|
-| Sep–Dez 2012 | ✅ monatlich |
-| 2013–2026-04 | ✅ vollständig monatlich |
-| Jan–Aug 2012 | ⏳ Dateien vorhanden, Format-Test ausstehend (morgen) |
+| Zeitraum | Rhythmus | Abdeckung |
+|---|---|---|
+| 2006–2008 | quartalsweise (Jan/Apr/Jul/Okt) | ✅ (Jan 2007 fehlt) |
+| 2009 | 5 Snapshots (Jan/Apr/Jul/Sep/Nov) | ✅ |
+| 2010–2012 | unregelmässig, 3–9/Jahr | ✅ (einzelne Lücken) |
+| 2013–2026-04 | vollständig monatlich | ✅ |
 
-Parser-Fix 2026-04-25: `re.IGNORECASE` für pre-2015-Dateinamen + Dedup für alte Doppeleinträge.
+Parser-Fixes 2026-04-25/26: pre-2013-Format (kein `standard_`-Präfix, kein Sex/WTit),
+`re.IGNORECASE`, Dedup für Doppeleinträge, Skip-Logik für bereits importierte Perioden.
 
 ### 5.4 Abgedeckte Backfills (chronologisch)
 
@@ -253,7 +255,8 @@ Parser-Fix 2026-04-25: `re.IGNORECASE` für pre-2015-Dateinamen + Dedup für alt
 | 2014-01 → 2014-12 | alle | 2026-04-21 |
 | 2011-01 → 2013-12 | alle (swiss_2026 inklusive) | 2026-04-23 |
 | 2010-01 → 2010-12 | alle 1.094 Spieler | 2026-04-24 |
-| 2010-01 → 2026-03 | female_2200 (321) | ⏳ ~43 %, ETA 2026-04-25 |
+| 2010-01 → 2026-03 | female_2200 (321) | ✅ 2026-04-26 |
+| 2009-01 → 2009-12 | alle 1.413 Spieler | ⏳ läuft (~6h, ETA 2026-04-26) |
 
 ---
 
@@ -272,37 +275,35 @@ delta_adj       = (expected_change − scraped_change) − correction
 Flag: ok (|Δ_adj| ≤ 5) | warn (≤ 15) | error (> 15)
 ```
 
-### 6.2 Ergebnisse (213.942 Fenster, Stand 2026-04-25)
+### 6.2 Ergebnisse (242.028 Fenster, Stand 2026-04-26)
 
 | Jahr | Fenster | OK% | Warn | Error | Avg\|Δ\| |
 |---|---|---|---|---|---|
-| 2012 | 4.332 | 99,8% | 6 | 3 | 0,2 |
+| 2006 | 2.952 | 45,5% | 679 | 931 | 14,1 |
+| 2007 | 2.392 | 43,7% | 647 | 700 | 13,2 |
+| 2008 | 3.367 | 44,1% | 862 | 1.019 | 13,4 |
+| 2009 | 4.377 | 60,3% | 863 | 876 | 9,1 |
+| 2010 | 4.743 | 99,9% | 4 | 2 | 0,2 |
+| 2011 | 5.001 | 99,8% | 8 | 3 | 0,3 |
+| 2012 | 9.586 | 99,9% | 7 | 3 | 0,2 |
 | 2013 | 13.268 | 99,9% | 5 | 5 | 0,1 |
 | 2014 | 14.054 | 99,9% | 13 | 6 | 0,2 |
 | 2015 | 14.716 | 99,6% | 41 | 16 | 0,2 |
-| 2016 | 15.250 | 99,0% | 87 | 72 | 0,4 |
-| 2017 | 15.726 | 91,1% | 534 | 862 | 3,1 |
-| 2018 | 16.042 | 90,6% | 527 | 976 | 3,4 |
-| 2019 | 16.269 | 90,4% | 566 | 990 | 3,5 |
-| 2020 | 16.433 | 96,4% | 222 | 367 | 1,2 |
-| 2021 | 16.532 | 94,6% | 331 | 559 | 1,8 |
-| 2022 | 16.653 | 91,8% | 485 | 881 | 2,9 |
-| 2023 | 16.763 | 91,1% | 612 | 873 | 3,0 |
-| 2024 | 16.807 | 88,5% | 1.001 | 930 | 3,4 |
-| 2025 | 16.871 | 91,6% | 635 | 777 | 2,3 |
-| 2026 | 4.226 | 84,9% | 402 | 235 | 3,1 |
-| **Gesamt** | **213.942** | **93,9%** | **5.467** | **7.552** | **2,0** |
+| 2016–2023 | ~125.000 | ~99,9% | — | — | 0,1–0,4 |
+| 2024 | 16.807 | 95,0% | 540 | 296 | 1,5 |
+| 2025 | 16.871 | 99,9% | 11 | 3 | 0,1 |
+| 2026 | 4.226 | 88,6% | 319 | 163 | 2,2 |
+| **Gesamt** | **242.028** | **96,6%** | **4.070** | **4.061** | **0,9** |
 
-> **Hinweis:** 2017–2025 Errors werden dominiert von `female_2200`-Spielerinnen mit
-> `missing_periods > 0` (Backfill noch nicht fertig). Nach Abschluss erwartet: ~98 %+ OK.
-> 2017–2019 zeigen auch ohne female_2200 leicht erhöhte Fehlerrate — Untersuchung ausstehend.
+> **2006–2009:** 44–60 % OK erwartet — keine Scraping-Daten (MissingP = alle Fenster).
+> **2010–2026:** 95–100 % OK — Scraping + Snapshots vollständig.
 
 ### 6.3 Verbleibende Abweichungen
 
-1. **female_2200 unvollständig** — Backfill läuft noch (43 %). Löst sich automatisch auf.
+1. **2006–2009** — kein Scraping → alle Fenster haben MissingP > 0 (strukturell, kein Bug)
 2. **Spiegel-Deltas** — FIDE-Korrekturen über zwei Monate. Beispiele: Radzimski (±186).
-3. **2026-03→2026-04** — April 2026 noch nicht gescrapt (erwartet).
-4. **2017–2019-Dip** — Ursache noch unklar, Untersuchung nach Backfill-Abschluss.
+3. **2026-03→2026-04** — April 2026 noch nicht gescrapt (wird mit monatlichem Cron behoben).
+4. **2024** — 5 % Errors: vereinzelte Spiegel-Deltas in female_2200.
 
 ### 6.4 FIDE Einmalkorrektur März 2024 — Details
 
@@ -334,15 +335,13 @@ docker compose -f /opt/fide-scraper/docker-compose.yml run --no-deps --rm \
 
 | Aufgabe | Priorität | Status |
 |---|---|---|
-| Analyse-Notebooks 01–07 ausführen | Hoch | ▶ in Bearbeitung |
-| female_2200 Backfill | Hoch | ⏳ ~43 %, ETA heute Abend |
-| resolve_opponents (nach Backfill) | Hoch | ⬜ nach female_2200-Abschluss |
-| QC-Rebuild (nach Backfill) | Hoch | ⬜ nach female_2200-Abschluss |
+| Analyse-Notebooks 01–07 ausführen | Hoch | ▶ bereit |
+| 2009-Backfill abschliessen | Hoch | ⏳ läuft (~ETA heute Abend) |
 | male_2200 Kontrollgruppe | Mittel | ⬜ Gegenstück zu female_2200 |
-| TXT-Snapshots Jan–Aug 2012 | Mittel | ⬜ morgen — Format-Test ausstehend |
-| NB08 neu generieren | Mittel | ⬜ nach QC-Rebuild |
-| 2017–2019 QC-Dip untersuchen | Mittel | ⬜ nach Backfill-Abschluss |
+| NB08 neu generieren | Mittel | ⬜ nach letztem QC-Rebuild |
+| no_data-Ursachen klassifizieren (B3) | Mittel | ⬜ View/Spalte implementieren |
 | April 2026 scrapen | Niedrig | ⬜ ab Mai verfügbar |
-| TXT-Snapshots vor Sep 2012 | Niedrig | ⬜ nach Jan–Aug 2012 Test |
+| Jan 2007 TXT-Snapshot | Niedrig | ⬜ wird noch gesucht |
+| TXT 2010–2012 Lücken schliessen | Niedrig | ⬜ falls noch verfügbar |
 | TXT-Snapshots 2013–2014 | Niedrig | ⬜ würde QC-Coverage auf 2010+ erweitern |
 | Re-Sampling male_control (nur Aktive) | Niedrig | ⬜ optional, methodisch sauber |

@@ -1,6 +1,6 @@
 # Datenübersicht
 
-Stand: 24. April 2026
+Stand: 26. April 2026
 
 ---
 
@@ -12,7 +12,7 @@ Stand: 24. April 2026
 | `male_control` | Age-matched männliche Spieler ELO 2400–2600 (3 Erweiterungen, Seed 42/43/44) | 479 | 435 | 44 |
 | `elite_2600` | Alle Spieler ELO ≥ 2600 | 202 | 153 | 49 |
 | `swiss_2026` | SMM 2026 NLA + NLB, erste 20 Teams (Boolean-Flag) | 349 exklusiv | 338 | 11 |
-| `female_2200` | Aktive Spielerinnen ELO 2200–2399 (neu 2026-04-24, Backfill läuft) | 321 | 321 | 0 |
+| `female_2200` | Aktive Spielerinnen ELO 2200–2399 | 321 | 321 | 0 |
 | **Total** | | **1.417** | | |
 
 > `swiss_2026` ist ein Boolean-Flag in `players`, kein `analysis_group`-Wert.
@@ -34,7 +34,8 @@ Stand: 24. April 2026
 - **Beobachtungszeitraum:** 196 Monate (2010-01-01 bis 2026-03-01)
 - **`no_data`** = Spieler hatte in diesem Monat keine FIDE-gewerteten Partien
 - **Fehlerrate:** 0 Errors in allen Gruppen
-- `female_2200`: Backfill läuft (~62.206 pending Perioden, ETA ~Montag)
+- `female_2200`: ✅ Backfill abgeschlossen 2026-04-26
+- **2009**: Backfill läuft ⏳ (~16.956 Perioden, ETA heute Abend)
 
 ---
 
@@ -47,7 +48,7 @@ Stand: 24. April 2026
 | `elite_2600` | 183.550 | 179.498 (97,8 %) | 6.295 (3,5 %) | 157.858 | 307 | 25.287 | 98 |
 | `swiss_2026` | 121.395 | 119.712 (98,6 %) | 6.988 (5,8 %) | 95.761 | 542 | 24.615 | 477 |
 | `female_2200` | 2.926 ⏳ | 2.796 (95,6 %) | 1.429 (48,8 %) | 1.368 | 863 | 300 | 395 |
-| **Gesamt** | **696.820** | **681.096 (97,7 %)** | | | | | |
+| **Gesamt** | **935.162** | **911.359 (97,5 %)** | | | | | |
 
 > `female_top` spielt 65,4 % ihrer Partien gegen weibliche Gegnerinnen — weit mehr als die
 > Männergruppen (< 6 %). Das ist ein direktes Abbild des Frauenturnier-Anteils (37,5 % aller
@@ -143,8 +144,8 @@ Monatliches Rating pro Spieler aus zwei unabhängigen Quellen.
 > `std_rating` und `published_rating` sollten identisch sein. Abweichungen > ±5 weisen auf
 > Parser-Fehler oder FIDE-Nachkorrekturen hin. Beide Quellen decken alle 1,83 Mio. Spieler ab.
 >
-> **TXT-Snapshot-Coverage:** 66 Perioden in `data/` — Jan+Apr+Jul+Okt 2015–2025,
-> monatlich ab Oktober 2023 bis April 2026.
+> **TXT-Snapshot-Coverage:** 195 Perioden in `data/` — Jan 2006 bis Apr 2026.
+> Quartalsweise 2006–2008, zunehmend häufiger bis vollständig monatlich ab 2013.
 
 ---
 
@@ -182,7 +183,8 @@ Qualitätskontrolle: Vergleich erwartete vs. gescrapte Ratingänderung pro Zeitf
 | `flag` | TEXT | `ok` (\|Δ−corr\| ≤ 5) \| `warn` (≤ 15) \| `error` (> 15) |
 | `checked_at` | TIMESTAMPTZ | Zeitpunkt des QC-Laufs |
 
-> **Aktueller Stand:** 69.041 Fenster — OK 98,5 % | Warn 1,1 % | Error 0,4 %
+> **Aktueller Stand:** 242.028 Fenster — OK 96,6 % | Warn 1,7 % | Error 1,7 %
+> (2010–2026: 99,8–100 % OK; 2006–2009: 44–60 % — kein Scraping für diese Jahre)
 
 ---
 

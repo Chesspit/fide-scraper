@@ -203,20 +203,23 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 
 | Kennzahl | Wert |
 |---|---|
-| **Gesamt-Partien** | **935.162** |
-| **Gegner aufgelöst** | **911.359 (97,5 %)** |
-| **Spieler gesamt** | **1.413** |
-| **Perioden** | **196 (2010-01 bis 2026-03)** + 2009 läuft ⏳ |
+| **Gesamt-Partien** | **986.403** |
+| **Gegner aufgelöst** | **97,5 %** |
+| **Spieler gesamt** | **1.583** |
+| **Perioden** | **208 (2009-01 bis 2026-03)** |
 
 ### 5.1 Scraping-Status pro Gruppe
 
-| Gruppe | Spieler | ok-Perioden | no_data | Range | Status |
-|---|---|---|---|---|---|
-| female_top | 66 | 4.495 | 8.375 | 2010-01 – 2026-03 | ✅ |
-| male_control | 479 | 37.046 | 56.359 | 2010-01 – 2026-03 | ✅ |
-| elite_2600 | 202 | 17.668 | 21.722 | 2010-01 – 2026-03 | ✅ |
-| swiss_2026 | 345 | 25.001 | 42.274 | 2010-01 – 2026-03 | ✅ |
-| female_2200 | 321 | 25.477 | 37.118 | 2010-01 – 2026-03 | ✅ |
+Übersicht auch in DB-Tabelle `groups` (Migration 010) abrufbar.
+
+| Gruppe | Spieler | Range | Status |
+|---|---|---|---|
+| female_top | 66 | 2009-01 – 2026-03 | ✅ complete |
+| male_control | 649 | 2009-01 – 2026-03 | ⏳ running (+170 neu) |
+| elite_2600 | 202 | 2009-01 – 2026-03 | ✅ complete |
+| female_2200 | 321 | 2009-01 – 2026-03 | ✅ complete |
+| swiss_2026 | 349 | 2009-01 – 2026-03 | ✅ complete |
+| male_2200 | 170 | — | ⬜ pending |
 
 ### 5.2 Angereicherte Spalten in `game_results`
 
@@ -335,13 +338,12 @@ docker compose -f /opt/fide-scraper/docker-compose.yml run --no-deps --rm \
 
 | Aufgabe | Priorität | Status |
 |---|---|---|
-| Analyse-Notebooks 01–07 ausführen | Hoch | ▶ bereit |
-| 2009-Backfill abschliessen | Hoch | ⏳ läuft (~ETA heute Abend) |
-| male_2200 Kontrollgruppe | Mittel | ⬜ Gegenstück zu female_2200 |
-| NB08 neu generieren | Mittel | ⬜ nach letztem QC-Rebuild |
-| no_data-Ursachen klassifizieren (B3) | Mittel | ⬜ View/Spalte implementieren |
+| male_control Backfill (+170) | Hoch | ⏳ läuft auf VPS (~ETA morgen früh) |
+| male_2200 Backfill starten | Hoch | ⬜ nach male_control: `backfill_group.sh male_2200` |
+| Notebooks 01–09 ausführen | Hoch | ⬜ bereit |
+| no_data-Ursachen klassifizieren (B3) | Mittel | ⬜ View implementieren |
+| Nächste Analysegruppen definieren | Mittel | ⬜ nach Analyse-Phase |
 | April 2026 scrapen | Niedrig | ⬜ ab Mai verfügbar |
 | Jan 2007 TXT-Snapshot | Niedrig | ⬜ wird noch gesucht |
-| TXT 2010–2012 Lücken schliessen | Niedrig | ⬜ falls noch verfügbar |
 | TXT-Snapshots 2013–2014 | Niedrig | ⬜ würde QC-Coverage auf 2010+ erweitern |
 | Re-Sampling male_control (nur Aktive) | Niedrig | ⬜ optional, methodisch sauber |

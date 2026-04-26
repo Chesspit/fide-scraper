@@ -13,6 +13,7 @@ Stand: 26. April 2026
 | `elite_2600` | Alle Spieler ELO ≥ 2600 | 202 | 153 | 49 |
 | `swiss_2026` | SMM 2026 NLA + NLB, erste 20 Teams (Boolean-Flag) | 349 exklusiv | 338 | 11 |
 | `female_2200` | Aktive Spielerinnen ELO 2200–2399 | 321 | 321 | 0 |
+| `male_2200` | Age-matched Männer ELO 2200–2399 (Seed 45) | 170 | 170 | 0 |
 | **Total** | | **1.417** | | |
 
 > `swiss_2026` ist ein Boolean-Flag in `players`, kein `analysis_group`-Wert.

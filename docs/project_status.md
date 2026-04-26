@@ -215,7 +215,7 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 | Gruppe | Spieler | Range | Status |
 |---|---|---|---|
 | female_top | 66 | 2009-01 – 2026-03 | ✅ complete |
-| male_control | 649 | 2009-01 – 2026-03 | ⏳ ~77 %, ETA 2026-04-27 04:30 |
+| male_control | 649 | 2009-01 – 2026-03 | ⏳ +170 neu: 12 %, ETA 2026-04-27 04:30 |
 | elite_2600 | 202 | 2009-01 – 2026-03 | ✅ complete |
 | female_2200 | 321 | 2009-01 – 2026-03 | ✅ complete |
 | swiss_2026 | 349 | 2009-01 – 2026-03 | ✅ complete |

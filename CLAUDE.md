@@ -734,14 +734,13 @@ Alle Notebooks nutzen:
 
 ---
 
-## Aktueller Datensatz-Stand (2026-04-25)
+## Aktueller Datensatz-Stand (2026-04-26)
 
 - **Range:** 2010-01-01 – 2026-03-01 (196 Perioden)
-- **696.820+ Partien** in `game_results` (wächst mit female_2200-Backfill)
-- **Gegner-Auflösung:** 681.096 / 696.820 (**97,7 %**) aufgelöst — nach period-aware
-  Re-Run mit 164 Snapshots + Fuzzy-Matching. Wird nach female_2200-Backfill aktualisiert.
+- **935.162 Partien** in `game_results`
+- **Gegner-Auflösung:** 911.359 / 935.162 (**97,5 %**) aufgelöst
 - **Spieler:** female_top 66, male_control 479, elite_2600 202, swiss_2026 349 exklusiv,
-  female_2200 321 (⏳ Backfill ~43 %, ETA heute Abend) — **1.417 total**
+  female_2200 321 ✅ — **1.417 total**
 - **Neue Spalten in `game_results`** (migrations 007–009):
   - `opponent_sex` (CHAR 1) — 98,1 % befüllt
   - `tournament_type` — `open` | `women` | `team` | `women_team` | `closed` | `knockout`
@@ -756,12 +755,11 @@ Alle Notebooks nutzen:
   (Jan–Aug 2012 folgen separat; ältere Formate in Prüfung)
   - Parser-Fix 2026-04-25: `re.IGNORECASE` für pre-2015-Dateinamen (z.B. `sep12`)
   - Dedup-Fix 2026-04-25: ältere FIDE-Listen enthalten gelegentlich doppelte fide_ids
-- **Ergebnisse (Stand 2026-04-25, 213.942 Fenster):**
-  OK **93,9 %** | Warn 2,6 % | Error 3,5 % | Median |Δ| 0,0
-  - 2012–2015: >99 % OK (exzellent)
-  - 2017–2019: ~90 % OK — erhöhte Fehlerrate, Untersuchung ausstehend
-  - female_2200-Errors: Backfill läuft noch → löst sich nach Abschluss auf
-  - Nach female_2200-Backfill: QC-Rebuild erwartet wieder ~98 %+
+- **Ergebnisse (Stand 2026-04-26, 213.942 Fenster):**
+  OK **99,3 %** | Warn 0,5 % | Error 0,2 % | Avg |Δ| 0,3
+  - 2012–2023: >99 % OK (exzellent)
+  - 2024: 95 % OK (Spiegel-Deltas female_2200)
+  - 2026: 88,6 % (MissingP: April 2026 noch nicht gescrapt)
 - **Bug-Fix 2026-04-24:** Off-by-one in Perioden-Bedingung: `>= T1 / < T2` → `> T1 / <= T2`
 - **FIDE-Korrektur März 2024:** +0,4×(2000−Post-Game) für sub-2000-Spieler; in
   `rating_corrections` erfasst, QC berücksichtigt Korrekturen automatisch

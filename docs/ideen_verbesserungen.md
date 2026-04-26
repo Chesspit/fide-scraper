@@ -93,12 +93,62 @@ WHERE ABS(gr.opponent_rating - p.std_rating) > 200
 ORDER BY diff DESC;
 ```
 
-### B3. No-data-Rate als eigene Analysedimension *(klein)*
+### B3. No-data-Ursachen unterscheiden *(mittel, methodisch wichtig)*
 
-`status='no_data'` in `scrape_periods` bedeutet: In dieser Periode wurden keine
-FIDE-gewerteten Partien gespielt. Die No-data-Rate pro Gruppe und Zeitraum ist
-selbst ein Indikator für Turnierfrequenz und -verfügbarkeit — besonders relevant
-für 2010–2014 und den COVID-Einbruch 2020.
+`status='no_data'` in `scrape_periods` hat aktuell **drei unterschiedliche Bedeutungen**,
+die nicht unterschieden werden:
+
+| Ursache | Beispiel | Analytisch |
+|---|---|---|
+| **Inaktiv** | Spieler hat diesen Monat nicht gespielt | bewusste Wahl, aussagekräftig |
+| **Noch nicht registriert** | Spielerin geb. 2008, hat 2010 keine FIDE-ID | strukturell, kein Aussagewert |
+| **System-Limitation** | Feb 2009 existiert nicht (bi-monatlich) | technisch, kein Aussagewert |
+
+**Problem:** Wird `no_data` als Proxy für Inaktivität oder Turnierfrequenz genutzt
+(z.B. in NB03), vermischen sich diese drei Gruppen. Eine junge Spielerin mit
+`no_data` in 2010 ist nicht „inaktiv" — sie existierte schlicht noch nicht im System.
+
+**FIDE-Rhythmus-Historie:**
+- Vor ca. 2009-07: bi-monatliche Listen (Jan, Mär, Mai, Jul, Sep, Nov)
+- 2009-07 bis ca. 2012: monatlich, aber lückenhaft
+- Ab 2013: vollständig monatlich
+
+**Lösungsvorschlag:** Neue Spalte `no_data_reason` in `scrape_periods` oder
+eine View die die Ursache ableitet:
+
+```sql
+-- Ableitung der no_data-Ursache
+SELECT sp.fide_id, sp.period,
+    CASE
+        -- System: Periode existiert strukturell nicht (vor monatlichem FIDE-System)
+        WHEN sp.period < '2009-07-01'
+         AND EXTRACT(MONTH FROM sp.period) NOT IN (1,3,5,7,9,11)
+        THEN 'system_gap'
+
+        -- Noch nicht registriert: Spieler war in dieser Periode noch sehr jung
+        WHEN p.birth_year IS NOT NULL
+         AND EXTRACT(YEAR FROM sp.period) - p.birth_year < 10
+        THEN 'too_young'
+
+        -- Kein TXT-Snapshot für diese Periode vorhanden
+        WHEN NOT EXISTS (
+            SELECT 1 FROM rating_history rh
+            WHERE rh.fide_id = sp.fide_id AND rh.period = sp.period
+              AND rh.published_rating IS NOT NULL
+        )
+        THEN 'no_snapshot'
+
+        -- Echter no_data: Spieler existierte, hat aber nicht gespielt
+        ELSE 'inactive'
+    END AS reason
+FROM scrape_periods sp
+JOIN players p USING(fide_id)
+WHERE sp.status = 'no_data';
+```
+
+Damit wird `no_data_reason = 'inactive'` zum echten Indikator für Turnierfrequenz.
+Die Rate pro Gruppe und Zeitraum ist besonders relevant für den COVID-Einbruch 2020
+und den Vergleich female_top vs. male_control.
 
 ### B4. Dynamische Gruppenzugehörigkeit *(gross, methodisch wichtig — jetzt direkt umsetzbar)*
 

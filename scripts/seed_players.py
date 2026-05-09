@@ -317,25 +317,74 @@ def bulk_upsert_players(conn, players: list[dict], batch_size: int = 5000):
 
 
 def set_analysis_groups(conn, female_ids: list[int], male_ids: list[int]):
-    """Set analysis_group for selected players, clear others."""
+    """Set analysis_group for female_top/male_control (legacy sampling path)."""
     with conn:
         with conn.cursor() as cur:
-            # Clear all groups first
-            cur.execute("UPDATE players SET analysis_group = NULL WHERE analysis_group IS NOT NULL")
-
+            cur.execute(
+                "UPDATE players SET analysis_group = NULL "
+                "WHERE analysis_group IN ('female_top', 'male_control')"
+            )
             if female_ids:
                 cur.execute(
                     "UPDATE players SET analysis_group = 'female_top' WHERE fide_id = ANY(%s)",
                     (female_ids,),
                 )
                 logger.info("Set %d players as female_top", cur.rowcount)
-
             if male_ids:
                 cur.execute(
                     "UPDATE players SET analysis_group = 'male_control' WHERE fide_id = ANY(%s)",
                     (male_ids,),
                 )
                 logger.info("Set %d players as male_control", cur.rowcount)
+
+
+def set_generic_group(conn, group_name: str, fide_ids: list[int]):
+    """Assign analysis_group for a full-population group without touching other groups."""
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE players SET analysis_group = NULL WHERE analysis_group = %s",
+                (group_name,),
+            )
+            if fide_ids:
+                cur.execute(
+                    "UPDATE players SET analysis_group = %s WHERE fide_id = ANY(%s)",
+                    (group_name, fide_ids),
+                )
+                logger.info("Set %d players as %s", cur.rowcount, group_name)
+
+
+def update_groups_table(conn, group_name: str, player_count: int):
+    """Update player_count in groups table after seeding."""
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE groups SET player_count = %s, updated_at = NOW() WHERE group_name = %s",
+                (player_count, group_name),
+            )
+            if cur.rowcount == 0:
+                logger.warning("Group '%s' not found in groups table — skipping update", group_name)
+
+
+def load_group_definition(conn, group_name: str) -> dict | None:
+    """Load group definition (elo_min, elo_max, federations) from groups table."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT elo_min, elo_max, federations, sampling, backfill_from, backfill_to "
+            "FROM groups WHERE group_name = %s",
+            (group_name,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "elo_min":      row[0],
+        "elo_max":      row[1],
+        "federations":  row[2],  # e.g. "SUI" or "SUI,AUT,GER" or None
+        "sampling":     row[3],
+        "backfill_from": row[4],
+        "backfill_to":   row[5],
+    }
 
 
 def main():
@@ -345,12 +394,14 @@ def main():
     )
 
     parser = argparse.ArgumentParser(description="Seed FIDE players into database")
-    parser.add_argument("--group", choices=["female_top", "male_control"],
-                        help="Only assign this group (skip full import if players exist)")
-    parser.add_argument("--n", type=int, help="Sample size for male_control")
-    parser.add_argument("--min-rating", type=int, help="Override minimum rating")
-    parser.add_argument("--max-rating", type=int, help="Override maximum rating")
-    parser.add_argument("--seed", type=int, help="Random seed for sampling")
+    parser.add_argument("--group", type=str,
+                        help="Group name to assign (e.g. female_top, global_02, sui_01, dach_01)")
+    parser.add_argument("--federation", type=str,
+                        help="Comma-separated federation codes to filter by (e.g. SUI or SUI,AUT,GER)")
+    parser.add_argument("--n", type=int, help="Sample size for male_control (sampling mode only)")
+    parser.add_argument("--min-rating", type=int, help="Minimum ELO rating (inclusive)")
+    parser.add_argument("--max-rating", type=int, help="Maximum ELO rating (inclusive)")
+    parser.add_argument("--seed", type=int, help="Random seed for age-matched sampling")
     parser.add_argument("--file", type=str, help="Path to FIDE TXT file")
     parser.add_argument("--refresh-metadata", action="store_true",
                         help="Only upsert player metadata (active flag, ratings, etc.); "
@@ -362,11 +413,6 @@ def main():
     ft_cfg = groups_cfg["female_top"]
     mc_cfg = groups_cfg["male_control"]
 
-    min_rating = args.min_rating or ft_cfg["min_rating"]
-    max_rating = args.max_rating or ft_cfg["max_rating"]
-    sample_size = args.n or mc_cfg["sample_size"]
-    seed = args.seed or mc_cfg["sampling"]["seed"]
-
     filepath = Path(args.file) if args.file else Path(config["data"]["players_file"])
     if not filepath.is_absolute():
         filepath = Path(__file__).resolve().parent.parent / filepath
@@ -375,7 +421,6 @@ def main():
         logger.error("File not found: %s", filepath)
         sys.exit(1)
 
-    # Load all players
     all_players = load_players_from_file(filepath)
 
     conn = psycopg2.connect(
@@ -383,57 +428,98 @@ def main():
         options="-c statement_timeout=900000",
     )
     try:
-        # Import all players into DB
+        # Always upsert all players unless seeding a specific group
         if not args.group or args.refresh_metadata:
             logger.info("Importing all %d players into database...", len(all_players))
             bulk_upsert_players(conn, all_players)
 
         if args.refresh_metadata:
             active_count = sum(1 for p in all_players if p["active"])
-            inactive_count = len(all_players) - active_count
             print(f"\n{'='*50}")
             print(f"Metadata refresh complete:")
             print(f"  Total players upserted: {len(all_players):,}")
             print(f"  Active:   {active_count:,}")
-            print(f"  Inactive: {inactive_count:,}")
+            print(f"  Inactive: {len(all_players) - active_count:,}")
             print(f"  analysis_group assignments left untouched.")
             print(f"{'='*50}")
             return
 
-        # Filter for analysis groups
+        if not args.group:
+            return
+
+        group_name = args.group
+        is_sampling_group = group_name in ("female_top", "male_control")
+
+        # ── Full-population path (global_XX, dach_XX, sui_XX, aut_XX, ger_XX, …) ──
+        if not is_sampling_group:
+            # Load definition from groups table; CLI args override
+            grp_def = load_group_definition(conn, group_name)
+            if not grp_def:
+                logger.error("Group '%s' not found in groups table. Add it first.", group_name)
+                sys.exit(1)
+
+            min_rating = args.min_rating if args.min_rating is not None else grp_def["elo_min"]
+            max_rating = args.max_rating if args.max_rating is not None else grp_def["elo_max"]
+
+            if min_rating is None or max_rating is None:
+                logger.error("No elo_min/elo_max in groups table for '%s'. Use --min-rating/--max-rating.", group_name)
+                sys.exit(1)
+
+            fed_str_raw = args.federation or grp_def["federations"]
+            federations = (
+                [f.strip().upper() for f in fed_str_raw.split(",")]
+                if fed_str_raw else None
+            )
+
+            candidates = [
+                p for p in all_players
+                if p["active"]
+                and min_rating <= (p["std_rating"] or 0) <= max_rating
+                and (federations is None or p["federation"] in federations)
+            ]
+
+            fide_ids = [p["fide_id"] for p in candidates]
+            set_generic_group(conn, group_name, fide_ids)
+            update_groups_table(conn, group_name, len(fide_ids))
+
+            fed_str = ",".join(federations) if federations else "alle"
+            print(f"\n{'='*50}")
+            print(f"Seed complete: {group_name}")
+            print(f"  Spieler:     {len(fide_ids)}")
+            print(f"  ELO-Range:   {min_rating}–{max_rating}")
+            print(f"  Federations: {fed_str}")
+            print(f"{'='*50}")
+            return
+
+        # ── Sampling path (female_top / male_control) ────────────────────────────
+        min_rating = args.min_rating or ft_cfg["min_rating"]
+        max_rating = args.max_rating or ft_cfg["max_rating"]
+        sample_size = args.n or mc_cfg["sample_size"]
+        seed = args.seed or mc_cfg["sampling"]["seed"]
+
         women = [
             p for p in all_players
-            if p["sex"] == "F"
-            and min_rating <= (p["std_rating"] or 0) <= max_rating
+            if p["sex"] == "F" and min_rating <= (p["std_rating"] or 0) <= max_rating
         ]
         men = [
             p for p in all_players
-            if p["sex"] == "M"
-            and min_rating <= (p["std_rating"] or 0) <= max_rating
+            if p["sex"] == "M" and min_rating <= (p["std_rating"] or 0) <= max_rating
         ]
+        logger.info("Rating range %d-%d: %d women, %d men", min_rating, max_rating, len(women), len(men))
 
-        logger.info(
-            "Rating range %d-%d: %d women, %d men",
-            min_rating, max_rating, len(women), len(men),
-        )
-
-        # Determine which groups to assign
         female_ids = []
         male_ids = []
 
-        if not args.group or args.group == "female_top":
+        if group_name == "female_top":
             female_ids = [w["fide_id"] for w in women]
-
-        if not args.group or args.group == "male_control":
+        if group_name == "male_control":
             sampled_men = age_matched_sample(women, men, sample_size, seed)
             male_ids = [m["fide_id"] for m in sampled_men]
 
         set_analysis_groups(conn, female_ids, male_ids)
 
-        # Summary
         print(f"\n{'='*50}")
         print(f"Seed complete:")
-        print(f"  Total players in DB: {len(all_players):,}")
         print(f"  female_top:   {len(female_ids)} players")
         print(f"  male_control: {len(male_ids)} players")
         print(f"  Rating range: {min_rating}-{max_rating}")

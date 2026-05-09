@@ -1,0 +1,32 @@
+# =============================================================================
+# Caddy-Konfiguration für das Scraping-Dashboard
+# =============================================================================
+#
+# STATUS: Caddy/Domain aktuell nicht im Einsatz.
+# Zugriff erfolgt per SSH-Tunnel (kein öffentlicher Port nötig):
+#
+#   ssh -L 5434:localhost:5432 -L 8050:localhost:8050 pit@187.124.181.116
+#   → Dashboard erreichbar unter http://localhost:8050
+#
+# Caddy nur aktivieren wenn:
+#   a) Mehrere Benutzer Zugriff brauchen, ODER
+#   b) Zugriff ohne SSH-Tunnel gewünscht ist
+#
+# Setup wenn Caddy gewünscht:
+#   1. Domain/Subdomain → VPS-IP im DNS eintragen (A-Record)
+#   2. 'scraper.deine-domain.com' unten ersetzen
+#   3. Caddy auf dem VPS installieren (apt install caddy)
+#   4. Diese Datei nach /etc/caddy/Caddyfile kopieren
+#   5. systemctl reload caddy
+#   6. Port 8050 muss NICHT öffentlich sein — Caddy läuft direkt auf dem VPS
+#
+# Empfehlung: basicauth aktivieren (Passwort-Hash generieren mit: caddy hash-password)
+# =============================================================================
+
+# scraper.deine-domain.com {
+#     reverse_proxy localhost:8050
+#
+#     basicauth {
+#         peter $2a$14$...  # caddy hash-password → Hash hier eintragen
+#     }
+# }

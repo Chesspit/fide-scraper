@@ -45,7 +45,7 @@ ERROR_THRESHOLD = 15
 
 # For each player find all consecutive pairs of published_rating snapshots,
 # then compute expected vs. scraped change for the window in between.
-_QC_COMPUTE_SQL = """
+_QC_COMPUTE_SQL_TEMPLATE = """
 WITH snapshots AS (
     SELECT
         fide_id,
@@ -136,7 +136,18 @@ FROM pairs p
 LEFT JOIN scraped     s USING (fide_id, period_start, period_end)
 LEFT JOIN missing     m USING (fide_id, period_start, period_end)
 LEFT JOIN corrections c USING (fide_id, period_start, period_end)
+{year_filter}
 """
+
+
+def _build_qc_sql(from_year: int | None = None, to_year: int | None = None) -> str:
+    conditions = []
+    if from_year:
+        conditions.append(f"EXTRACT(YEAR FROM p.period_end) >= {from_year}")
+    if to_year:
+        conditions.append(f"EXTRACT(YEAR FROM p.period_end) <= {to_year}")
+    year_filter = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    return _QC_COMPUTE_SQL_TEMPLATE.format(year_filter=year_filter)
 
 _UPSERT_SQL = """
 INSERT INTO qc_rating_check
@@ -168,7 +179,14 @@ def _flag(delta: float, warn: float, error: float) -> str:
     return "error"
 
 
-def run_qc(conn, warn: float, error: float, rebuild: bool) -> int:
+def run_qc(
+    conn,
+    warn: float,
+    error: float,
+    rebuild: bool,
+    from_year: int | None = None,
+    to_year: int | None = None,
+) -> int:
     """Compute QC rows and upsert into qc_rating_check. Returns row count."""
     if rebuild:
         with conn:
@@ -176,9 +194,10 @@ def run_qc(conn, warn: float, error: float, rebuild: bool) -> int:
                 cur.execute("TRUNCATE qc_rating_check")
         logger.info("qc_rating_check truncated")
 
+    sql = _build_qc_sql(from_year, to_year)
     logger.info("Computing QC windows (this may take a moment)...")
     with conn.cursor() as cur:
-        cur.execute(_QC_COMPUTE_SQL)
+        cur.execute(sql)
         rows = cur.fetchall()
     logger.info("  %d windows computed", len(rows))
 
@@ -270,6 +289,85 @@ def print_report(conn, warn: float, error: float):
         print(f"  {yr:<6} {n:>7,} {100*ok_n/n:>5.1f}% {warn_n:>5} {err_n:>5} {avg_d:>7} {missing:>9}")
     print()
 
+    # Annual checksum (2013+): Dec[Y-1] + Σ games + corrections = Dec[Y]
+    with conn.cursor() as cur:
+        cur.execute("""
+            WITH annual AS (
+                SELECT
+                    h1.fide_id,
+                    EXTRACT(YEAR FROM h2.period)::int AS jahr,
+                    ROUND((h1.published_rating
+                           + COALESCE(gc.game_sum, 0)
+                           + COALESCE(rc.corr_sum, 0)
+                           - h2.published_rating)::numeric, 1) AS annual_diff
+                FROM rating_history h1
+                JOIN rating_history h2
+                    ON  h2.fide_id = h1.fide_id
+                    AND EXTRACT(MONTH FROM h1.period) = 12
+                    AND EXTRACT(MONTH FROM h2.period) = 12
+                    AND EXTRACT(YEAR FROM h2.period) = EXTRACT(YEAR FROM h1.period) + 1
+                JOIN (SELECT DISTINCT fide_id FROM scrape_periods) sp
+                    ON sp.fide_id = h1.fide_id
+                LEFT JOIN (
+                    SELECT fide_id, EXTRACT(YEAR FROM period)::int AS jahr,
+                           SUM(rating_change_weighted) AS game_sum
+                    FROM game_results
+                    GROUP BY fide_id, EXTRACT(YEAR FROM period)::int
+                ) gc ON gc.fide_id = h1.fide_id AND gc.jahr = EXTRACT(YEAR FROM h2.period)
+                LEFT JOIN (
+                    SELECT fide_id, EXTRACT(YEAR FROM period)::int AS jahr,
+                           SUM(amount) AS corr_sum
+                    FROM rating_corrections
+                    GROUP BY fide_id, EXTRACT(YEAR FROM period)::int
+                ) rc ON rc.fide_id = h1.fide_id AND rc.jahr = EXTRACT(YEAR FROM h2.period)
+                WHERE EXTRACT(YEAR FROM h2.period) >= 2013
+                  AND h1.published_rating IS NOT NULL
+                  AND h2.published_rating IS NOT NULL
+            ),
+            annual_agg AS (
+                SELECT
+                    jahr,
+                    COUNT(*)                                                          AS j_spieler,
+                    ROUND(100.0 * COUNT(*) FILTER (WHERE ABS(annual_diff) <= 3)
+                          / NULLIF(COUNT(*), 0), 1)                                  AS j_ok_pct,
+                    COUNT(*) FILTER (WHERE ABS(annual_diff) > 3
+                                      AND ABS(annual_diff) <= 10)                    AS j_warn,
+                    COUNT(*) FILTER (WHERE ABS(annual_diff) > 10)                    AS j_error
+                FROM annual
+                GROUP BY jahr
+            ),
+            monthly_agg AS (
+                SELECT
+                    EXTRACT(YEAR FROM period_end)::int                               AS jahr,
+                    COUNT(*)                                                          AS m_fenster,
+                    ROUND(100.0 * COUNT(*) FILTER (WHERE flag='ok')
+                          / NULLIF(COUNT(*), 0), 1)                                  AS m_ok_pct,
+                    COUNT(*) FILTER (WHERE flag='warn')                              AS m_warn,
+                    COUNT(*) FILTER (WHERE flag='error')                             AS m_error
+                FROM qc_rating_check
+                WHERE EXTRACT(YEAR FROM period_end) >= 2013
+                GROUP BY EXTRACT(YEAR FROM period_end)
+            )
+            SELECT m.jahr,
+                   m.m_fenster, m.m_ok_pct, m.m_warn, m.m_error,
+                   a.j_spieler, a.j_ok_pct, a.j_warn, a.j_error
+            FROM monthly_agg m
+            JOIN annual_agg  a USING (jahr)
+            ORDER BY m.jahr
+        """)
+        annual_rows = cur.fetchall()
+
+    if annual_rows:
+        print(f"  Jahres-Prüfsumme Dez[Y-1]→Dez[Y] (nur gescrapte Spieler, |Δ|≤3 = OK):")
+        print(f"  {'Jahr':<6} {'M-Fenster':>10} {'M-OK%':>6} {'M-Warn':>7} {'M-Err':>6}"
+              f"  {'J-Spieler':>10} {'J-OK%':>6} {'J-Warn':>7} {'J-Err':>6}")
+        print("  " + "-" * 72)
+        for (yr, m_fen, m_ok, m_warn, m_err,
+             j_sp, j_ok, j_warn, j_err) in annual_rows:
+            print(f"  {yr:<6} {m_fen:>10,} {m_ok:>5.1f}% {m_warn:>7} {m_err:>6}"
+                  f"  {j_sp:>10,} {j_ok:>5.1f}% {j_warn:>7} {j_err:>6}")
+        print()
+
     # Worst offenders (top 20 by |delta_adj|)
     with conn.cursor() as cur:
         cur.execute("""
@@ -359,6 +457,10 @@ def main():
                         help=f"Warn threshold in rating points (default {WARN_THRESHOLD})")
     parser.add_argument("--error", type=float, default=ERROR_THRESHOLD,
                         help=f"Error threshold in rating points (default {ERROR_THRESHOLD})")
+    parser.add_argument("--from-year", type=int, metavar="YYYY",
+                        help="Only compute windows with period_end >= this year")
+    parser.add_argument("--to-year",   type=int, metavar="YYYY",
+                        help="Only compute windows with period_end <= this year")
     args = parser.parse_args()
 
     conn = psycopg2.connect(
@@ -367,7 +469,8 @@ def main():
     )
     try:
         if not args.report_only:
-            run_qc(conn, warn=args.warn, error=args.error, rebuild=args.rebuild)
+            run_qc(conn, warn=args.warn, error=args.error, rebuild=args.rebuild,
+                   from_year=args.from_year, to_year=args.to_year)
 
         print_report(conn, warn=args.warn, error=args.error)
 

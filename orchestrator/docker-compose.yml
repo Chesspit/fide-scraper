@@ -1,0 +1,85 @@
+## Erster Start auf dem VPS
+## ─────────────────────────────────────────────────────────────────────────────
+## scraper.db ist NICHT im Git (runtime-State, ändert sich mit jedem Scraping-Lauf).
+## Vor dem ersten 'docker compose up' das Volume initialisieren:
+##
+##   # 1. Image bauen
+##   docker compose build
+##
+##   # 2. Gruppen generieren (braucht data/players_list_foa_2026-04.txt im Projektverzeichnis)
+##   docker compose run --rm worker \
+##     python orchestrator/generate_groups.py \
+##     --db /data/scraper.db \
+##     --txt data/players_list_foa_2026-04.txt
+##
+##   # 3. Netzwerkname prüfen und ggf. DOCKER_NETWORK in .env anpassen
+##   docker network ls | grep fide
+##
+##   # 4. Services starten
+##   docker compose up -d
+## ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: orchestrator/Dockerfile
+    command: python -m orchestrator.app
+    environment:
+      DATABASE_URL: postgresql://fide:${DB_PASSWORD}@db:5432/fidedb
+      ORCHESTRATOR_DATA_DIR: /data
+      PROXYJET_USERNAME: ${PROXYJET_USERNAME}
+      PROXYJET_PASSWORD: ${PROXYJET_PASSWORD}
+      PROXYJET_HOST: ${PROXYJET_HOST:-proxy-jet.io}
+      PROXYJET_PORT: ${PROXYJET_PORT:-1010}
+    volumes:
+      - orchestrator_data:/data
+      - ../config.yaml:/app/config.yaml:ro
+    ports:
+      - "127.0.0.1:8050:8050"
+    networks:
+      - fide_net
+    restart: unless-stopped
+    depends_on:
+      - db
+
+  worker:
+
+    build:
+      context: ..
+      dockerfile: orchestrator/Dockerfile
+    command: python -m orchestrator.worker
+    environment:
+      DATABASE_URL: postgresql://fide:${DB_PASSWORD}@db:5432/fidedb
+      ORCHESTRATOR_DATA_DIR: /data
+      PROXYJET_USERNAME: ${PROXYJET_USERNAME}
+      PROXYJET_PASSWORD: ${PROXYJET_PASSWORD}
+      PROXYJET_HOST: ${PROXYJET_HOST:-proxy-jet.io}
+      PROXYJET_PORT: ${PROXYJET_PORT:-1010}
+      WORKER_DEVICE: ${WORKER_DEVICE:-}
+    volumes:
+      - orchestrator_data:/data
+      - ../config.yaml:/app/config.yaml:ro
+      - ../data:/app/data:ro
+    networks:
+      - fide_net
+    # on-failure:3 — Worker neu starten bei Crash, aber nach 3 Versuchen aufhören.
+    # Verhindert Endlosschleifen bei systematischen Fehlern (z.B. DB nicht erreichbar).
+    # Manueller Reset: docker compose restart worker
+    restart: "on-failure:3"
+    depends_on:
+      - db
+      - dashboard
+
+volumes:
+  orchestrator_data:
+
+networks:
+  fide_net:
+    # Netzwerkname prüfen vor dem ersten Start auf dem VPS:
+    #   docker network ls | grep fide
+    # Standard-Name wenn docker compose aus /opt/fide-scraper gestartet wird: fide-scraper_default
+    # Falls abweichend: DOCKER_NETWORK=anderer-name in .env setzen und hier ${DOCKER_NETWORK} verwenden.
+    external: true
+    name: ${DOCKER_NETWORK:-fide-scraper_default}

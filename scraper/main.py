@@ -11,6 +11,7 @@ from scraper.db import (
     ensure_connection,
     get_connection,
     get_pending_periods,
+    is_valid_fide_period,
     save_period,
     save_period_no_data,
 )
@@ -28,14 +29,19 @@ def get_latest_period() -> str:
     return last_month.replace(day=1).isoformat()
 
 
+
 def generate_period_range(from_date: str, to_date: str) -> list[str]:
-    """Generate all monthly periods between from_date and to_date (inclusive)."""
+    """Generate valid FIDE periods between from_date and to_date (inclusive).
+
+    Skips months for which FIDE never published individual game data.
+    """
     start = date.fromisoformat(from_date).replace(day=1)
     end = date.fromisoformat(to_date).replace(day=1)
     periods = []
     current = start
     while current <= end:
-        periods.append(current.isoformat())
+        if is_valid_fide_period(current):
+            periods.append(current.isoformat())
         if current.month == 12:
             current = current.replace(year=current.year + 1, month=1)
         else:

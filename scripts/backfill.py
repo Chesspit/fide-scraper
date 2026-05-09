@@ -4,6 +4,7 @@
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -15,7 +16,13 @@ from scraper.db import (
     save_period,
     save_period_no_data,
 )
-from scraper.fetcher import fetch_calculations, sleep_between_requests
+from scraper.fetcher import (
+    BlockedError,
+    RateLimitedError,
+    RATE_LIMIT_PAUSE_SECONDS,
+    fetch_calculations,
+    sleep_between_requests,
+)
 from scraper.main import generate_period_range
 from scraper.parser import parse_calculations
 
@@ -42,6 +49,9 @@ def main():
                         help="Process only shard N of M (e.g. --shard 1/2 or --shard 2/2). "
                              "Uses round-robin split so both shards finish at the same time. "
                              "Run on different machines to avoid increased load on one IP.")
+    parser.add_argument("--reverse", action="store_true",
+                        help="Scrape periods newest-first (2026-03 → from_date). "
+                             "Useful to get recent data first and appear less suspicious to FIDE.")
     args = parser.parse_args()
 
     # Parse shard argument
@@ -55,11 +65,15 @@ def main():
             parser.error("--shard must be N/M with 1 ≤ N ≤ M (e.g. --shard 1/2)")
 
     periods = generate_period_range(args.from_date, args.to_date)
-    logger.info("Backfill range: %s to %s (%d periods)", args.from_date, args.to_date, len(periods))
+    logger.info("Backfill range: %s to %s (%d periods%s)",
+                args.from_date, args.to_date, len(periods),
+                ", REVERSE" if args.reverse else "")
 
     conn = get_connection()
     try:
         pending = get_pending_periods(conn, periods, args.fide_ids, args.group)
+        if args.reverse:
+            pending = list(reversed(pending))
 
         # Apply round-robin shard split: shard N/M takes every M-th item starting at N-1
         if shard_m > 1:
@@ -96,6 +110,26 @@ def main():
 
                 conn = save_period(conn, fide_id, period_str, games, k_factor, own_rating)
                 logger.info("  → %d games, K=%s, Ro=%s", len(games), k_factor, own_rating)
+
+            except RateLimitedError:
+                logger.warning(
+                    "  → HTTP 429 RATE LIMITED — pausing %d minutes before continuing",
+                    RATE_LIMIT_PAUSE_SECONDS // 60,
+                )
+                conn = save_period_no_data(conn, fide_id, period_str, http_status=429)
+                errors += 1
+                time.sleep(RATE_LIMIT_PAUSE_SECONDS)
+                logger.info("Resuming after rate-limit pause.")
+                continue
+
+            except BlockedError:
+                logger.error(
+                    "  → HTTP 403 BLOCKED — IP appears to be blocked by FIDE. "
+                    "Stopping scraper. Check your IP/VPN and try again later."
+                )
+                conn = save_period_no_data(conn, fide_id, period_str, http_status=403)
+                logger.info("Backfill interrupted. %d/%d done, %d errors.", i - 1, total, errors)
+                return
 
             except Exception:
                 errors += 1

@@ -27,19 +27,25 @@ HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
 }
 
+# Pause duration when FIDE returns 429 (rate limited)
+RATE_LIMIT_PAUSE_SECONDS = 45 * 60  # 45 minutes
+
+
+class RateLimitedError(Exception):
+    """FIDE returned HTTP 429 — we are being rate-limited."""
+
+
+class BlockedError(Exception):
+    """FIDE returned HTTP 403 — our IP appears to be blocked."""
+
 
 def fetch_calculations(fide_id: int, period_str: str) -> str:
     """Fetch the calculations HTML fragment for a player/period from FIDE.
 
-    Args:
-        fide_id: FIDE player ID
-        period_str: Period string in format "YYYY-MM-01"
-
-    Returns:
-        HTML fragment string
-
     Raises:
-        requests.HTTPError: After max retries exhausted
+        RateLimitedError: On HTTP 429 — caller should pause and retry.
+        BlockedError: On HTTP 403 — caller should stop completely.
+        requests.RequestException: After max retries exhausted for other errors.
     """
     scraper_cfg = config["scraper"]
     max_attempts = scraper_cfg["retry"]["max_attempts"]
@@ -56,8 +62,22 @@ def fetch_calculations(fide_id: int, period_str: str) -> str:
     for attempt in range(1, max_attempts + 1):
         try:
             resp = requests.get(url, headers=headers, timeout=timeout)
+
+            if resp.status_code == 429:
+                raise RateLimitedError(
+                    f"HTTP 429 for fide_id={fide_id} period={period_str} — rate limited"
+                )
+            if resp.status_code == 403:
+                raise BlockedError(
+                    f"HTTP 403 for fide_id={fide_id} period={period_str} — IP blocked"
+                )
+
             resp.raise_for_status()
             return resp.text
+
+        except (RateLimitedError, BlockedError):
+            raise  # propagate immediately — no retry
+
         except requests.RequestException as exc:
             last_exception = exc
             status = getattr(getattr(exc, "response", None), "status_code", None)
@@ -77,9 +97,24 @@ def fetch_calculations(fide_id: int, period_str: str) -> str:
 
 
 def sleep_between_requests(backfill: bool = False) -> None:
-    """Sleep a random interval between requests to be polite."""
+    """Sleep a human-like random interval between requests.
+
+    Uses a beta distribution skewed towards the lower end (most pauses short,
+    occasional longer ones) plus rare extra pauses to mimic human browsing.
+    """
     if backfill:
         limits = config["scraper"]["backfill_rate_limit"]
     else:
         limits = config["scraper"]["rate_limit"]
-    time.sleep(random.uniform(limits["min_sleep"], limits["max_sleep"]))
+
+    lo, hi = limits["min_sleep"], limits["max_sleep"]
+
+    # Beta(2, 5): skewed left — most values near min, occasional longer pauses
+    beta_sample = random.betavariate(2, 5)
+    sleep_time = lo + beta_sample * (hi - lo)
+
+    # ~8% chance of an extra human-like pause (4–6s extra)
+    if random.random() < 0.08:
+        sleep_time += random.uniform(4.0, 6.0)
+
+    time.sleep(sleep_time)

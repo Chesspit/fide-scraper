@@ -18,3 +18,10 @@ players_list_foa*.zip
 
 # Notebook-generated CSV exports
 notebooks/*.csv
+
+# Orchestrator-Laufzeitdaten (werden auf dem VPS neu generiert)
+# scraper.db: Queue-Stand (done/pending/failed) — ändert sich mit jedem Scraping-Lauf
+# worker_state.json: aktueller Worker-Status (run/pause/stopped)
+orchestrator/scraper.db
+orchestrator/worker_state.json
+orchestrator/__pycache__/

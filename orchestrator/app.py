@@ -351,19 +351,19 @@ _OV_NO_DATA = -10
 def _ov_n(v):
     return (v - _OV_ZMIN) / (_OV_ZMAX - _OV_ZMIN)  # = (v + 10) / 110
 
-# RdYlGn-inspirierte Palette, 11 Stufen 0%–100%
+# Grau (0%) → Grün (100%), 11 Stufen
 _OV_STEPS = [
-    (0,   "#B71C1C"),  # 0%   tiefrot
-    (10,  "#D32F2F"),  # 10%  rot
-    (20,  "#F44336"),  # 20%  hellrot
-    (30,  "#FF7043"),  # 30%  orange-rot
-    (40,  "#FFA726"),  # 40%  orange
-    (50,  "#FFEE58"),  # 50%  gelb
-    (60,  "#D4E157"),  # 60%  gelbgrün
-    (70,  "#9CCC65"),  # 70%  hellgrün
-    (80,  "#66BB6A"),  # 80%  grün
-    (90,  "#43A047"),  # 90%  dunkelgrün
-    (100, "#1B5E20"),  # 100% tiefgrün
+    (0,   "#BDBDBD"),  # 0%   grau
+    (10,  "#A5D6A7"),  # 10%  sehr hellgrün
+    (20,  "#81C784"),  # 20%
+    (30,  "#66BB6A"),  # 30%  hellgrün
+    (40,  "#4CAF50"),  # 40%  grün
+    (50,  "#43A047"),  # 50%
+    (60,  "#388E3C"),  # 60%  mittelgrün
+    (70,  "#2E7D32"),  # 70%  dunkelgrün
+    (80,  "#1B5E20"),  # 80%
+    (90,  "#145214"),  # 90%  tiefgrün
+    (100, "#0A3D0A"),  # 100% sehr tiefgrün
 ]
 
 # Grauer Block für keine Daten (-10 bis -0.5), danach diskrete Farbstufen

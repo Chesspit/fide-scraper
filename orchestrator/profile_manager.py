@@ -60,7 +60,7 @@ class ProfileManager:
 
         weights_cfg = self._data.get("fuzzy_weights", {})
         available = self.available()
-        weights = [max(1, weights_cfg.get(p, 1)) for p in available]
+        weights = [max(0, weights_cfg.get(p, 1)) for p in available]
         name = random.choices(available, weights=weights, k=1)[0]
         profiles = self._data.get("profiles", {})
         return {"name": name, **profiles[name]}

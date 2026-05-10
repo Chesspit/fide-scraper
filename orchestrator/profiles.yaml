@@ -3,9 +3,9 @@ active_profile: normal
 # Fuzzy-Profilauswahl: Gewichtung für zufällige Profilwahl pro Gruppe
 # Worker wählt bei jedem Gruppen-Start zufällig (gewichtet) — kein erkennbares Muster
 fuzzy_weights:
-  conservative: 20
-  normal:       60
-  aggressive:   20
+  conservative: 0
+  normal:       70
+  aggressive:   30
 profiles:
   aggressive:
     base_wait_seconds: 1

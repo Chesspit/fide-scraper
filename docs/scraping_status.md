@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-10 18:10 (Quelle: `groups`-Tabelle DB)
+Stand: 2026-05-10 23:01 (Quelle: `groups`-Tabelle DB)
 
 ---
 
@@ -41,6 +41,7 @@ Stand: 2026-05-10 18:10 (Quelle: `groups`-Tabelle DB)
 | global_10b | 74 | 2422–2427 | 2012-08 – 2026-04 | ✅ complete |
 | global_11a | 73 | 2407–2411 | 2012-08 – 2026-04 | ✅ complete |
 | global_11b | 62 | 2412–2415 | 2012-08 – 2026-04 | ✅ complete |
+| global_12a | 63 | 2399–2402 | 2012-08 – 2026-04 | ✅ complete |
 
 ---
 
@@ -48,7 +49,6 @@ Stand: 2026-05-10 18:10 (Quelle: `groups`-Tabelle DB)
 
 | Gruppe | Spieler | ELO-Range | Zeitraum | Status |
 |--------|--------:|-----------|----------|--------|
-| global_12a | — | 2399–2402 | 2012-08 – 2026-04 | ⬜ pending |
 | global_12b | — | 2403–2406 | 2012-08 – 2026-04 | ⬜ pending |
 | global_13a | — | 2391–2394 | 2012-08 – 2026-04 | ⬜ pending |
 | global_13b | — | 2395–2398 | 2012-08 – 2026-04 | ⬜ pending |

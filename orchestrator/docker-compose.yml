@@ -26,8 +26,10 @@ services:
       context: ..
       dockerfile: orchestrator/Dockerfile
     command: python -m orchestrator.app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      DATABASE_URL: postgresql://fide:${DB_PASSWORD}@${DB_HOST:-db}:5432/fidedb
+      DATABASE_URL: postgresql://fide:${DB_PASSWORD}@host.docker.internal:5432/fidedb
       ORCHESTRATOR_DATA_DIR: /data
       PROXYJET_USERNAME: ${PROXYJET_USERNAME}
       PROXYJET_PASSWORD: ${PROXYJET_PASSWORD}
@@ -48,8 +50,10 @@ services:
       context: ..
       dockerfile: orchestrator/Dockerfile
     command: python -m orchestrator.worker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      DATABASE_URL: postgresql://fide:${DB_PASSWORD}@${DB_HOST:-db}:5432/fidedb
+      DATABASE_URL: postgresql://fide:${DB_PASSWORD}@host.docker.internal:5432/fidedb
       ORCHESTRATOR_DATA_DIR: /data
       PROXYJET_USERNAME: ${PROXYJET_USERNAME}
       PROXYJET_PASSWORD: ${PROXYJET_PASSWORD}

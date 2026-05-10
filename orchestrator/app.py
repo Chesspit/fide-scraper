@@ -373,10 +373,7 @@ for _pct, _col in _OV_STEPS:
     _hi = _ov_n(_pct + 9.5 if _pct < 100 else 100)
     OVERVIEW_COLORSCALE += [[_lo, _col], [_hi, _col]]
 
-_OV_LEGEND = (
-    [("#DCDCDC", "Keine Daten")] +
-    [(col, f"{pct}%") for pct, col in _OV_STEPS]
-)
+_OV_LEGEND = [(col, f"{pct}%") for pct, col in _OV_STEPS]
 
 
 def build_overview_figure() -> go.Figure:
@@ -405,8 +402,8 @@ def build_overview_figure() -> go.Figure:
                 z_row.append(pct)
                 text_row.append(f"{pct}%<br>{r['done_count']}/{r['total']} Gruppen done")
             else:
-                z_row.append(_OV_NO_DATA)
-                text_row.append("keine Gruppen")
+                z_row.append(0)
+                text_row.append("0% · noch nicht eingeplant")
         z.append(z_row)
         text.append(text_row)
 

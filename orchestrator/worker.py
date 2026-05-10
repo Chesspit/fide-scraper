@@ -198,10 +198,15 @@ def scrape_group(
     logger.info("Group %s/%d/%d-%d: %d pending combos (%d players × up to %d periods)",
                 group.federation, group.year, group.elo_min, group.elo_max,
                 len(pending), len(fide_ids), len(periods))
+    write_state(combos_total=len(pending))
 
     records_found = 0
+    _combo_idx = 0
 
     for fide_id, period in pending:
+        _combo_idx += 1
+        if _combo_idx % 10 == 0:
+            write_state(combos_done=_combo_idx)
         # Pause/stop check inside the loop
         cmd = read_command()
         if cmd == "stopped":
@@ -344,7 +349,13 @@ def run(
             label = f"{group.federation}/{group.year}/{group.elo_min}–{group.elo_max}"
             logger.info("Starte Gruppe: %s (Priorität %d, Profil: %s)",
                         label, group.priority, profile["name"])
-            write_state(current_group=label)
+            write_state(
+                current_group=label,
+                current_profile=profile["name"],
+                combos_total=None,
+                combos_done=0,
+                group_started_at=time.time(),
+            )
             run_started = time.strftime("%Y-%m-%dT%H:%M:%S")
 
             try:

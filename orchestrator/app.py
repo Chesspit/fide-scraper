@@ -344,15 +344,9 @@ def build_figure(federation: str) -> go.Figure:
 # ---------------------------------------------------------------------------
 # Overview figure (Übersicht-Tab)
 # ---------------------------------------------------------------------------
-# z = -10 → keine Daten (grau), z = 0..100 → Prozent in 10%-Schritten
-# _OV_ZMIN=-10 gibt dem grauen Bereich genug Abstand von 0%
-_OV_ZMIN, _OV_ZMAX = -10, 100
-_OV_NO_DATA = -10
+# z = 0..100, diskret in 10%-Schritten. 0% = grau, 100% = tiefgrün.
+_OV_ZMIN, _OV_ZMAX = 0, 100
 
-def _ov_n(v):
-    return (v - _OV_ZMIN) / (_OV_ZMAX - _OV_ZMIN)  # = (v + 10) / 110
-
-# Grau (0%) → Grün (100%), 11 Stufen
 _OV_STEPS = [
     (0,   "#BDBDBD"),  # 0%   grau
     (10,  "#A5D6A7"),  # 10%  sehr hellgrün
@@ -367,11 +361,11 @@ _OV_STEPS = [
     (100, "#0A3D0A"),  # 100% sehr tiefgrün
 ]
 
-# Grauer Block für keine Daten (-10 bis -0.5), danach diskrete Farbstufen
-OVERVIEW_COLORSCALE = [[0.0, "#DCDCDC"], [_ov_n(-0.5), "#DCDCDC"]]
+# Diskrete Farbstufen: jede 10%-Stufe hat eine eigene Farbe
+OVERVIEW_COLORSCALE = []
 for _pct, _col in _OV_STEPS:
-    _lo = _ov_n(_pct - 0.5 if _pct > 0 else 0)
-    _hi = _ov_n(_pct + 9.5 if _pct < 100 else 100)
+    _lo = _pct / 100
+    _hi = (_pct + 9.99) / 100 if _pct < 100 else 1.0
     OVERVIEW_COLORSCALE += [[_lo, _col], [_hi, _col]]
 
 _OV_LEGEND = [(col, f"{pct}%") for pct, col in _OV_STEPS]

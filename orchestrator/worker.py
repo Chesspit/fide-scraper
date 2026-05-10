@@ -48,13 +48,17 @@ _EMPTY_QUEUE_SLEEP = 120      # seconds to wait when queue is empty
 # State file helpers
 # ---------------------------------------------------------------------------
 
+def read_worker_state() -> dict:
+    """Return the full worker_state.json as a dict."""
+    try:
+        return json.loads(WORKER_STATE_PATH.read_text())
+    except Exception:
+        return {}
+
+
 def read_command() -> str:
     """Return the current command from worker_state.json ('run'/'pause'/'stopped')."""
-    try:
-        data = json.loads(WORKER_STATE_PATH.read_text())
-        return data.get("command", "stopped")
-    except Exception:
-        return "stopped"
+    return read_worker_state().get("command", "stopped")
 
 
 def write_state(command: str | None = None, **extra) -> None:

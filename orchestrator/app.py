@@ -49,6 +49,8 @@ COLORSCALE = [
 _DATA_DIR = Path(os.getenv("ORCHESTRATOR_DATA_DIR", Path(__file__).resolve().parent))
 WORKER_STATE_PATH = _DATA_DIR / "worker_state.json"
 
+OVERVIEW_FEDERATIONS = ["GER", "SUI", "AUT", "POL", "UKR", "NOR"]
+
 pm = ProfileManager()
 
 
@@ -79,6 +81,24 @@ def query_federations(continent: str) -> list[str]:
     ).fetchall()
     conn.close()
     return [r[0] for r in rows]
+
+
+def query_overview() -> list[dict]:
+    placeholders = ",".join("?" * len(OVERVIEW_FEDERATIONS))
+    conn = get_conn()
+    rows = conn.execute(
+        f"""SELECT federation,
+                   (elo_min / 100) * 100 AS elo_bucket,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done_count
+            FROM scrape_groups
+            WHERE federation IN ({placeholders})
+            GROUP BY federation, elo_bucket
+            ORDER BY federation, elo_bucket DESC""",
+        OVERVIEW_FEDERATIONS,
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def query_grid(federation: str) -> list[dict]:
@@ -321,6 +341,84 @@ def build_figure(federation: str) -> go.Figure:
 
 
 # ---------------------------------------------------------------------------
+# Overview figure (Übersicht-Tab)
+# ---------------------------------------------------------------------------
+# Colorscale: z in [-1, 100]
+# -1 = grau (keine Gruppen), 0 = fast-weiss, 50 = blau, 100 = grün
+_OV_ZMIN, _OV_ZMAX = -1, 100
+_OV_RANGE = _OV_ZMAX - _OV_ZMIN + 1  # 102
+
+def _ov_norm(z):
+    return (z - _OV_ZMIN) / _OV_RANGE
+
+OVERVIEW_COLORSCALE = [
+    [_ov_norm(-1),   "#DCDCDC"], [_ov_norm(-0.01), "#DCDCDC"],  # keine Daten
+    [_ov_norm(0),    "#EBF5FB"], [_ov_norm(10),    "#BEE3F8"],  # 0–10%
+    [_ov_norm(20),   "#90CDF4"], [_ov_norm(40),    "#63B3ED"],  # 20–40%
+    [_ov_norm(50),   "#4299E1"], [_ov_norm(70),    "#2B6CB0"],  # 50–70%
+    [_ov_norm(80),   "#276749"], [_ov_norm(90),    "#1D9E75"],  # 80–90%
+    [_ov_norm(100),  "#1A7A5E"],                                 # 100%
+]
+
+
+def build_overview_figure() -> go.Figure:
+    rows = query_overview()
+    if not rows:
+        return go.Figure().update_layout(title="Keine Daten")
+
+    all_buckets = sorted(set(r["elo_bucket"] for r in rows), reverse=False)
+    max_bucket = max(all_buckets)
+
+    def bucket_label(b):
+        return f"≥{b}" if b == max_bucket else f"{b}–{b + 99}"
+
+    bucket_labels = [bucket_label(b) for b in all_buckets]
+
+    # Lookup: (federation, elo_bucket) → row
+    lookup = {(r["federation"], r["elo_bucket"]): r for r in rows}
+
+    z, text = [], []
+    for bkt in all_buckets:
+        z_row, text_row = [], []
+        for fed in OVERVIEW_FEDERATIONS:
+            r = lookup.get((fed, bkt))
+            if r:
+                pct = round(r["done_count"] / r["total"] * 100 / 10) * 10
+                z_row.append(pct)
+                text_row.append(f"{pct}%<br>{r['done_count']}/{r['total']} Gruppen done")
+            else:
+                z_row.append(_OV_ZMIN)
+                text_row.append("keine Gruppen")
+        z.append(z_row)
+        text.append(text_row)
+
+    height = max(400, 25 * len(all_buckets) + 120)
+    fig = go.Figure(go.Heatmap(
+        z=z,
+        x=OVERVIEW_FEDERATIONS,
+        y=bucket_labels,
+        text=text,
+        hovertemplate="%{text}<extra></extra>",
+        colorscale=OVERVIEW_COLORSCALE,
+        zmin=_OV_ZMIN,
+        zmax=_OV_ZMAX,
+        showscale=False,
+        xgap=2,
+        ygap=1,
+    ))
+    fig.update_layout(
+        height=height,
+        margin=dict(l=90, r=20, t=60, b=20),
+        plot_bgcolor="#FAFAFA",
+        paper_bgcolor="#FAFAFA",
+        xaxis=dict(title="", side="top", tickfont=dict(size=13, family="monospace")),
+        yaxis=dict(title="ELO-Band", autorange=True, tickfont=dict(size=11)),
+        title=dict(text="Scraping-Fortschritt nach Land & ELO-Band", x=0.5),
+    )
+    return fig
+
+
+# ---------------------------------------------------------------------------
 # Layout helpers
 # ---------------------------------------------------------------------------
 def metric_card(label: str, value_id: str, color: str) -> dbc.Card:
@@ -362,6 +460,33 @@ app = dash.Dash(
 continents = query_continents()
 default_continent = "Europe"
 default_federation = query_federations(default_continent)[0] if continents else "GER"
+
+# ---------------------------------------------------------------------------
+# Tab 0 — Übersicht layout
+# ---------------------------------------------------------------------------
+def _ov_legend_item(color: str, label: str) -> html.Span:
+    return html.Span([
+        html.Span(style={
+            "display": "inline-block", "width": "18px", "height": "14px",
+            "backgroundColor": color, "borderRadius": "2px",
+            "marginRight": "4px", "verticalAlign": "middle",
+        }),
+        html.Span(label, style={"marginRight": "14px", "fontSize": "0.82rem"}),
+    ])
+
+tab_overview = dbc.Container(fluid=True, children=[
+    dcc.Interval(id="interval-overview", interval=30_000, n_intervals=0),
+    html.Div([
+        _ov_legend_item("#DCDCDC", "Keine Daten"),
+        _ov_legend_item("#EBF5FB", "0%"),
+        _ov_legend_item("#63B3ED", "40%"),
+        _ov_legend_item("#2B6CB0", "70%"),
+        _ov_legend_item("#1D9E75", "90%"),
+        _ov_legend_item("#1A7A5E", "100%"),
+    ], className="mb-2 mt-3"),
+    dcc.Graph(id="overview-grid", config={"displayModeBar": False}),
+], className="py-2")
+
 
 # ---------------------------------------------------------------------------
 # Tab 1 — Heatmap layout
@@ -594,10 +719,11 @@ app.layout = dbc.Container(fluid=True, children=[
         className="my-3 text-secondary fw-bold",
     ))),
     dbc.Tabs([
+        dbc.Tab(tab_overview, label="🌍 Übersicht",   tab_id="tab-overview"),
         dbc.Tab(tab_heatmap,  label="🗺️ Heatmap",    tab_id="tab-heatmap"),
         dbc.Tab(tab_queue,    label="📋 Queue",       tab_id="tab-queue"),
         dbc.Tab(tab_completed,label="✅ Abgeschlossen", tab_id="tab-completed"),
-    ], id="main-tabs", active_tab="tab-heatmap"),
+    ], id="main-tabs", active_tab="tab-overview"),
 ], style={"backgroundColor": "#F8F9FA", "minHeight": "100vh", "paddingBottom": "40px"})
 
 
@@ -897,6 +1023,21 @@ def refresh_completed(_, active_tab):
         return dash.no_update, dash.no_update
     rows = query_completed()
     return rows, f"{len(rows):,} Gruppen"
+
+
+# ===========================================================================
+# Callbacks — Tab 0 (Übersicht)
+# ===========================================================================
+
+@app.callback(
+    Output("overview-grid", "figure"),
+    Input("interval-overview", "n_intervals"),
+    Input("main-tabs", "active_tab"),
+)
+def refresh_overview(_, active_tab):
+    if active_tab not in ("tab-overview", None):
+        return dash.no_update
+    return build_overview_figure()
 
 
 # ---------------------------------------------------------------------------

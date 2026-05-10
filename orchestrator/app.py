@@ -88,7 +88,7 @@ def query_overview() -> list[dict]:
     conn = get_conn()
     rows = conn.execute(
         f"""SELECT federation,
-                   (elo_min / 100) * 100 AS elo_bucket,
+                   (elo_min / 50) * 50 AS elo_bucket,
                    COUNT(*) AS total,
                    SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done_count
             FROM scrape_groups
@@ -343,21 +343,37 @@ def build_figure(federation: str) -> go.Figure:
 # ---------------------------------------------------------------------------
 # Overview figure (Übersicht-Tab)
 # ---------------------------------------------------------------------------
-# Colorscale: z in [-1, 100]
-# -1 = grau (keine Gruppen), 0 = fast-weiss, 50 = blau, 100 = grün
+# Colorscale: z in [-1, 100], diskret in 10%-Schritten, Rot → Grün
 _OV_ZMIN, _OV_ZMAX = -1, 100
-_OV_RANGE = _OV_ZMAX - _OV_ZMIN + 1  # 102
 
-def _ov_norm(z):
-    return (z - _OV_ZMIN) / _OV_RANGE
+def _ov_n(v):
+    return (v - _OV_ZMIN) / (_OV_ZMAX - _OV_ZMIN)
 
-OVERVIEW_COLORSCALE = [
-    [_ov_norm(-1),   "#DCDCDC"], [_ov_norm(-0.01), "#DCDCDC"],  # keine Daten
-    [_ov_norm(0),    "#EBF5FB"], [_ov_norm(10),    "#BEE3F8"],  # 0–10%
-    [_ov_norm(20),   "#90CDF4"], [_ov_norm(40),    "#63B3ED"],  # 20–40%
-    [_ov_norm(50),   "#4299E1"], [_ov_norm(70),    "#2B6CB0"],  # 50–70%
-    [_ov_norm(80),   "#276749"], [_ov_norm(90),    "#1D9E75"],  # 80–90%
-    [_ov_norm(100),  "#1A7A5E"],                                 # 100%
+# Rot (0%) → Orange → Gelb (50%) → Grün (100%), je 10%-Schritt diskret
+_OV_STEPS = [
+    (0,   "#B71C1C"),  # 0%   tiefrot
+    (10,  "#C62828"),  # 10%
+    (20,  "#E64A19"),  # 20%  orange-rot
+    (30,  "#F57C00"),  # 30%  orange
+    (40,  "#FBC02D"),  # 40%  amber
+    (50,  "#F9A825"),  # 50%  gelb
+    (60,  "#C0CA33"),  # 60%  gelbgrün
+    (70,  "#8BC34A"),  # 70%  hellgrün
+    (80,  "#4CAF50"),  # 80%  grün
+    (90,  "#2E7D32"),  # 90%  dunkelgrün
+    (100, "#1B5E20"),  # 100% tiefgrün
+]
+
+OVERVIEW_COLORSCALE = [[0.0, "#DCDCDC"], [_ov_n(-0.5), "#DCDCDC"]]  # -1: keine Daten
+for _pct, _col in _OV_STEPS:
+    _lo = _ov_n(_pct - 0.5 if _pct > 0 else 0)
+    _hi = _ov_n(_pct + 9.5 if _pct < 100 else 100)
+    OVERVIEW_COLORSCALE += [[_lo, _col], [_hi, _col]]
+
+_OV_LEGEND = [
+    ("#DCDCDC", "Keine Daten"),
+    ("#B71C1C", "0%"), ("#E64A19", "20%"), ("#F57C00", "30%"),
+    ("#F9A825", "50%"), ("#8BC34A", "70%"), ("#4CAF50", "80%"), ("#1B5E20", "100%"),
 ]
 
 
@@ -370,7 +386,7 @@ def build_overview_figure() -> go.Figure:
     max_bucket = max(all_buckets)
 
     def bucket_label(b):
-        return f"≥{b}" if b == max_bucket else f"{b}–{b + 99}"
+        return f"≥{b}" if b == max_bucket else f"{b}–{b + 49}"
 
     bucket_labels = [bucket_label(b) for b in all_buckets]
 
@@ -476,14 +492,10 @@ def _ov_legend_item(color: str, label: str) -> html.Span:
 
 tab_overview = dbc.Container(fluid=True, children=[
     dcc.Interval(id="interval-overview", interval=30_000, n_intervals=0),
-    html.Div([
-        _ov_legend_item("#DCDCDC", "Keine Daten"),
-        _ov_legend_item("#EBF5FB", "0%"),
-        _ov_legend_item("#63B3ED", "40%"),
-        _ov_legend_item("#2B6CB0", "70%"),
-        _ov_legend_item("#1D9E75", "90%"),
-        _ov_legend_item("#1A7A5E", "100%"),
-    ], className="mb-2 mt-3"),
+    html.Div(
+        [_ov_legend_item(c, l) for c, l in _OV_LEGEND],
+        className="mb-2 mt-3",
+    ),
     dcc.Graph(id="overview-grid", config={"displayModeBar": False}),
 ], className="py-2")
 

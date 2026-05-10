@@ -41,8 +41,6 @@ services:
     networks:
       - fide_net
     restart: unless-stopped
-    depends_on:
-      - db
 
   worker:
 
@@ -69,7 +67,6 @@ services:
     # Manueller Reset: docker compose restart worker
     restart: "on-failure:3"
     depends_on:
-      - db
       - dashboard
 
 volumes:

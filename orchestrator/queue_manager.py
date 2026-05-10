@@ -238,6 +238,15 @@ class QueueManager:
     # Timing
     # ------------------------------------------------------------------
 
+    def reset_stale_running(self) -> int:
+        """Reset any 'running' groups to 'pending' (called on worker startup)."""
+        conn = self._connect()
+        cur = conn.execute(
+            "UPDATE scrape_groups SET status='pending' WHERE status='running'"
+        )
+        conn.commit()
+        return cur.rowcount
+
     def get_wait_time(self, profile: dict) -> float:
         """Return a jittered wait time in seconds based on the active profile."""
         base = profile.get("base_wait_seconds", 3.0)

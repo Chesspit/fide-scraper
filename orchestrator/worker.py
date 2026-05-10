@@ -286,6 +286,11 @@ def run(
     qm = QueueManager()
     device = os.getenv("WORKER_DEVICE")
 
+    # Beim Start: unterbrochene 'running'-Gruppen zurücksetzen (Worker-Neustart nach Crash/Redeploy)
+    reset_count = qm.reset_stale_running()
+    if reset_count:
+        logger.info("Startup: %d unterbrochene running-Gruppen → pending zurückgesetzt", reset_count)
+
     if profile_name:
         pm.set_active(profile_name)
 

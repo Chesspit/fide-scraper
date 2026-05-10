@@ -343,38 +343,40 @@ def build_figure(federation: str) -> go.Figure:
 # ---------------------------------------------------------------------------
 # Overview figure (Übersicht-Tab)
 # ---------------------------------------------------------------------------
-# Colorscale: z in [-1, 100], diskret in 10%-Schritten, Rot → Grün
-_OV_ZMIN, _OV_ZMAX = -1, 100
+# z = -10 → keine Daten (grau), z = 0..100 → Prozent in 10%-Schritten
+# _OV_ZMIN=-10 gibt dem grauen Bereich genug Abstand von 0%
+_OV_ZMIN, _OV_ZMAX = -10, 100
+_OV_NO_DATA = -10
 
 def _ov_n(v):
-    return (v - _OV_ZMIN) / (_OV_ZMAX - _OV_ZMIN)
+    return (v - _OV_ZMIN) / (_OV_ZMAX - _OV_ZMIN)  # = (v + 10) / 110
 
-# Rot (0%) → Orange → Gelb (50%) → Grün (100%), je 10%-Schritt diskret
+# RdYlGn-inspirierte Palette, 11 Stufen 0%–100%
 _OV_STEPS = [
     (0,   "#B71C1C"),  # 0%   tiefrot
-    (10,  "#C62828"),  # 10%
-    (20,  "#E64A19"),  # 20%  orange-rot
-    (30,  "#F57C00"),  # 30%  orange
-    (40,  "#FBC02D"),  # 40%  amber
-    (50,  "#F9A825"),  # 50%  gelb
-    (60,  "#C0CA33"),  # 60%  gelbgrün
-    (70,  "#8BC34A"),  # 70%  hellgrün
-    (80,  "#4CAF50"),  # 80%  grün
-    (90,  "#2E7D32"),  # 90%  dunkelgrün
+    (10,  "#D32F2F"),  # 10%  rot
+    (20,  "#F44336"),  # 20%  hellrot
+    (30,  "#FF7043"),  # 30%  orange-rot
+    (40,  "#FFA726"),  # 40%  orange
+    (50,  "#FFEE58"),  # 50%  gelb
+    (60,  "#D4E157"),  # 60%  gelbgrün
+    (70,  "#9CCC65"),  # 70%  hellgrün
+    (80,  "#66BB6A"),  # 80%  grün
+    (90,  "#43A047"),  # 90%  dunkelgrün
     (100, "#1B5E20"),  # 100% tiefgrün
 ]
 
-OVERVIEW_COLORSCALE = [[0.0, "#DCDCDC"], [_ov_n(-0.5), "#DCDCDC"]]  # -1: keine Daten
+# Grauer Block für keine Daten (-10 bis -0.5), danach diskrete Farbstufen
+OVERVIEW_COLORSCALE = [[0.0, "#DCDCDC"], [_ov_n(-0.5), "#DCDCDC"]]
 for _pct, _col in _OV_STEPS:
     _lo = _ov_n(_pct - 0.5 if _pct > 0 else 0)
     _hi = _ov_n(_pct + 9.5 if _pct < 100 else 100)
     OVERVIEW_COLORSCALE += [[_lo, _col], [_hi, _col]]
 
-_OV_LEGEND = [
-    ("#DCDCDC", "Keine Daten"),
-    ("#B71C1C", "0%"), ("#E64A19", "20%"), ("#F57C00", "30%"),
-    ("#F9A825", "50%"), ("#8BC34A", "70%"), ("#4CAF50", "80%"), ("#1B5E20", "100%"),
-]
+_OV_LEGEND = (
+    [("#DCDCDC", "Keine Daten")] +
+    [(col, f"{pct}%") for pct, col in _OV_STEPS]
+)
 
 
 def build_overview_figure() -> go.Figure:
@@ -403,7 +405,7 @@ def build_overview_figure() -> go.Figure:
                 z_row.append(pct)
                 text_row.append(f"{pct}%<br>{r['done_count']}/{r['total']} Gruppen done")
             else:
-                z_row.append(_OV_ZMIN)
+                z_row.append(_OV_NO_DATA)
                 text_row.append("keine Gruppen")
         z.append(z_row)
         text.append(text_row)

@@ -1,0 +1,32 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f8f9fa;
+}
+
+.page-title {
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: #222;
+    margin-bottom: 20px;
+}
+
+.Select-control {
+    border-radius: 6px !important;
+}
+
+/* Version B: hide selected-value chips in dropdown — shown in chart legend instead */
+#player-dropdown-b .Select-value,
+#player-dropdown-b [class$="-multiValue"] {
+    display: none !important;
+}
+
+.chart-info {
+    background: #f0f4f8;
+    border-left: 3px solid #aab8c8;
+    border-radius: 4px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #555;
+    line-height: 1.6;
+    margin-bottom: 12px;
+}

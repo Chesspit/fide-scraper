@@ -1,20 +1,25 @@
 # Datenübersicht
 
-Stand: 26. April 2026
+Stand: 10. Mai 2026
 
 ---
 
 ## 1. Spielergruppen
 
-| Gruppe | Beschreibung | Spieler gesamt | davon aktiv | davon inaktiv |
-|---|---|---|---|---|
-| `female_top` | Alle aktiven Spielerinnen ELO 2400–2600 (April 2026) | 66 | 45 | 21 |
-| `male_control` | Age-matched männliche Spieler ELO 2400–2600 (3 Erweiterungen, Seed 42/43/44) | 479 | 435 | 44 |
-| `elite_2600` | Alle Spieler ELO ≥ 2600 | 202 | 153 | 49 |
-| `swiss_2026` | SMM 2026 NLA + NLB, erste 20 Teams (Boolean-Flag) | 349 exklusiv | 338 | 11 |
-| `female_2200` | Aktive Spielerinnen ELO 2200–2399 | 321 | 321 | 0 |
-| `male_2200` | Age-matched Männer ELO 2200–2399 (Seed 45) | 170 | 170 | 0 |
-| **Total** | | **1.417** | | |
+| Gruppe | Beschreibung | Spieler | Gescrapt |
+|---|---|---|---|
+| `female_top` | ELO 2400–2600, F | 66 | 2009-01 – 2026-04 |
+| `male_control` | ELO 2400–2600, M, age-matched | 649 | 2009-01 – 2026-04 |
+| `elite_2600` | ELO ≥ 2600 | 202 | 2009-01 – 2026-04 |
+| `swiss_2026` | SMM 2026 NLA+NLB (Boolean-Flag) | 349 exkl. | 2009-01 – 2026-04 |
+| `female_2200` | ELO 2200–2399, F | 321 | 2009-01 – 2026-04 |
+| `male_2200` | ELO 2200–2399, M, age-matched | 170 | 2013-01 – 2026-04 |
+| `global_02–11b` | Weltweit ELO 2407–2603 | 1.331 | 2012-08 – 2026-04 |
+| `global_12a` | Weltweit ELO 2399–2402 | 63 | ⏳ läuft (lokal) |
+| **Total gescrapt** | | **2.508** | |
+
+> 159 Gruppen total in `groups`-Tabelle definiert. Globale Gruppen ab global_12b via Orchestrator (VPS + ProxyJet).
+> Früheste echte Daten: **2008-04** (FIDE hatte vor diesem Datum kein monatliches Rating-System).
 
 > `swiss_2026` ist ein Boolean-Flag in `players`, kein `analysis_group`-Wert.
 > 13 Spieler sind gleichzeitig in `swiss_2026` und einer anderen Gruppe.
@@ -42,14 +47,16 @@ Stand: 26. April 2026
 
 ## 3. Partien-Übersicht
 
-| Gruppe | Partien | Gegner aufgelöst | Gegner-Geschlecht F | Open | Frauenturnier | Teamturnier | Frauen-Team |
-|---|---|---|---|---|---|---|---|
-| `female_top` | 45.023 | 43.119 (95,8 %) | 29.444 (65,4 %) | 21.534 | 16.870 | 984 | 5.635 |
-| `male_control` | 343.926 | 335.971 (97,7 %) | 16.481 (4,8 %) | 312.137 | 692 | 31.062 | 35 |
-| `elite_2600` | 183.550 | 179.498 (97,8 %) | 6.295 (3,5 %) | 157.858 | 307 | 25.287 | 98 |
-| `swiss_2026` | 121.395 | 119.712 (98,6 %) | 6.988 (5,8 %) | 95.761 | 542 | 24.615 | 477 |
-| `female_2200` | 2.926 ⏳ | 2.796 (95,6 %) | 1.429 (48,8 %) | 1.368 | 863 | 300 | 395 |
-| **Gesamt** | **935.162** | **911.359 (97,5 %)** | | | | | |
+| Gruppe | Partien | Gegner aufgelöst |
+|---|---|---|
+| `female_top` | 50.714 | ~97 % |
+| `male_control` | 526.121 | ~98 % |
+| `elite_2600` | 202.246 | ~98 % |
+| `swiss_2026` | — (Boolean-Flag) | — |
+| `female_2200` | 258.696 | ~97 % |
+| `male_2200` | ~neu | ~97 % |
+| `global_02` | ~neu | ~97 % |
+| **Gesamt** | **~1.793.298** | **~97,5 %** |
 
 > `female_top` spielt 65,4 % ihrer Partien gegen weibliche Gegnerinnen — weit mehr als die
 > Männergruppen (< 6 %). Das ist ein direktes Abbild des Frauenturnier-Anteils (37,5 % aller
@@ -128,6 +135,7 @@ Protokolliert den Scraping-Status pro (Spieler, Periode).
 | `status` | TEXT | `ok` = Daten vorhanden, `no_data` = keine Partien, `error` = Fehler |
 | `k_factor` | INTEGER | K-Faktor (10 / 20 / 40) dieser Periode |
 | `scraped_at` | TIMESTAMPTZ | Zeitpunkt des Abrufs |
+| `http_status` | INTEGER | HTTP-Code bei Fehler (429 = rate limited, 403 = blocked) |
 
 ---
 

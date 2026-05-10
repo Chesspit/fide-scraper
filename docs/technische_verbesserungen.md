@@ -1,14 +1,15 @@
 # Technische Verbesserungen
 
-Stand: 26. April 2026
+Stand: 10. Mai 2026
 
 ---
 
-## 0. Backfill-Workflow: VPS als primäre Scraping-Maschine
+## 0. Backfill-Workflow: VPS oder Mac Mini
 
-Backfills sollten **immer vom VPS** aus gestartet werden — nicht vom Mac über
-den SSH-Tunnel. Der VPS läuft 24/7, hat eine stabile Verbindung zur lokalen DB
-und ist unabhängig von Mac-Ruhemodus oder Tunnel-Unterbrüchen.
+**Primär:** Mac Mini lokal (ab 2026-04-29), weil die VPS-IP zeitweise von FIDE
+geblockt wird. Residential-IPs wie der Mac Mini wirken natürlicher.
+
+**Fallback:** VPS, sobald IP-Block aufgehoben ist (Prüfung nach 48h Pause).
 
 ### 0.1 Ablauf (du führst das selbst aus)
 
@@ -22,10 +23,14 @@ ssh pit@187.124.181.116
 bash /opt/fide-scraper/backfill_group.sh GRUPPENNAME
 ```
 
+Defaults: FROM=2008-04-01, TO=2026-03-01, --reverse (neueste Perioden zuerst).
+Vor dem Backfill werden ungültige FIDE-Perioden (z.B. 2008-01) automatisch
+als `no_data` vorausgefüllt (`prefill_invalid_periods.sh`).
+
 Beispiele:
 ```bash
 bash /opt/fide-scraper/backfill_group.sh male_2200
-bash /opt/fide-scraper/backfill_group.sh male_2200 2006-01-01 2026-03-01
+bash /opt/fide-scraper/backfill_group.sh male_2200 2008-04-01 2026-03-01
 ```
 
 **Fertig.** Der Prozess läuft im Hintergrund weiter, auch nach dem Ausloggen.
@@ -96,35 +101,58 @@ eine Maschine allein zu lange brauchen würde:
 - Gruppe < 300 Spieler → eine Maschine, kein --shard nötig
 - Gruppe > 300 Spieler → --shard über verfügbare Maschinen
 
-### 0.3 Warum nicht vom Mac?
+### 0.3 Mac Mini lokal starten
 
-| Kriterium | Mac via Tunnel | VPS direkt |
-|---|---|---|
-| Stabilität | ❌ Tunnel kann abbrechen | ✅ Direkt, kein Tunnel |
-| Ruhemodus | ❌ Mac schläft → Prozess stoppt | ✅ Läuft 24/7 |
-| DB-Latenz | ❌ Tunnel-Overhead | ✅ Lokales Netz |
-| Geschwindigkeit | gleich | gleich |
+```bash
+# Seeden (einmalig pro Gruppe):
+DATABASE_URL=postgresql://fide:nimzo194.@localhost:5434/fidedb \
+  python3 scripts/seed_players.py --group global_03
 
-**NordVPN:** Sinnvoll als Backup-IP für das MacBook Pro bei parallelem Betrieb
-oder falls FIDE einmal eine IP drosselt. Nicht als primäres Optimierungswerkzeug.
+# Backfill starten (caffeinate + auto-restart + tunnel-check):
+bash scripts/run_local_backfill.sh global_03
+```
+
+Das Script `run_local_backfill.sh`:
+- Verhindert Mac-Ruhemodus via `caffeinate -i`
+- Startet SSH-Tunnel automatisch falls nicht aktiv
+- Startet nach Absturz neu (inkl. Tunnel-Prüfung)
+- Logs unter `/tmp/backfill_GRUPPE_local.log`
+
+**NordVPN:** Optionaler Schutz der echten IP. Bei Overnight-Läufen stabil
+auf einem Land lassen (Schweiz empfohlen — FIDE-Server in Lausanne).
 
 ---
 
 ## 1. Scraping-Geschwindigkeit
 
-### 1.1 Sleep-Zeiten reduziert *(implementiert 2026-04-25)*
+### 1.1 Menschliches Sleep-Muster *(implementiert 2026-04-29)*
 
-**Datei:** `config.yaml`
+**Datei:** `config.yaml` + `scraper/fetcher.py`
 
 ```yaml
 backfill_rate_limit:
-  min_sleep: 1.0   # vorher: 2.0
-  max_sleep: 2.0   # vorher: 4.0
+  min_sleep: 3.0
+  max_sleep: 5.0
 ```
 
-**Speedup:** ~2× beim Backfill (von ~2.700 auf ~5.400 Perioden/Stunde).
-FIDE's Endpoint toleriert die höhere Rate ohne 429-Fehler.
-Normal-Scraping (monatlicher Lauf) bleibt bei 1,2–2,5s.
+Sleep-Verteilung: **Beta(2,5)** — meistens ~3–3,5s, gelegentlich länger.
+Zusätzlich 8 % Chance auf Extra-Pause von 4–6s (simuliert menschliches Lesen).
+
+**Gemessener Durchsatz:** ~1.800 Combos/h (global_02, 6,9h für 12.544 Combos).
+Effektiv ~2s/Combo, da viele `no_data`-Responses sehr schnell kommen.
+
+### 1.2 Block-Erkennung (429/403) *(implementiert 2026-04-29)*
+
+**Datei:** `scraper/fetcher.py`, `scripts/backfill.py`
+
+- **HTTP 429 (rate limited):** Sofort 45-Minuten-Pause, dann Weiterfahren
+- **HTTP 403 (blocked):** Sofortiger Stopp mit Fehlermeldung
+- **HTTP-Code** wird in `scrape_periods.http_status` gespeichert
+
+```python
+class RateLimitedError(Exception): ...
+class BlockedError(Exception): ...
+```
 
 ---
 
@@ -196,7 +224,22 @@ bleibt die effektive Rate bei ~3 Requests/Sekunde, was noch vertretbar ist.
 
 ---
 
-## 2. SSH-Tunnel Stabilität *(implementiert 2026-04-25)*
+### 1.3 --reverse Flag *(implementiert 2026-04-29)*
+
+**Datei:** `scripts/backfill.py`
+
+Scrapt Perioden von neu nach alt (2026-03 → 2013-01). Neueste Daten zuerst
+verfügbar, und das Muster wirkt natürlicher (kein historischer Bulk-Scan).
+
+```bash
+python3 scripts/backfill.py --from 2013-01-01 --to 2026-03-01 --group global_03 --reverse
+```
+
+Ist Default in `backfill_group.sh` seit 2026-04-29.
+
+---
+
+## 2. SSH-Tunnel Stabilität *(implementiert 2026-04-25/29)*
 
 **Datei:** `scripts/tunnel.sh`
 
@@ -223,8 +266,10 @@ done
 ```
 
 **Ergebnis:** Tunnel reconnectet automatisch ohne manuellen Eingriff.
-`db.py` hat bereits einen eingebauten Reconnect-Mechanismus, der kurze
-Tunnel-Unterbrechungen überbrückt.
+
+`ensure_connection` in `db.py` wartet bei DB-Fehler bis zu **5 Minuten**
+(10 Versuche mit 5s, 10s, 20s ... 60s Backoff) — genug Zeit für
+Tunnel-Reconnect. Verhindert Prozessabsturz bei kurzen Unterbrüchen.
 
 ---
 
@@ -302,3 +347,63 @@ AND gr.period <= p.period_end
 | 007 | opponent_sex + tournament_type in game_results | 2026-04-25 |
 | 008 | tournament_type: closed + knockout Kategorien | 2026-04-25 |
 | 009 | expected_score + over_performance + opponent_match_quality | 2026-04-25 |
+| 010 | no_data_reason in scrape_periods (system_gap / too_young / inactive) | 2026-04-28 |
+| 011 | no_data_reason Enum-Constraint | 2026-04-28 |
+| 012 | v_dynamic_membership View (dynamische Gruppenzugehörigkeit per Rating) | 2026-05-01 |
+
+---
+
+## 6. Scraping Orchestrator *(implementiert 2026-05-10)*
+
+**Verzeichnis:** `orchestrator/`
+
+Eigenständiges Tool für skalierbares globales Scraping via ProxyJet Rotating Residential Proxy.
+
+### 6.1 Architektur
+
+| Datei | Beschreibung |
+|---|---|
+| `app.py` | Dash-Dashboard (4 Tabs: Übersicht / Heatmap / Queue / Abgeschlossen) |
+| `worker.py` | Worker-Schleife (Queue → ProxyJet → PostgreSQL) |
+| `queue_manager.py` | SQLite-Queue, Prioritätsvergabe, Optimistic Locking, Startup-Reset |
+| `proxy_manager.py` | ProxyJet Rotating Residential Proxy (eu.proxy-jet.io:1010) |
+| `profile_manager.py` | Scrape-Profile + Fuzzy-Auswahl |
+| `generate_groups.py` | 24.588 Gruppen (Föd. × Jahr × ELO-Band) generieren |
+| `setup_db.py` | SQLite-Schema (scrape_groups, scrape_runs) |
+| `profiles.yaml` | conservative / normal / aggressive + fuzzy_weights |
+| `docker-compose.yml` | dashboard + worker Services auf VPS |
+
+### 6.2 Features
+
+| Feature | Details |
+|---|---|
+| 24.588 Gruppen | Föd. × Jahr (2009–aktuell) × ELO-Band |
+| Priorität | Strikt nach priority-Spalte (TIER_WIDTH=1) |
+| Fuzzy-Profil | Gewichtet: 0% conservative, 70% normal, 30% aggressive |
+| Gerät-Zuweisung | device-Spalte: mac_mini / raspi / vps |
+| Startup-Reset | Unterbrochene running-Gruppen → pending beim Start |
+| Periods-Cap | valid_periods_for_year() gedeckelt auf Vormonat (keine Zukunftsanfragen) |
+| Dashboard | Übersicht-Tab: Fortschritt nach Land & ELO-Band (grau→grün) |
+
+### 6.3 Deployment
+
+```bash
+# VPS: Code pullen + Services starten
+ssh pit@187.124.181.116
+cd /opt/fide-scraper && git pull
+cd orchestrator && docker compose up -d --build
+
+# Dashboard via SSH-Tunnel:
+ssh -N -L 8050:localhost:8050 pit@187.124.181.116
+# → http://localhost:8050
+```
+
+### 6.4 Fuzzy-Profil-Gewichtung
+
+| Profil | Gewicht | Wartezeit | Proxy |
+|--------|--------:|-----------|-------|
+| conservative | 0% | 8s ±50% | Ja |
+| normal | 70% | 3s ±40% | Ja |
+| aggressive | 30% | 1s ±30% | Nein |
+
+> conservative bleibt als Option erhalten (manuell per Gruppe zuweisbar).

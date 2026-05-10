@@ -100,10 +100,19 @@ def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int) -> list[i
 # ---------------------------------------------------------------------------
 
 def valid_periods_for_year(year: int) -> list[str]:
-    """Return all valid FIDE period strings for the given calendar year."""
+    """Return valid FIDE period strings for the given year, capped at last month."""
+    today = date.today()
+    # Cap at the first day of the previous month — current month has no FIDE data yet
+    if today.month == 1:
+        cutoff = date(today.year - 1, 12, 1)
+    else:
+        cutoff = date(today.year, today.month - 1, 1)
+
     periods = []
     for month in range(1, 13):
         d = date(year, month, 1)
+        if d > cutoff:
+            break
         if is_valid_fide_period(d):
             periods.append(d.isoformat())
     return periods

@@ -19,7 +19,7 @@ from orchestrator.setup_db import DB_PATH, create_db
 # federation order while maintaining year/ELO direction.
 # With sequential priorities (1, 2, 3 …): TIER_WIDTH=50 means the worker
 # randomly picks from the top ~50 groups by priority.
-TIER_WIDTH = 50
+TIER_WIDTH = 1
 
 
 @dataclass

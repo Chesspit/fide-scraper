@@ -648,20 +648,33 @@ def refresh_heatmap(_, federation):
     status_parts = [f"Worker: {cmd}{limit_str}"]
     current_group = ws.get("current_group")
     if current_group:
+        import time as _time
         profile_name = ws.get("current_profile", "?")
         c_done = ws.get("combos_done", 0)
         c_total = ws.get("combos_total")
+        n_players = ws.get("player_count")
         started_at = ws.get("group_started_at")
+        mb = ws.get("mb_downloaded", 0.0)
+
         combo_str = f"{c_done}/{c_total}" if c_total else str(c_done)
+        player_str = f"{n_players} Spieler · " if n_players else ""
+
         speed_str = ""
+        eta_str = ""
         if started_at and c_done:
-            import time as _time
             elapsed = _time.time() - started_at
             if elapsed > 0:
                 cph = c_done / elapsed * 3600
                 speed_str = f" · {cph:.0f} c/h"
+                if c_total and c_total > c_done:
+                    eta_sec = (c_total - c_done) / (c_done / elapsed)
+                    eta_h = int(eta_sec // 3600)
+                    eta_m = int((eta_sec % 3600) // 60)
+                    eta_str = f" · ETA {eta_h}h{eta_m:02d}m"
+
+        mb_str = f" · {mb:.1f} MB" if mb else ""
         status_parts.append(f"{current_group} [{profile_name}]")
-        status_parts.append(f"{combo_str} combos{speed_str}")
+        status_parts.append(f"{player_str}{combo_str} combos{speed_str}{eta_str}{mb_str}")
 
     return (fig,
             f"{s['total']:,}", f"{s['done']:,}", f"{s['pending']:,}",

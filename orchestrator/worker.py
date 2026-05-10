@@ -143,7 +143,7 @@ def _fetch(
                 return None  # caller handles cooldown
 
             resp.raise_for_status()
-            return resp.text
+            return resp.text, len(resp.content)
 
         except BlockedError:
             raise
@@ -152,13 +152,13 @@ def _fetch(
             if attempt == max_retries:
                 logger.error("Giving up on fide_id=%s period=%s after %d attempts: %s",
                              fide_id, period_str, max_retries, exc)
-                return None
+                return None, 0
             backoff = 4 ** (attempt - 1)
             logger.warning("Attempt %d/%d failed for fide_id=%s period=%s — retrying in %ds",
                            attempt, max_retries, fide_id, period_str, backoff)
             time.sleep(backoff)
 
-    return None
+    return None, 0
 
 
 # ---------------------------------------------------------------------------
@@ -198,15 +198,12 @@ def scrape_group(
     logger.info("Group %s/%d/%d-%d: %d pending combos (%d players × up to %d periods)",
                 group.federation, group.year, group.elo_min, group.elo_max,
                 len(pending), len(fide_ids), len(periods))
-    write_state(combos_total=len(pending))
+    write_state(combos_total=len(pending), combos_done=0)
 
     records_found = 0
-    _combo_idx = 0
+    _bytes_session = read_worker_state().get("mb_downloaded", 0.0) * 1024 * 1024
 
-    for fide_id, period in pending:
-        _combo_idx += 1
-        if _combo_idx % 10 == 0:
-            write_state(combos_done=_combo_idx)
+    for _combo_idx, (fide_id, period) in enumerate(pending, start=1):
         # Pause/stop check inside the loop
         cmd = read_command()
         if cmd == "stopped":
@@ -226,7 +223,8 @@ def scrape_group(
             if proxy:
                 session.proxies.update(proxy)
 
-        html = _fetch(session, fide_id, period_str, profile)
+        html, nbytes = _fetch(session, fide_id, period_str, profile)
+        _bytes_session += nbytes
 
         if html is None:
             # HTTP 429 oder wiederholter Fehler — Proxy in Cooldown, direkt retry
@@ -234,7 +232,8 @@ def scrape_group(
             proxy_manager.report_block(cooldown)
             logger.warning("Backing off %ds, dann direkter Retry ohne Proxy", cooldown)
             time.sleep(cooldown)
-            html = _fetch(requests.Session(), fide_id, period_str, profile)
+            html, nbytes2 = _fetch(requests.Session(), fide_id, period_str, profile)
+            _bytes_session += nbytes2
 
         if not html or not html.strip():
             pg_conn = save_period_no_data(pg_conn, fide_id, period_str)
@@ -248,8 +247,15 @@ def scrape_group(
                 pg_conn = save_period(pg_conn, fide_id, period_str, games, k_factor, own_rating)
                 records_found += len(games)
 
+        # State alle 200 Combos schreiben (~10 Min bei Normalgeschwindigkeit)
+        if _combo_idx % 200 == 0:
+            write_state(combos_done=_combo_idx, mb_downloaded=_bytes_session / 1024 / 1024)
+
         wait = qm.get_wait_time(profile)
         time.sleep(wait)
+
+    write_state(combos_done=_combo_idx if pending else 0,
+                mb_downloaded=_bytes_session / 1024 / 1024)
 
     return records_found, pg_conn
 
@@ -352,6 +358,7 @@ def run(
             write_state(
                 current_group=label,
                 current_profile=profile["name"],
+                player_count=group.player_count,
                 combos_total=None,
                 combos_done=0,
                 group_started_at=time.time(),

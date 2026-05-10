@@ -66,8 +66,6 @@ services:
     # Verhindert Endlosschleifen bei systematischen Fehlern (z.B. DB nicht erreichbar).
     # Manueller Reset: docker compose restart worker
     restart: "on-failure:3"
-    depends_on:
-      - dashboard
 
 volumes:
   orchestrator_data:

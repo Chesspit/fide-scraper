@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-09 21:20 (Quelle: `groups`-Tabelle DB)
+Stand: 2026-05-10 18:10 (Quelle: `groups`-Tabelle DB)
 
 ---
 
@@ -40,6 +40,7 @@ Stand: 2026-05-09 21:20 (Quelle: `groups`-Tabelle DB)
 | global_10a | 83 | 2416–2421 | 2012-08 – 2026-03 | ✅ complete |
 | global_10b | 74 | 2422–2427 | 2012-08 – 2026-04 | ✅ complete |
 | global_11a | 73 | 2407–2411 | 2012-08 – 2026-04 | ✅ complete |
+| global_11b | 62 | 2412–2415 | 2012-08 – 2026-04 | ✅ complete |
 
 ---
 
@@ -47,7 +48,6 @@ Stand: 2026-05-09 21:20 (Quelle: `groups`-Tabelle DB)
 
 | Gruppe | Spieler | ELO-Range | Zeitraum | Status |
 |--------|--------:|-----------|----------|--------|
-| global_11b | — | 2412–2415 | 2012-08 – 2026-04 | ⬜ pending |
 | global_12a | — | 2399–2402 | 2012-08 – 2026-04 | ⬜ pending |
 | global_12b | — | 2403–2406 | 2012-08 – 2026-04 | ⬜ pending |
 | global_13a | — | 2391–2394 | 2012-08 – 2026-04 | ⬜ pending |
@@ -71,7 +71,6 @@ Stand: 2026-05-09 21:20 (Quelle: `groups`-Tabelle DB)
 
 ## Durchsatz & Restlaufzeit
 
-- Durchsatz: ~1.450 Combos/h (gemessen global_05b/06a)
-- Offene Gruppen: 19 × ~70 Spieler × 165 Perioden ≈ **219.000 Combos**
-- Geschätzte Restlaufzeit: **~151h** (~6,3 Tage sequenziell)
+- Offene Global-Gruppen: 18 × ~70 Spieler × 165 Perioden ≈ **207.000 Combos**
+- Global-Scraping ab global_12a via Orchestrator (VPS, ProxyJet)
 - Gesamt-Partien in DB: **1.793.298** | Spieler mit Daten: **2.508**

@@ -357,6 +357,7 @@ def run(
                         label, group.priority, profile["name"])
             write_state(
                 current_group=label,
+                current_year=group.year,
                 current_profile=profile["name"],
                 player_count=group.player_count,
                 combos_total=None,

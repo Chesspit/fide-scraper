@@ -673,7 +673,14 @@ def refresh_heatmap(_, federation):
                     eta_str = f" · ETA {eta_h}h{eta_m:02d}m"
 
         mb_str = f" · {mb:.1f} MB" if mb else ""
-        status_parts.append(f"{current_group} [{profile_name}]")
+        year = ws.get("current_year", "")
+        # Label aufsplitten: "POL/2026/2361–2739" → "POL · ELO 2361–2739"
+        parts = current_group.split("/")
+        fed = parts[0] if parts else current_group
+        elo = parts[2] if len(parts) > 2 else ""
+        group_str = f"{fed} · ELO {elo}" if elo else current_group
+        year_str = f"Jahr {year} · " if year else ""
+        status_parts.append(f"{year_str}{group_str} [{profile_name}]")
         status_parts.append(f"{player_str}{combo_str} combos{speed_str}{eta_str}{mb_str}")
 
     return (fig,

@@ -49,7 +49,8 @@ COLORSCALE = [
 _DATA_DIR = Path(os.getenv("ORCHESTRATOR_DATA_DIR", Path(__file__).resolve().parent))
 WORKER_STATE_PATH = _DATA_DIR / "worker_state.json"
 
-OVERVIEW_FEDERATIONS = ["GER", "SUI", "AUT", "POL", "UKR", "NOR"]
+OVERVIEW_FEDERATIONS = ["GER", "SUI", "AUT", "POL", "UKR", "NOR",
+                        "·1", "·2", "·3", "·4", "·5", "·6", "·7", "·8"]
 
 pm = ProfileManager()
 

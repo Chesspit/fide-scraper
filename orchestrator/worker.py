@@ -42,6 +42,7 @@ WORKER_STATE_PATH = _DATA_DIR / "worker_state.json"
 
 _PAUSE_POLL_INTERVAL = 5      # seconds between pause-state polls
 _EMPTY_QUEUE_SLEEP = 120      # seconds to wait when queue is empty
+_CIRCUIT_BREAKER_THRESHOLD = 15  # consecutive double-failures before aborting group
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +150,7 @@ def _fetch(
                 raise BlockedError(f"HTTP 403 fide_id={fide_id} period={period_str}")
             if resp.status_code == 429:
                 logger.warning("HTTP 429 fide_id=%s period=%s (attempt %d)", fide_id, period_str, attempt)
-                return None  # caller handles cooldown
+                return None, 0  # caller handles cooldown
 
             resp.raise_for_status()
             return resp.text, len(resp.content)
@@ -211,6 +212,7 @@ def scrape_group(
 
     records_found = 0
     _bytes_session = read_worker_state().get("mb_downloaded", 0.0) * 1024 * 1024
+    _consecutive_failures = 0
 
     for _combo_idx, (fide_id, period) in enumerate(pending, start=1):
         # Pause/stop check inside the loop
@@ -243,6 +245,17 @@ def scrape_group(
             time.sleep(cooldown)
             html, nbytes2 = _fetch(requests.Session(), fide_id, period_str, profile)
             _bytes_session += nbytes2
+            if html is None:
+                _consecutive_failures += 1
+                if _consecutive_failures >= _CIRCUIT_BREAKER_THRESHOLD:
+                    raise RuntimeError(
+                        f"Circuit breaker: {_consecutive_failures} aufeinanderfolgende "
+                        f"Timeouts (Proxy + direkt) — FIDE blockt diese IP, Gruppe abgebrochen"
+                    )
+            else:
+                _consecutive_failures = 0
+        else:
+            _consecutive_failures = 0
 
         if not html or not html.strip():
             pg_conn = save_period_no_data(pg_conn, fide_id, period_str)
@@ -310,13 +323,17 @@ def run(
     if max_hours:
         logger.info("Limit: %.1f Stunden", max_hours)
 
-    # CLI-Limits als Fallback falls kein Dashboard-Start
+    # CLI-Limits: explizit gesetzt → immer als "run" starten und Limits schreiben
     if max_groups or max_hours:
         write_state(command="run", current_group=None,
                     max_groups=max_groups, max_hours=max_hours,
                     started_at=time.strftime("%Y-%m-%dT%H:%M:%S"), groups_done=0)
-    else:
+    elif not WORKER_STATE_PATH.exists():
+        # Erster Start (kein State) → auto-run
         write_state(command="run", current_group=None)
+    else:
+        # Neustart nach Crash/Reboot: bestehenden command beibehalten, nur stale group löschen
+        write_state(current_group=None)
 
     pg_conn = get_connection()
 
@@ -346,11 +363,9 @@ def run(
                     pass
 
             # ── Dashboard-Command ─────────────────────────────────────────
+            # "stopped" und "pause" → warten (Container läuft weiter, wartet auf "run")
             cmd = state.get("command", "stopped")
-            if cmd == "stopped":
-                logger.info("Stop-Befehl — Worker beendet sich")
-                break
-            if cmd == "pause":
+            if cmd in ("stopped", "pause"):
                 write_state(current_group=None)
                 time.sleep(_PAUSE_POLL_INTERVAL)
                 continue
@@ -395,15 +410,13 @@ def run(
                 qm.reset_to_pending(group.id)
                 qm.log_run(group.id, run_started, "failed",
                            error_msg="stopped by user", profile_used=profile.get("name", ""))
-                break
+                # Nicht break — Hauptloop prüft command und wartet auf "run"
 
             except BlockedError as exc:
-                logger.error("IP geblockt: %s — Worker stoppt", exc)
+                logger.error("IP geblockt: %s — Gruppe übersprungen, Worker läuft weiter", exc)
                 qm.mark_failed(group.id, str(exc))
                 qm.log_run(group.id, run_started, "failed",
                            error_msg=str(exc), profile_used=profile.get("name", ""))
-                write_state(command="stopped")
-                break
 
             except Exception as exc:
                 logger.exception("Fehler bei %s", label)

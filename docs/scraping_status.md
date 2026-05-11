@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-10 23:01 (Quelle: `groups`-Tabelle DB)
+Stand: 2026-05-11 07:38 (Quelle: `groups`-Tabelle DB)
 
 ---
 
@@ -49,7 +49,7 @@ Stand: 2026-05-10 23:01 (Quelle: `groups`-Tabelle DB)
 
 | Gruppe | Spieler | ELO-Range | Zeitraum | Status |
 |--------|--------:|-----------|----------|--------|
-| global_12b | — | 2403–2406 | 2012-08 – 2026-04 | ⬜ pending |
+| global_12b | 78 | 2403–2406 | 2012-08 – 2026-04 | 🔄 running (Mac Mini) |
 | global_13a | — | 2391–2394 | 2012-08 – 2026-04 | ⬜ pending |
 | global_13b | — | 2395–2398 | 2012-08 – 2026-04 | ⬜ pending |
 | global_14a | — | 2383–2386 | 2012-08 – 2026-04 | ⬜ pending |
@@ -71,6 +71,6 @@ Stand: 2026-05-10 23:01 (Quelle: `groups`-Tabelle DB)
 
 ## Durchsatz & Restlaufzeit
 
-- Offene Global-Gruppen: 18 × ~70 Spieler × 165 Perioden ≈ **207.000 Combos**
-- Global-Scraping ab global_12a via Orchestrator (VPS, ProxyJet)
+- Offene Global-Gruppen: 17 × ~70 Spieler × 165 Perioden ≈ **196.000 Combos** (global_12b läuft)
+- Global-Scraping ab global_12b via Mac Mini lokal
 - Gesamt-Partien in DB: **1.793.298** | Spieler mit Daten: **2.508**

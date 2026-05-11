@@ -38,6 +38,7 @@ services:
     volumes:
       - orchestrator_data:/data
       - ../config.yaml:/app/config.yaml:ro
+      - ./profiles.yaml:/app/orchestrator/profiles.yaml:ro
     ports:
       - "127.0.0.1:8050:8050"
     networks:
@@ -64,12 +65,13 @@ services:
       - orchestrator_data:/data
       - ../config.yaml:/app/config.yaml:ro
       - ../data:/app/data:ro
+      - ./profiles.yaml:/app/orchestrator/profiles.yaml:ro
     networks:
       - fide_net
-    # on-failure:3 — Worker neu starten bei Crash, aber nach 3 Versuchen aufhören.
-    # Verhindert Endlosschleifen bei systematischen Fehlern (z.B. DB nicht erreichbar).
-    # Manueller Reset: docker compose restart worker
-    restart: "on-failure:3"
+    # unless-stopped — Worker immer neu starten (auch nach Crash), ausser bei explizitem
+    # 'docker compose stop'. Worker selbst exitiert nicht mehr bei "stopped"-Command,
+    # sondern wartet im Poll-Loop auf den Start-Befehl vom Dashboard.
+    restart: unless-stopped
 
 volumes:
   orchestrator_data:

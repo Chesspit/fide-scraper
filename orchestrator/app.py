@@ -54,6 +54,14 @@ OVERVIEW_FEDERATIONS = ["GER", "SUI", "AUT", "POL", "UKR", "NOR",
 
 pm = ProfileManager()
 
+# Fuzzy-Label aus aktuellen Gewichten bauen (wird bei App-Start einmalig gelesen)
+def _fuzzy_label() -> str:
+    weights_cfg = pm._data.get("fuzzy_weights", {})
+    parts = [f"{p[0].upper()}{weights_cfg.get(p, 0)}%" for p in ["conservative", "normal", "aggressive"]]
+    return f"Fuzzy ({' / '.join(parts)})"
+
+FUZZY_LABEL = _fuzzy_label()
+
 
 # ---------------------------------------------------------------------------
 # DB helpers — shared
@@ -168,7 +176,7 @@ def query_queue() -> list[dict]:
     """All non-done, non-skipped groups sorted by priority (ascending = highest first)."""
     conn = get_conn()
     rows = conn.execute(
-        """SELECT id, priority, federation, continent, year,
+        f"""SELECT id, priority, federation, continent, year,
                   elo_min || '–' || elo_max AS elo_band,
                   player_count, status, retries,
                   COALESCE(device, '') AS device,
@@ -177,7 +185,7 @@ def query_queue() -> list[dict]:
                       WHEN 'conservative' THEN 'Langsam · Proxy immer'
                       WHEN 'normal'       THEN 'Normal · Proxy aktiv'
                       WHEN 'aggressive'   THEN 'Schnell · kein Proxy'
-                      ELSE 'Fuzzy (10/20/40/30)'
+                      ELSE '{FUZZY_LABEL}'
                   END AS taktik,
                   COALESCE(last_run_at, '–') AS last_run_at
            FROM scrape_groups
@@ -289,7 +297,7 @@ def build_figure(federation: str) -> go.Figure:
     if not rows:
         return go.Figure().update_layout(title=f"No data for {federation}")
 
-    years = sorted(set(r["year"] for r in rows))
+    years = sorted(set(r["year"] for r in rows), reverse=True)
     # Aufsteigend sortieren: Plotly zeigt y[0] unten, y[-1] oben → hohe ELO oben
     bands = sorted(set(r["elo_min"] for r in rows), reverse=False)
     band_labels = []
@@ -334,7 +342,7 @@ def build_figure(federation: str) -> go.Figure:
         height=height,
         margin=dict(l=100, r=20, t=60, b=20),
         plot_bgcolor="#FAFAFA", paper_bgcolor="#FAFAFA",
-        xaxis=dict(tickmode="linear", dtick=1, title="Jahr", side="top"),
+        xaxis=dict(tickmode="linear", dtick=1, title="Jahr", side="top", autorange="reversed"),
         yaxis=dict(title="ELO-Band", autorange=True),
         title=dict(text=f"{federation} — Scraping Grid", x=0.5),
     )
@@ -594,17 +602,17 @@ tab_heatmap = dbc.Container(fluid=True, children=[
 # Tab 2 — Queue layout
 # ---------------------------------------------------------------------------
 QUEUE_COLUMNS = [
-    {"name": "Priorität", "id": "priority",    "editable": True,  "type": "numeric"},
-    {"name": "Gerät",     "id": "device",      "editable": True,  "presentation": "dropdown"},
-    {"name": "Profil",    "id": "profile",     "editable": True,  "presentation": "dropdown"},
-    {"name": "Föd.",      "id": "federation",  "editable": False},
-    {"name": "Kontinent", "id": "continent",   "editable": False},
-    {"name": "Jahr",      "id": "year",        "editable": False, "type": "numeric"},
-    {"name": "ELO-Band",  "id": "elo_band",    "editable": False},
-    {"name": "Spieler",   "id": "player_count","editable": False, "type": "numeric"},
-    {"name": "Status",    "id": "status",      "editable": False},
-    {"name": "Versuche",  "id": "retries",     "editable": False, "type": "numeric"},
-    {"name": "Letzter Lauf", "id": "last_run_at", "editable": False},
+    {"name": "Priorität",   "id": "priority",    "editable": True,  "type": "numeric"},
+    {"name": "Gerät",       "id": "device",      "editable": True,  "presentation": "dropdown"},
+    {"name": "Profil",      "id": "profile",     "editable": False},
+    {"name": "Föd.",        "id": "federation",  "editable": False},
+    {"name": "Kontinent",   "id": "continent",   "editable": False},
+    {"name": "Jahr",        "id": "year",        "editable": False, "type": "numeric"},
+    {"name": "ELO-Band",    "id": "elo_band",    "editable": False},
+    {"name": "Spieler",     "id": "player_count","editable": False, "type": "numeric"},
+    {"name": "Status",      "id": "status",      "editable": False},
+    {"name": "Versuche",    "id": "retries",     "editable": False, "type": "numeric"},
+    {"name": "Letzter Lauf","id": "last_run_at", "editable": False},
 ]
 
 DEVICE_OPTIONS = [
@@ -623,28 +631,59 @@ PROFILE_OPTIONS = [
 
 tab_queue = dbc.Container(fluid=True, children=[
     dcc.Interval(id="interval-queue", interval=15_000, n_intervals=0),
+    dcc.Store(id="queue-selected-id"),
+
     dbc.Row([
         dbc.Col(html.H5("Scraping-Queue", className="text-secondary fw-bold my-3"), width="auto"),
         dbc.Col(
             dbc.Badge(id="queue-count", color="primary", className="ms-2 align-self-center"),
             width="auto",
         ),
-        dbc.Col(
-            dbc.Alert(
-                "Priorität direkt in der Tabelle editieren — niedrigerer Wert = früher gescrapt.",
-                color="info", className="py-1 px-3 mb-0 small",
-            ),
-            width=True,
-        ),
-    ], align="center"),
+    ], align="center", className="mb-1"),
+
+    # ── Profil-Aktionsleiste (oben, immer sichtbar) ───────────────────────
+    dbc.Card(
+        dbc.CardBody([
+            dbc.Row([
+                dbc.Col(html.Div(id="queue-sel-label",
+                                 className="small text-muted",
+                                 style={"paddingTop": "6px"}),
+                        width=True),
+                dbc.Col([
+                    dcc.Dropdown(
+                        id="queue-profile-dd",
+                        options=PROFILE_OPTIONS,
+                        placeholder="Profil wählen…",
+                        clearable=True,
+                        style={"fontSize": "13px", "minWidth": "180px"},
+                    ),
+                ], width="auto"),
+                dbc.Col(
+                    dbc.Button("Profil setzen", id="queue-profile-btn",
+                               color="primary", size="sm", disabled=True),
+                    width="auto",
+                ),
+                dbc.Col(
+                    html.Div(id="queue-profile-out",
+                             className="small text-success",
+                             style={"paddingTop": "6px"}),
+                    width="auto",
+                ),
+            ], align="center", className="g-2"),
+        ], className="py-2 px-3"),
+        className="mb-2",
+        style={"border": "1px solid #dee2e6", "borderRadius": "4px",
+               "backgroundColor": "#F8F9FA"},
+    ),
+
     dash_table.DataTable(
         id="queue-table",
         columns=QUEUE_COLUMNS,
         data=[],
         editable=True,
+        row_selectable="single",
         dropdown={
-            "device":  {"options": DEVICE_OPTIONS,  "clearable": True},
-            "profile": {"options": PROFILE_OPTIONS, "clearable": True},
+            "device": {"options": DEVICE_OPTIONS, "clearable": True},
         },
         page_size=50,
         page_action="native",
@@ -666,10 +705,11 @@ tab_queue = dbc.Container(fluid=True, children=[
         ],
         tooltip_header={
             "priority": "Klicken zum Bearbeiten — niedrigerer Wert = früher gescrapt",
-            "device":   "Gerät zuweisen — leer = beliebiges Gerät darf diese Gruppe scrapen",
-            "profile":  "Profil erzwingen — leer = fuzzy (gewichtet zufällig: 20% conservative, 60% normal, 20% aggressive)",
+            "device":   "Gerät zuweisen — leer = beliebiges Gerät",
+            "profile":  f"Aktuelles Profil — leer = {FUZZY_LABEL}",
         },
     ),
+
     html.Div(id="queue-save-out", style={"display": "none"}),
 ], className="py-3")
 
@@ -686,7 +726,6 @@ COMPLETED_COLUMNS = [
     {"name": "Profil",      "id": "profile_used"},
     {"name": "Dauer (h)",   "id": "duration_h"},
     {"name": "Rate/h",      "id": "rate_per_h"},
-    {"name": "Proxy",       "id": "proxy"},
     {"name": "Abgeschlossen", "id": "last_run_at"},
 ]
 
@@ -1012,6 +1051,50 @@ def save_queue_edits(current_data, previous_data):
             except (ValueError, TypeError, KeyError):
                 pass
     return ""
+
+
+# ===========================================================================
+# Callbacks — Queue Selektion & Profil-Aktionsleiste
+# ===========================================================================
+
+@app.callback(
+    Output("queue-selected-id", "data"),
+    Output("queue-sel-label",   "children"),
+    Output("queue-profile-btn", "disabled"),
+    Input("queue-table", "selected_rows"),
+    State("queue-table", "data"),
+    prevent_initial_call=True,
+)
+def on_queue_row_select(selected_rows, data):
+    if not selected_rows or not data:
+        return None, "Keine Zeile ausgewählt — Zeile anklicken um Profil zu setzen.", True
+    row = data[selected_rows[0]]
+    gid = row.get("id")
+    label = (f"Ausgewählt: {row.get('federation')} {row.get('year')} "
+             f"ELO {row.get('elo_band')}  |  Aktuelles Profil: "
+             f"{row.get('profile') or '— (fuzzy)'}")
+    return gid, label, False
+
+
+@app.callback(
+    Output("queue-profile-out", "children"),
+    Output("queue-table",       "data",            allow_duplicate=True),
+    Output("queue-count",       "children",        allow_duplicate=True),
+    Input("queue-profile-btn",  "n_clicks"),
+    State("queue-selected-id",  "data"),
+    State("queue-profile-dd",   "value"),
+    prevent_initial_call=True,
+)
+def apply_queue_profile(n_clicks, group_id, profile_val):
+    if not group_id:
+        return "Keine Gruppe ausgewählt.", dash.no_update, dash.no_update
+    try:
+        update_group_profile_db(int(group_id), profile_val or "")
+        label = profile_val if profile_val else "fuzzy"
+        rows  = query_queue()
+        return f"✓ Profil '{label}' gesetzt.", rows, f"{len(rows):,} Gruppen"
+    except Exception as exc:
+        return f"Fehler: {exc}", dash.no_update, dash.no_update
 
 
 # ===========================================================================

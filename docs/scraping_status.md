@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-11 07:38 (Quelle: `groups`-Tabelle DB)
+Stand: 2026-05-11 19:30 (Quelle: `groups`-Tabelle DB)
 
 ---
 
@@ -42,6 +42,8 @@ Stand: 2026-05-11 07:38 (Quelle: `groups`-Tabelle DB)
 | global_11a | 73 | 2407–2411 | 2012-08 – 2026-04 | ✅ complete |
 | global_11b | 62 | 2412–2415 | 2012-08 – 2026-04 | ✅ complete |
 | global_12a | 63 | 2399–2402 | 2012-08 – 2026-04 | ✅ complete |
+| global_12b | 78 | 2403–2406 | 2012-08 – 2026-04 | ✅ complete (2026-05-11) |
+| global_13a | 72 | 2391–2394 | 2012-08 – 2026-04 | ✅ complete (2026-05-11) |
 
 ---
 
@@ -49,9 +51,7 @@ Stand: 2026-05-11 07:38 (Quelle: `groups`-Tabelle DB)
 
 | Gruppe | Spieler | ELO-Range | Zeitraum | Status |
 |--------|--------:|-----------|----------|--------|
-| global_12b | 78 | 2403–2406 | 2012-08 – 2026-04 | 🔄 running (Mac Mini) |
-| global_13a | — | 2391–2394 | 2012-08 – 2026-04 | ⬜ pending |
-| global_13b | — | 2395–2398 | 2012-08 – 2026-04 | ⬜ pending |
+| global_13b | 132 | 2395–2398 | 2012-08 – 2026-04 | ⬜ pending (Start 2026-05-12) |
 | global_14a | — | 2383–2386 | 2012-08 – 2026-04 | ⬜ pending |
 | global_14b | — | 2387–2390 | 2012-08 – 2026-04 | ⬜ pending |
 | global_15a | — | 2376–2379 | 2012-08 – 2026-04 | ⬜ pending |
@@ -71,6 +71,7 @@ Stand: 2026-05-11 07:38 (Quelle: `groups`-Tabelle DB)
 
 ## Durchsatz & Restlaufzeit
 
-- Offene Global-Gruppen: 17 × ~70 Spieler × 165 Perioden ≈ **196.000 Combos** (global_12b läuft)
-- Global-Scraping ab global_12b via Mac Mini lokal
-- Gesamt-Partien in DB: **1.793.298** | Spieler mit Daten: **2.508**
+- Offene Global-Gruppen: 15 × ~100 Spieler × 165 Perioden ≈ **248.000 Combos** (ab global_13b)
+- Global-Scraping via Mac Mini lokal (~25 Combos/Min, ~14–16h pro Gruppe)
+- VPS-Orchestrator: scrappt SUI/GER/AUT/POL-Föderationsgruppen (17 done, 23.454 pending), ~18 Combos/Min
+- Gesamt-Partien in DB: **~1.800.000+** | Spieler mit Daten: **~2.700+**

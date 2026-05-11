@@ -1,0 +1,4 @@
+/* Fix: Dash DataTable dropdown shadow-div blocks clicks on React-Select */
+.dropdown-cell-value-shadow {
+    pointer-events: none !important;
+}

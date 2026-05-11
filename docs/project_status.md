@@ -1,6 +1,6 @@
 # FIDE Scraper — Projektdokumentation
 
-Stand: 30. April 2026
+Stand: 11. Mai 2026
 
 ---
 
@@ -33,7 +33,7 @@ aufgenommen.
 | VPS | Hostinger, IP `187.124.181.116`, `/opt/fide-scraper/` |
 | Datenbank | TimescaleDB (PostgreSQL 16), läuft als Docker-Container auf dem VPS |
 | Scraper | Python 3.12 in eigenem Docker-Container, läuft on-demand via `docker compose run` |
-| Verbindung lokal | SSH-Tunnel `localhost:5434 → VPS:5432` via `scripts/tunnel.sh` |
+| Verbindung lokal | SSH-Tunnel `localhost:5434 → VPS:5432` + `localhost:8051 → VPS-Dashboard` via `scripts/tunnel.sh` |
 | Repository | `https://github.com/Chesspit/fide-scraper` |
 
 ### 2.2 Datenfluss
@@ -258,9 +258,9 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 
 | Kennzahl | Wert |
 |---|---|
-| **Gesamt-Partien** | **1.793.298** |
+| **Gesamt-Partien** | **~1.800.000+** |
 | **Gegner aufgelöst** | **~97,5 %** |
-| **Spieler mit Daten** | **2.508** |
+| **Spieler mit Daten** | **~2.700+** |
 | **Früheste Periode mit Daten** | **2008-04** |
 | **Neueste Periode** | **2026-04** |
 
@@ -274,8 +274,9 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 | female_2200 | 321 | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
 | swiss_2026 | 349 | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
 | male_2200 | 170 | 2013-01 – 2026-04 | ✅ complete |
-| global_02–11a | 720 | ELO 2407–2603 | ✅ complete (2012-08 – 2026-04) |
-| global_11b–20b | — | ELO 2345–2411 | ⬜ pending |
+| global_02–13a | ~1.200 | ELO 2391–2603 | ✅ complete (2012-08 – 2026-04) |
+| global_13b | 132 | ELO 2395–2398 | ⬜ pending (Start 2026-05-12) |
+| global_14–20b | — | ELO 2345–2394 | ⬜ pending |
 
 > **FIDE-Perioden:** `scraper/main.py` überspringt automatisch strukturell leere Monate
 > (is_valid_fide_period): 2008 Apr/Jul/Okt, 2009 Jan/Apr/Jul/Sep/Nov,
@@ -419,65 +420,120 @@ python3 -m scripts.quality_check --report-only
 
 ---
 
-## 7. Scraping Orchestrator (neu, 2026-05-09)
+## 7. Scraping Orchestrator (deployed 2026-05-09, verbessert 2026-05-11)
 
 Ein eigenständiges Tool zur Verwaltung des globalen Scrapings via ProxyJet-Proxy.
-Vollständige Doku: [`docs/scraping_orchestrator.md`](scraping_orchestrator.md)
 
 ### 7.1 Architektur
 
 ```
 orchestrator/
-├── app.py              ← Dash-Dashboard (3 Tabs: Heatmap / Queue / Abgeschlossen)
+├── app.py              ← Dash-Dashboard (4 Tabs: Übersicht / Heatmap / Queue / Abgeschlossen)
 ├── worker.py           ← Worker-Schleife (Queue → ProxyJet → PostgreSQL)
 ├── queue_manager.py    ← SQLite-Queue, Fuzzy-Scheduling, Optimistic Locking
 ├── proxy_manager.py    ← ProxyJet Rotating Residential Proxy
-├── profile_manager.py  ← Scrape-Profile + Fuzzy-Auswahl (20/60/20)
+├── profile_manager.py  ← Scrape-Profile + Fuzzy-Auswahl
 ├── generate_groups.py  ← 24.588 Gruppen (Föd. × Jahr × ELO-Band) generieren
 ├── setup_db.py         ← SQLite-Schema
-├── profiles.yaml       ← conservative / normal / aggressive + fuzzy_weights
+├── profiles.yaml       ← conservative / normal / aggressive + fuzzy_weights (Volume-gemountet)
+├── assets/custom.css   ← Dash CSS-Fixes
 ├── Dockerfile          ← Python 3.12 slim
-├── docker-compose.yml  ← dashboard + worker Services
-├── requirements.txt
-└── caddy/Caddyfile     ← Reverse Proxy (aktuell nicht aktiv — SSH-Tunnel reicht)
+├── docker-compose.yml  ← dashboard (restart: unless-stopped) + worker (restart: unless-stopped)
+└── requirements.txt
 ```
 
 ### 7.2 Features
 
 | Feature | Details |
 |---|---|
-| 24.588 Gruppen | Föd. × Jahr (2009–2026) × ELO-Band; Größen 50–250 (gewichtet 10/20/40/30%) |
-| Fuzzy-Scheduling | Zufällig aus Top-50-Prioritäten; kein erkennbares Muster |
-| Fuzzy-Profil | Zufällig gewichtet: 20% conservative, 60% normal, 20% aggressive |
-| Gerät-Zuweisung | `device`-Spalte: mac_mini / raspi / vps — Worker filtert eigene Gruppen |
-| Race Condition | Optimistic Locking: atomares SELECT+UPDATE, bis zu 5 Retries |
-| Laufzeit-Limits | Max Gruppen + Max Stunden — einstellbar im Dashboard (Tab 1) |
-| Dashboard | Auto-Refresh 10/15/30s; Priorität + Gerät + Profil per Klick editierbar |
-| Deployment | VPS via Docker; SSH-Tunnel für Dashboard-Zugang |
+| 24.588 Gruppen | Föd. × Jahr (2009–2026) × ELO-Band |
+| Fuzzy-Profil | **Aktuell: 0% conservative / 100% normal / 0% aggressive** (VPS-IP geblockt, kein direktes FIDE) |
+| Circuit Breaker | Nach 15 Doppel-Timeouts (Proxy + direkt) → Gruppe als `failed`, Worker läuft weiter |
+| Worker always-on | `restart: unless-stopped`; `stopped`-Befehl → Worker pollt, Container exitiert nicht |
+| Dashboard lokal | `localhost:8051` via SSH-Tunnel; VPS-SQLite-DB in Docker-Volume (persistent) |
+| Profil setzen | Queue-Tab: Zeile per Radio-Button wählen → Dropdown oben → "Profil setzen" |
+| Heatmap | Spaltenreihenfolge: 2026 → 2009 (neueste links) |
 
-### 7.3 Nächste Schritte Orchestrator
+### 7.3 Scraping-Profile
 
-| Schritt | Priorität | Details |
-|---|---|---|
-| ProxyJet-Bandbreite kaufen | **Hoch** | 1 GB für ~1.000 Spieler ab 2009; Zugangsdaten bereits in `.env` |
-| VPS-Deployment | **Hoch** | `git push && ssh VPS "cd /opt/fide-scraper && git pull && cd orchestrator && docker compose up -d --build"` |
-| Netzwerkname prüfen | **Hoch** | `docker network ls \| grep fide` auf VPS → ggf. `DOCKER_NETWORK` in `.env` anpassen |
-| DB auf VPS initialisieren | **Hoch** | `docker compose run --rm worker python orchestrator/generate_groups.py --db /data/scraper.db --txt data/players_list_foa_2026-04.txt` |
-| Erster Test-Lauf | **Hoch** | Dashboard öffnen (SSH-Tunnel), Max Gruppen = 3, Start klicken |
+| Profil | Proxy | Wartezeit | Timeout | Einsatz |
+|---|---|---|---|---|
+| `conservative` | immer | 8s (±50%) | 30s | Risikoreiche IPs, stabiler VPN |
+| `normal` | aktiv | 3s (±40%) | 20s | **Standard auf VPS** |
+| `aggressive` | nie | 1s (±30%) | 10s | **Nur lokal** (Mac Mini, kein IP-Block) |
+
+> **Wichtig:** VPS-IP ist von FIDE dauerhaft geblockt. Daher `aggressive: 0` in
+> `profiles.yaml` — alle VPS-Gruppen laufen mit `normal` (ProxyJet residential).
+
+### 7.4 Dashboard-Zugang
+
+```bash
+# Tunnel starten (DB + Dashboard):
+bash scripts/tunnel.sh
+# → DB:        localhost:5434
+# → Dashboard: http://localhost:8051
+```
+
+### 7.5 Stand 2026-05-11
+
+| Gruppe | Gruppen done | Pending | Failed | Skipped |
+|---|---|---|---|---|
+| VPS-Orchestrator | 17 | 23.454 | 0 | 1.116 (GER <2000) |
+
+Alle 17 erledigten Gruppen: SUI 2026 (verschiedene ELO-Bänder), `normal`-Profil.
+GER/2026/2340–2762 wurde mit `aggressive` (0 Partien) versehentlich als done markiert
+→ auf `pending` zurückgesetzt (2026-05-11).
+
+### 7.6 Worker-Verbesserungen 2026-05-11
+
+| Änderung | Effekt |
+|---|---|
+| `stopped` → poll statt exit | Container bleibt oben; kein Docker-Restart-Loop |
+| Startup preserves command | Reboot respektiert letzten Befehl (run/stopped) |
+| Circuit Breaker (15 Timeouts) | Gruppe wird failed statt endlos hängen |
+| BlockedError → gruppe failed | Worker stoppt nicht mehr bei 403 |
+| 429 return tuple-fix | Kein unpack-Crash bei HTTP 429 |
 
 ---
 
-## 8. Offene Punkte (bestehender Scraper)
+## 8. Spieler-Steckbrief (neu, 2026-05-11)
+
+Interaktive Analyse-Seite pro Spieler in der bestehenden Frontend-App.
+
+**Datei:** `frontend/pages/player_profile.py`
+**URL:** `http://localhost:8050/player-profile`
+
+### 8.1 Features
+
+| Sektion | Inhalt |
+|---|---|
+| **Suche** | Name (min. 2 Zeichen, ILIKE) oder FIDE-ID — inline mit Spielerinfo |
+| **Header** | Name, Elo, Alter, Titel, Föderation, Partien |
+| **Rating-Verlauf** | Forward-fill auf Monatsraster (horizontal halten bis neuer Wert), alle Jahre auf X-Achse |
+| **Partien-Chart** | Pro Quartal (Q1/Q2/Q3/Q4) + nach Q4 ein dunklerer Jahresgesamt-Balken mit Anzahl |
+| **Filter** | 3 Gruppen: Jahrbereich+Alter / Farbe+Geschlecht / Gegner-ELO (1600–2700)+ELO-Abw. (±400) |
+| **3×3 Matrix** | Zeile=Dimension (Spielstärke/Altersklasse/Farbe), Spalte=Metrik (Anzahl/Score%/Σ Δ Elo) |
+| **M/F-Split** | Jeder Balken nach Männer/Frauen aufgeteilt (gestapelt bei Anzahl, gruppiert bei Score/Δ) |
+
+### 8.2 Notebook 12 (Spieler-Steckbrief)
+
+`notebooks/12_player_profile.ipynb` — ausgeführtes Beispiel für Peter Klings (FIDE 4631234).
+Enthält zusätzlich QC-Zellen: Vergleich `Σ rating_change_weighted` mit tatsächlicher Rating-Änderung.
+
+---
+
+## 9. Offene Punkte
 
 | Aufgabe | Priorität | Status |
 |---|---|---|
-| global_11b–20b via Orchestrator | Hoch | ⬜ nach VPS-Deployment |
-| male_2200 2008-04–2012-12 nachholen | Mittel | ⬜ Zeitraum noch nicht gescrapt |
+| global_13b–20b via Mac Mini | Hoch | ⬜ global_13b morgen (2026-05-12) |
+| male_2200 2008-04–2012-12 nachholen | Mittel | ⬜ noch nicht gescrapt |
 | dach_01–08 seeden + starten | Mittel | ⬜ nach global-Gruppen |
 | Kern-Gruppen 2008 nachholen | Mittel | ⬜ 3 Quartalsperioden fehlen |
+| Datacenter-Proxy testen (VPS) | Mittel | ⬜ günstiger als Residential wenn FIDE nicht IP-typ-basiert blockt |
 | Notebooks 01–09 ausführen | Mittel | ⬜ Daten bereit |
-| resolve_opponents nach jedem Backfill | Niedrig | ⬜ lokal oder VPS |
-| Parquet-Export aktualisieren | Niedrig | ⬜ nach jedem grösseren Backfill |
+| resolve_opponents nach Backfills | Niedrig | ⬜ lokal oder VPS |
+| Parquet-Export aktualisieren | Niedrig | ⬜ nach grösserem Backfill |
 
 ---
 

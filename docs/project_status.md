@@ -34,7 +34,7 @@ aufgenommen.
 | Datenbank | TimescaleDB (PostgreSQL 16), läuft als Docker-Container auf dem VPS |
 | Scraper / Orchestrator | Python 3.13; Worker + Dashboard als Docker-Container auf VPS (restart: unless-stopped) |
 | Verbindung lokal | SSH-Tunnel `localhost:5434 → VPS:5432` via `scripts/tunnel.sh` |
-| Dashboard | `https://scraper.chesspit.de` (Caddy, BasicAuth) — siehe `orchestrator/caddy/Caddyfile` |
+| Dashboard | `https://scelo.chesspit.de` (Caddy, BasicAuth) — siehe `orchestrator/caddy/Caddyfile` |
 | Repository | `https://github.com/Chesspit/fide-scraper` |
 
 ### 2.2 Datenfluss

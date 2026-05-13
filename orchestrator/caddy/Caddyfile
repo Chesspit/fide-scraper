@@ -31,6 +31,6 @@ scelo.chesspit.de {
 
     basicauth {
         # caddy hash-password → Hash hier eintragen
-        peter $2a$14$HASH_HIER_EINTRAGEN
+        peter $2a$14$AxmEncpsINswxyIJneTobunbJmseSDGwHJsi27DProe4P9e7TPfOy
     }
 }

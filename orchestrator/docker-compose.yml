@@ -46,7 +46,7 @@ services:
       - coolify
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.orchestrator.rule=Host(`scelo.chesspit.de`)"
+      - "traefik.http.routers.orchestrator.rule=Host(`scelo.chesspit.net`)"
       - "traefik.http.routers.orchestrator.entrypoints=https"
       - "traefik.http.routers.orchestrator.tls=true"
       - "traefik.http.routers.orchestrator.tls.certresolver=letsencrypt"

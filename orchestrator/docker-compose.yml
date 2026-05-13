@@ -43,6 +43,15 @@ services:
       - "127.0.0.1:8050:8050"
     networks:
       - fide_net
+      - coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.orchestrator.rule=Host(`scelo.chesspit.de`)"
+      - "traefik.http.routers.orchestrator.entrypoints=https"
+      - "traefik.http.routers.orchestrator.tls=true"
+      - "traefik.http.routers.orchestrator.tls.certresolver=letsencrypt"
+      - "traefik.http.services.orchestrator.loadbalancer.server.port=8050"
+      - "traefik.docker.network=coolify"
     restart: unless-stopped
 
   worker:
@@ -78,9 +87,8 @@ volumes:
 
 networks:
   fide_net:
-    # Netzwerkname prüfen vor dem ersten Start auf dem VPS:
-    #   docker network ls | grep fide
-    # Standard-Name wenn docker compose aus /opt/fide-scraper gestartet wird: fide-scraper_default
-    # Falls abweichend: DOCKER_NETWORK=anderer-name in .env setzen und hier ${DOCKER_NETWORK} verwenden.
     external: true
     name: ${DOCKER_NETWORK:-fide-scraper_default}
+  coolify:
+    external: true
+    name: coolify

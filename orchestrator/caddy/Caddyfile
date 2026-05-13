@@ -25,7 +25,7 @@
 #   Port 8050 bleibt auf 127.0.0.1 — nicht öffentlich erreichbar.
 # =============================================================================
 
-scraper.IHRE-DOMAIN.com {
+scraper.chesspit.de {
 
     reverse_proxy localhost:8050
 

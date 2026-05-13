@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-13 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-05-13 19:30 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -8,9 +8,9 @@ Stand: 2026-05-13 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | 2.091.161 |
-| Perioden OK | 251.559 |
-| Spieler gescrapt | 14.704 |
+| Partien gesamt | 2.105.418 |
+| Perioden OK | ~253.000 |
+| Spieler gescrapt | ~14.700 |
 
 ---
 
@@ -24,8 +24,6 @@ Stand: 2026-05-13 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 | swiss_2026 | 349 | — (SMM 2026) | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
 | female_2200 | 321 | 2200–2399 (F) | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
 | male_2200 | 170 | 2200–2399 (M, age-matched) | 2013-01 – 2026-04 | ✅ complete |
-
-> Hinweis: 2008-04 bis 2008-12 (3 Quartalsperioden) für alle Kern-Gruppen noch nicht gescrapt.
 
 ---
 
@@ -56,7 +54,7 @@ Stand: 2026-05-13 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 | global_13b | 69 | 2395–2398 | 2012-08 – 2026-04 | ✅ complete |
 | global_14a | 73 | 2383–2386 | 2012-08 – 2026-04 | ✅ complete |
 | global_14b | 80 | 2387–2390 | 2012-08 – 2026-04 | ✅ complete (2026-05-13) |
-| global_15a | 69 | 2376–2379 | 2012-08 – 2026-04 | 🔄 läuft (~85%, ETA heute Abend) |
+| global_15a | 69 | 2376–2379 | 2012-08 – 2026-04 | 🔄 läuft (~84%, ETA 20:30) |
 
 ---
 
@@ -67,34 +65,28 @@ Stand: 2026-05-13 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 | global_15b | — | 2380–2382 | ⬜ pending |
 | global_16a | — | 2369–2372 | ⬜ pending |
 | global_16b | — | 2373–2375 | ⬜ pending |
-| global_17a | — | 2363–2365 | ⬜ pending |
-| global_17b | — | 2366–2368 | ⬜ pending |
-| global_18a | — | 2357–2359 | ⬜ pending |
-| global_18b | — | 2360–2362 | ⬜ pending |
-| global_19a | — | 2351–2353 | ⬜ pending |
-| global_19b | — | 2354–2356 | ⬜ pending |
-| global_20a | — | 2345–2347 | ⬜ pending |
-| global_20b | — | 2348–2350 | ⬜ pending |
+| global_17a–20b | — | 2345–2368 | ⬜ pending |
 
 ---
 
 ## Orchestrator (VPS) — föderationsbasiertes Scraping
 
-| Land | 2026 | 2025 | Priorität |
-|------|------|------|-----------|
-| AUT | ✅ fertig | 🔄 Queue (Prio 1–105) | 1 |
-| SUI | ✅ fertig | 🔄 Queue (Prio 1–105) | 1 |
-| GER | ⚠️ 14/82 Gruppen | 🔄 Queue (Prio 106–187) | 2 |
+| Land | 2026 | 2025 | Queue-Priorität |
+|------|------|------|----------------|
+| AUT | ✅ fertig | 🔄 Prio 1–105 | 1 |
+| SUI | ✅ fertig | 🔄 Prio 1–105 | 1 |
+| GER | ⚠️ 14/82 Gruppen | 🔄 Prio 106–187 | 2 |
 
-- Queue gesamt: 24.514 pending, 73 done, 1 running
+- Queue gesamt: ~24.500 pending, 73 done
 - Worker läuft dauerhaft auf VPS (Docker, restart: unless-stopped)
+- Dashboard: **https://scelo.chesspit.net** (BasicAuth: peter / persönliches PW)
 - Profile: semi_aggressive 60% / normal 20% / semi_conservative 20%
 
 ---
 
 ## Durchsatz
 
-| Scraper | Rate | Quelle |
-|---------|------|--------|
-| Mac Mini (lokal) | ~27–30 Combos/Min | scripts/run_local_backfill.sh |
-| VPS Orchestrator | ~11–15 Combos/Min | docker worker, Proxy via ProxyJet |
+| Scraper | Rate |
+|---------|------|
+| Mac Mini (lokal) | ~27–30 Combos/Min |
+| VPS Orchestrator | ~11–15 Combos/Min via ProxyJet |

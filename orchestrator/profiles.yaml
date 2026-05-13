@@ -2,32 +2,53 @@ active_profile: normal
 
 # Fuzzy-Profilauswahl: Gewichtung für zufällige Profilwahl pro Gruppe
 # Worker wählt bei jedem Gruppen-Start zufällig (gewichtet) — kein erkennbares Muster
+# aggressive + conservative: Gewicht 0 — nur zur Referenz, nicht mehr im Einsatz
 fuzzy_weights:
-  conservative: 0
-  normal:       70
-  aggressive:   30
+  aggressive:        0
+  semi_aggressive:  20
+  normal:           60
+  semi_conservative: 20
+  conservative:      0
 profiles:
+  # --- Referenz-Profile (nicht mehr im Einsatz) ---
   aggressive:
-    base_wait_seconds: 1
-    cooldown_on_429: 30
-    jitter: 0.3
-    max_retries: 2
+    base_wait_seconds: 1.0
     min_wait_seconds: 0.7
+    jitter: 0.30
     timeout_seconds: 10
+    max_retries: 2
+    cooldown_on_429: 30
     use_proxy: false
   conservative:
-    base_wait_seconds: 8
-    cooldown_on_429: 120
-    jitter: 0.5
-    max_retries: 5
+    base_wait_seconds: 8.0
     min_wait_seconds: 4.0
+    jitter: 0.50
     timeout_seconds: 30
+    max_retries: 5
+    cooldown_on_429: 120
+    use_proxy: true
+  # --- Aktive Profile ---
+  semi_aggressive:
+    base_wait_seconds: 2.0
+    min_wait_seconds: 1.1
+    jitter: 0.35
+    timeout_seconds: 15
+    max_retries: 2
+    cooldown_on_429: 45
     use_proxy: true
   normal:
-    base_wait_seconds: 3
-    cooldown_on_429: 60
-    jitter: 0.4
-    max_retries: 3
+    base_wait_seconds: 3.0
     min_wait_seconds: 1.5
+    jitter: 0.40
     timeout_seconds: 20
+    max_retries: 3
+    cooldown_on_429: 60
+    use_proxy: true
+  semi_conservative:
+    base_wait_seconds: 5.5
+    min_wait_seconds: 2.7
+    jitter: 0.45
+    timeout_seconds: 25
+    max_retries: 4
+    cooldown_on_429: 90
     use_proxy: true

@@ -1,6 +1,6 @@
 # FIDE Scraper — Projektdokumentation
 
-Stand: 11. Mai 2026
+Stand: 13. Mai 2026
 
 ---
 
@@ -32,8 +32,9 @@ aufgenommen.
 |---|---|
 | VPS | Hostinger, IP `187.124.181.116`, `/opt/fide-scraper/` |
 | Datenbank | TimescaleDB (PostgreSQL 16), läuft als Docker-Container auf dem VPS |
-| Scraper | Python 3.12 in eigenem Docker-Container, läuft on-demand via `docker compose run` |
-| Verbindung lokal | SSH-Tunnel `localhost:5434 → VPS:5432` + `localhost:8051 → VPS-Dashboard` via `scripts/tunnel.sh` |
+| Scraper / Orchestrator | Python 3.13; Worker + Dashboard als Docker-Container auf VPS (restart: unless-stopped) |
+| Verbindung lokal | SSH-Tunnel `localhost:5434 → VPS:5432` via `scripts/tunnel.sh` |
+| Dashboard | `https://scraper.IHRE-DOMAIN.com` (Caddy, BasicAuth) — siehe `orchestrator/caddy/Caddyfile` |
 | Repository | `https://github.com/Chesspit/fide-scraper` |
 
 ### 2.2 Datenfluss

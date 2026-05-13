@@ -13,6 +13,7 @@ app.title = "FIDE Analytics"
 
 app.layout = html.Div(
     [
+        dcc.Location(id="url-redirect", refresh=True),
         # Navigation bar
         dbc.Navbar(
             dbc.Container(
@@ -43,6 +44,15 @@ app.layout = html.Div(
         dash.page_container,
     ]
 )
+
+from dash import Input, Output
+
+@app.callback(Output("url-redirect", "pathname"), Input("url-redirect", "pathname"))
+def redirect_root(pathname):
+    if pathname == "/":
+        return "/player-profile"
+    return pathname
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=8050)

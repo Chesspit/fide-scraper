@@ -29,7 +29,7 @@ from orchestrator.setup_db import DB_PATH, create_db
 # ---------------------------------------------------------------------------
 STATUS_CODE = {"pending": 0, "running": 1, "done": 2, "failed": 3, "skipped": 4}
 STATUS_COLOR = {
-    "pending": "#378ADD",
+    "pending": "#D0D0D0",
     "running": "#EF9F27",
     "done":    "#1D9E75",
     "failed":  "#E24B4A",
@@ -37,13 +37,16 @@ STATUS_COLOR = {
 }
 NO_DATA_CODE = -1
 
+# z-Werte: -1=keine Daten, 0=pending, 1=running, 2=done, 3=failed, 4=skipped
+# Normalisiert auf [0,1] mit zmin=-1, zmax=4 → Schrittweite 0.2
+# Grenzen bei Mittelpunkten: 0.1, 0.3, 0.5, 0.7, 0.9
 COLORSCALE = [
-    [0.00, "#F0F0F0"], [0.14, "#F0F0F0"],
-    [0.14, "#378ADD"], [0.29, "#378ADD"],
-    [0.29, "#EF9F27"], [0.43, "#EF9F27"],
-    [0.43, "#1D9E75"], [0.57, "#1D9E75"],
-    [0.57, "#E24B4A"], [0.71, "#E24B4A"],
-    [0.71, "#9E9E9E"], [1.00, "#9E9E9E"],
+    [0.0, "#F0F0F0"], [0.1, "#F0F0F0"],  # z=-1: keine Daten
+    [0.1, "#D0D0D0"], [0.3, "#D0D0D0"],  # z=0:  pending (grau)
+    [0.3, "#EF9F27"], [0.5, "#EF9F27"],  # z=1:  running (orange)
+    [0.5, "#1D9E75"], [0.7, "#1D9E75"],  # z=2:  done (grün)
+    [0.7, "#E24B4A"], [0.9, "#E24B4A"],  # z=3:  failed (rot)
+    [0.9, "#9E9E9E"], [1.0, "#9E9E9E"],  # z=4:  skipped (grau)
 ]
 
 _DATA_DIR = Path(os.getenv("ORCHESTRATOR_DATA_DIR", Path(__file__).resolve().parent))
@@ -219,6 +222,16 @@ def update_group_device(group_id: int, device: str) -> None:
 # ---------------------------------------------------------------------------
 # DB helpers — Tab 3: Completed
 # ---------------------------------------------------------------------------
+def _fmt_dt(s: str | None) -> str:
+    if not s:
+        return "–"
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(s.replace("T", " ")[:16]).strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        return s
+
+
 def query_completed() -> list[dict]:
     """Done groups with scraping stats from scrape_runs."""
     conn = get_conn()
@@ -268,7 +281,10 @@ def query_completed() -> list[dict]:
            ORDER BY g.last_run_at DESC""",
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+    for row in result:
+        row["last_run_at"] = _fmt_dt(row.get("last_run_at"))
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -314,9 +330,9 @@ def build_figure(federation: str) -> go.Figure:
             r = lookup.get((bmin, yr))
             if r:
                 z_row.append(STATUS_CODE.get(r["status"], NO_DATA_CODE))
-                lock = " 🔒" if r["status"] == "done" else ""
+                icon = {"done": " 🔒", "running": " ⏳", "failed": " ❌"}.get(r["status"], "")
                 text_row.append(
-                    f"{r['status']}{lock}<br>"
+                    f"{r['status']}{icon}<br>"
                     f"Spieler: {r['player_count']}<br>"
                     f"Partien: {r['records_found'] or '–'}<br>"
                     f"Versuche: {r['retries']}<br>"
@@ -357,16 +373,16 @@ _OV_ZMIN, _OV_ZMAX = 0, 100
 
 _OV_STEPS = [
     (0,   "#BDBDBD"),  # 0%   grau
-    (10,  "#A5D6A7"),  # 10%  sehr hellgrün
-    (20,  "#81C784"),  # 20%
-    (30,  "#66BB6A"),  # 30%  hellgrün
-    (40,  "#4CAF50"),  # 40%  grün
-    (50,  "#43A047"),  # 50%
-    (60,  "#388E3C"),  # 60%  mittelgrün
+    (10,  "#DCEDC8"),  # 10%  sehr hellgrün
+    (20,  "#DCEDC8"),  # 20%  = 10%
+    (30,  "#81C784"),  # 30%  hellgrün
+    (40,  "#81C784"),  # 40%  = 30%
+    (50,  "#43A047"),  # 50%  mittelgrün
+    (60,  "#43A047"),  # 60%  = 50%
     (70,  "#2E7D32"),  # 70%  dunkelgrün
-    (80,  "#1B5E20"),  # 80%
-    (90,  "#145214"),  # 90%  tiefgrün
-    (100, "#0A3D0A"),  # 100% sehr tiefgrün
+    (80,  "#2E7D32"),  # 80%  = 70%
+    (90,  "#1B5E20"),  # 90%  sehr dunkel
+    (100, "#0D4A18"),  # 100% tiefgrün (dunkler als 90%, aber nicht schwarz)
 ]
 
 # Diskrete Farbstufen: jede 10%-Stufe hat eine eigene Farbe
@@ -376,7 +392,15 @@ for _pct, _col in _OV_STEPS:
     _hi = (_pct + 9.99) / 100 if _pct < 100 else 1.0
     OVERVIEW_COLORSCALE += [[_lo, _col], [_hi, _col]]
 
-_OV_LEGEND = [(col, f"{pct}%") for pct, col in _OV_STEPS]
+_OV_LEGEND = [
+    ("#BDBDBD", "<10%"),
+    ("#DCEDC8", "<30%"),
+    ("#81C784", "<50%"),
+    ("#43A047", "<70%"),
+    ("#2E7D32", "<90%"),
+    ("#1B5E20", "90%"),
+    ("#0D4A18", "100%"),
+]
 
 
 def build_overview_figure() -> go.Figure:
@@ -576,11 +600,8 @@ tab_heatmap = dbc.Container(fluid=True, children=[
     # Legend
     html.Div([
         legend_item(STATUS_COLOR["done"],    "Done"),
-        legend_item(STATUS_COLOR["pending"], "Pending"),
         legend_item(STATUS_COLOR["running"], "Running"),
         legend_item(STATUS_COLOR["failed"],  "Failed"),
-        legend_item(STATUS_COLOR["skipped"], "Skipped"),
-        legend_item("#F0F0F0",               "Keine Daten"),
     ], className="mb-2"),
 
     # Heatmap
@@ -717,15 +738,16 @@ tab_queue = dbc.Container(fluid=True, children=[
 # Tab 3 — Completed layout
 # ---------------------------------------------------------------------------
 COMPLETED_COLUMNS = [
-    {"name": "Föd.",        "id": "federation"},
-    {"name": "Kontinent",   "id": "continent"},
-    {"name": "Jahr",        "id": "year"},
-    {"name": "ELO-Band",    "id": "elo_band"},
-    {"name": "Spieler",     "id": "player_count"},
-    {"name": "Partien",     "id": "records_found"},
-    {"name": "Profil",      "id": "profile_used"},
-    {"name": "Dauer (h)",   "id": "duration_h"},
-    {"name": "Rate/h",      "id": "rate_per_h"},
+    {"name": "Föd.",          "id": "federation"},
+    {"name": "Kontinent",     "id": "continent"},
+    {"name": "Jahr",          "id": "year"},
+    {"name": "ELO-Band",      "id": "elo_band"},
+    {"name": "Spieler",       "id": "player_count"},
+    {"name": "Partien",       "id": "records_found"},
+    {"name": "Taktik",        "id": "taktik"},
+    {"name": "Proxy",         "id": "proxy"},
+    {"name": "Dauer (h)",     "id": "duration_h"},
+    {"name": "Rate/h",        "id": "rate_per_h"},
     {"name": "Abgeschlossen", "id": "last_run_at"},
 ]
 

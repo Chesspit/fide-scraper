@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-13 19:30 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-05-13 20:00 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -8,9 +8,8 @@ Stand: 2026-05-13 19:30 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | 2.105.418 |
-| Perioden OK | ~253.000 |
-| Spieler gescrapt | ~14.700 |
+| Partien gesamt | ~2.105.000 |
+| Global-Gruppen complete | 24 (global_02 – global_15a) |
 
 ---
 
@@ -29,40 +28,24 @@ Stand: 2026-05-13 19:30 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ## Global-Gruppen (Mac Mini Backfill) — abgeschlossen
 
-| Gruppe | Spieler | ELO-Range | Zeitraum | Status |
-|--------|--------:|-----------|----------|--------|
-| global_02 | 147 | 2556–2603 | 2012-08 – 2026-04 | ✅ complete |
-| global_03 | 144 | 2528–2555 | 2012-08 – 2026-04 | ✅ complete |
-| global_04 | 135 | 2502–2527 | 2012-08 – 2026-04 | ✅ complete |
-| global_05a | 83 | 2483–2492 | 2012-08 – 2026-04 | ✅ complete |
-| global_05b | 72 | 2493–2501 | 2012-08 – 2026-04 | ✅ complete |
-| global_06a | 67 | 2466–2474 | 2012-08 – 2026-04 | ✅ complete |
-| global_06b | 70 | 2475–2482 | 2012-08 – 2026-04 | ✅ complete |
-| global_07a | 79 | 2451–2458 | 2012-08 – 2026-04 | ✅ complete |
-| global_07b | 72 | 2459–2465 | 2012-08 – 2026-04 | ✅ complete |
-| global_08a | 64 | 2440–2445 | 2012-08 – 2026-04 | ✅ complete |
-| global_08b | 60 | 2446–2450 | 2012-08 – 2026-04 | ✅ complete |
-| global_09a | 87 | 2428–2433 | 2012-08 – 2026-04 | ✅ complete |
-| global_09b | 58 | 2434–2439 | 2012-08 – 2026-03 | ✅ complete |
-| global_10a | 83 | 2416–2421 | 2012-08 – 2026-03 | ✅ complete |
-| global_10b | 74 | 2422–2427 | 2012-08 – 2026-04 | ✅ complete |
-| global_11a | 73 | 2407–2411 | 2012-08 – 2026-04 | ✅ complete |
-| global_11b | 62 | 2412–2415 | 2012-08 – 2026-04 | ✅ complete |
-| global_12a | 63 | 2399–2402 | 2012-08 – 2026-04 | ✅ complete |
-| global_12b | 78 | 2403–2406 | 2012-08 – 2026-04 | ✅ complete |
-| global_13a | 72 | 2391–2394 | 2012-08 – 2026-04 | ✅ complete |
-| global_13b | 69 | 2395–2398 | 2012-08 – 2026-04 | ✅ complete |
-| global_14a | 73 | 2383–2386 | 2012-08 – 2026-04 | ✅ complete |
-| global_14b | 80 | 2387–2390 | 2012-08 – 2026-04 | ✅ complete (2026-05-13) |
-| global_15a | 69 | 2376–2379 | 2012-08 – 2026-04 | 🔄 läuft (~84%, ETA 20:30) |
+| Gruppe | Spieler | ELO-Range | Status |
+|--------|--------:|-----------|--------|
+| global_02–11b | 144–147 | 2412–2603 | ✅ complete |
+| global_12a | 63 | 2399–2402 | ✅ complete |
+| global_12b | 78 | 2403–2406 | ✅ complete |
+| global_13a | 72 | 2391–2394 | ✅ complete |
+| global_13b | 69 | 2395–2398 | ✅ complete |
+| global_14a | 73 | 2383–2386 | ✅ complete |
+| global_14b | 80 | 2387–2390 | ✅ complete (2026-05-13) |
+| global_15a | 69 | 2376–2379 | ✅ complete (2026-05-13) |
 
 ---
 
-## Global-Gruppen — ausstehend (Mac Mini)
+## Global-Gruppen — ausstehend (Mac Mini, nächste Session)
 
 | Gruppe | Spieler | ELO-Range | Status |
 |--------|--------:|-----------|--------|
-| global_15b | — | 2380–2382 | ⬜ pending |
+| **global_15b** | — | 2380–2382 | ⬜ **als nächstes starten** |
 | global_16a | — | 2369–2372 | ⬜ pending |
 | global_16b | — | 2373–2375 | ⬜ pending |
 | global_17a–20b | — | 2345–2368 | ⬜ pending |
@@ -71,22 +54,12 @@ Stand: 2026-05-13 19:30 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ## Orchestrator (VPS) — föderationsbasiertes Scraping
 
-| Land | 2026 | 2025 | Queue-Priorität |
-|------|------|------|----------------|
-| AUT | ✅ fertig | 🔄 Prio 1–105 | 1 |
-| SUI | ✅ fertig | 🔄 Prio 1–105 | 1 |
-| GER | ⚠️ 14/82 Gruppen | 🔄 Prio 106–187 | 2 |
+| Land | 2026 | 2025 | 2024 |
+|------|------|------|------|
+| AUT | ✅ fertig | 🔄 Queue Prio 1–73 | 🔄 Queue Prio 1–73 |
+| SUI | ✅ fertig | 🔄 Queue Prio 1–73 | 🔄 Queue Prio 1–73 |
+| GER | ✅ fertig | 🔄 Queue Prio 74–93 | ⬜ später |
 
-- Queue gesamt: ~24.500 pending, 73 done
-- Worker läuft dauerhaft auf VPS (Docker, restart: unless-stopped)
 - Dashboard: **https://scelo.chesspit.net** (BasicAuth: peter / persönliches PW)
-- Profile: semi_aggressive 60% / normal 20% / semi_conservative 20%
-
----
-
-## Durchsatz
-
-| Scraper | Rate |
-|---------|------|
-| Mac Mini (lokal) | ~27–30 Combos/Min |
-| VPS Orchestrator | ~11–15 Combos/Min via ProxyJet |
+- Profile: normal 60% / semi_aggressive 20% / semi_conservative 20%
+- Worker läuft dauerhaft (Docker, restart: unless-stopped)

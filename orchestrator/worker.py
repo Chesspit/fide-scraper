@@ -128,11 +128,12 @@ def _fetch(
     fide_id: int,
     period_str: str,
     profile: dict,
-) -> str | None:
+) -> tuple[str | None, int]:
     """Fetch FIDE calculations HTML using the given session (with proxy pre-set).
 
-    Returns HTML text, empty string if no data, or None on non-fatal error.
-    Raises BlockedError on HTTP 403 (caller should abort the group).
+    Returns (html, bytes). html is None on non-fatal error; raises BlockedError on 403.
+    On HTTP 429, returns (None, retry_after_seconds) where retry_after_seconds is taken
+    from the Retry-After response header if present, else 0 (caller uses profile default).
     """
     url = AJAX_URL.format(fide_id=fide_id, period=period_str)
     headers = {
@@ -149,8 +150,10 @@ def _fetch(
             if resp.status_code == 403:
                 raise BlockedError(f"HTTP 403 fide_id={fide_id} period={period_str}")
             if resp.status_code == 429:
-                logger.warning("HTTP 429 fide_id=%s period=%s (attempt %d)", fide_id, period_str, attempt)
-                return None, 0  # caller handles cooldown
+                retry_after = int(resp.headers.get("Retry-After", 0))
+                logger.warning("HTTP 429 fide_id=%s period=%s (attempt %d) Retry-After=%s",
+                               fide_id, period_str, attempt, retry_after or "nicht gesetzt")
+                return None, retry_after
 
             resp.raise_for_status()
             return resp.text, len(resp.content)
@@ -238,10 +241,12 @@ def scrape_group(
         _bytes_session += nbytes
 
         if html is None:
-            # HTTP 429 oder wiederholter Fehler — Proxy in Cooldown, direkt retry
-            cooldown = profile.get("cooldown_on_429", 60)
+            # HTTP 429 — nbytes enthält Retry-After (0 = Header nicht gesetzt)
+            retry_after = nbytes
+            cooldown = retry_after if retry_after > 0 else profile.get("cooldown_on_429", 60)
             proxy_manager.report_block(cooldown)
-            logger.warning("Backing off %ds, dann direkter Retry ohne Proxy", cooldown)
+            logger.warning("Backing off %ds (%s), dann direkter Retry ohne Proxy",
+                           cooldown, f"Retry-After={retry_after}s" if retry_after > 0 else "Profil-Default")
             time.sleep(cooldown)
             html, nbytes2 = _fetch(requests.Session(), fide_id, period_str, profile)
             _bytes_session += nbytes2

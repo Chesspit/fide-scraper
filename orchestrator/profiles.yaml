@@ -5,9 +5,9 @@ active_profile: normal
 # aggressive + conservative: Gewicht 0 — nur zur Referenz, nicht mehr im Einsatz
 fuzzy_weights:
   aggressive:        0
-  semi_aggressive:  20
-  normal:           60
-  semi_conservative: 20
+  semi_aggressive:  60
+  normal:           30
+  semi_conservative: 10
   conservative:      0
 profiles:
   # --- Referenz-Profile (nicht mehr im Einsatz) ---

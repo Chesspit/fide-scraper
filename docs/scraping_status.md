@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-13 20:00 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-05-14 22:15 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -8,8 +8,9 @@ Stand: 2026-05-13 20:00 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | ~2.105.000 |
-| Global-Gruppen complete | 24 (global_02 – global_15a) |
+| Partien gesamt | ~2.208.000 |
+| Spieler mit ok-Daten | 13.402 |
+| Global-Gruppen complete | 26 (global_02 – global_16a) |
 
 ---
 
@@ -38,6 +39,8 @@ Stand: 2026-05-13 20:00 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 | global_14a | 73 | 2383–2386 | ✅ complete |
 | global_14b | 80 | 2387–2390 | ✅ complete (2026-05-13) |
 | global_15a | 69 | 2376–2379 | ✅ complete (2026-05-13) |
+| global_15b | 65 | 2380–2382 | ✅ complete (2026-05-14) |
+| global_16a | 95 | 2369–2372 | ✅ complete (2026-05-14) |
 
 ---
 
@@ -45,9 +48,7 @@ Stand: 2026-05-13 20:00 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Gruppe | Spieler | ELO-Range | Status |
 |--------|--------:|-----------|--------|
-| **global_15b** | — | 2380–2382 | ⬜ **als nächstes starten** |
-| global_16a | — | 2369–2372 | ⬜ pending |
-| global_16b | — | 2373–2375 | ⬜ pending |
+| **global_16b** | — | 2373–2375 | ⬜ **als nächstes starten** |
 | global_17a–20b | — | 2345–2368 | ⬜ pending |
 
 ---
@@ -56,10 +57,24 @@ Stand: 2026-05-13 20:00 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Land | 2026 | 2025 | 2024 |
 |------|------|------|------|
-| AUT | ✅ fertig | 🔄 Queue Prio 1–73 | 🔄 Queue Prio 1–73 |
-| SUI | ✅ fertig | 🔄 Queue Prio 1–73 | 🔄 Queue Prio 1–73 |
-| GER | ✅ fertig | 🔄 Queue Prio 74–93 | ⬜ später |
+| AUT | ✅ fertig | 🔄 läuft | 🔄 Queue |
+| SUI | ✅ fertig | 🔄 Queue | 🔄 Queue |
+| GER | ✅ fertig | 🔄 Queue | ⬜ später |
 
 - Dashboard: **https://scelo.chesspit.net** (BasicAuth: peter / persönliches PW)
-- Profile: normal 60% / semi_aggressive 20% / semi_conservative 20%
+- **Profile: semi_aggressive 60% / normal 30% / semi_conservative 10%** (geändert 2026-05-14)
 - Worker läuft dauerhaft (Docker, restart: unless-stopped)
+- Gruppen done: 94 | pending: 23.377 | skipped: 1.116 (GER <2000)
+
+---
+
+## Änderungen Session 2026-05-14
+
+| Was | Details |
+|-----|---------|
+| global_15b ✅ | 65 Spieler, ELO 2380–2382, 5,9h, 0 Errors |
+| global_16a ✅ | 95 Spieler, ELO 2369–2372, 8,3h, 1 Error |
+| Profil-Gewichte VPS | 20/60/20 → **60/30/10** (semi_aggressive dominiert) |
+| Retry-After Header | worker.py liest jetzt FIDEs Retry-After aus 429-Response |
+| SRB/2026 failed | Circuit Breaker → manuell auf pending zurückgesetzt |
+| Worker-Restart-Bug | ProfileManager liest fuzzy_weights nur beim Start → Restart nötig bei Änderungen |

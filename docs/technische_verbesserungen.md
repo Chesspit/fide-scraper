@@ -159,10 +159,23 @@ Diese Requests können komplett übersprungen werden.
    # num_games IS NULL → Request trotzdem machen (kein TXT-Snapshot vorhanden)
    ```
 
-**Einmalig ausführen** (befüllt num_games für alle ~1,8 Mio. Spieler rückwirkend):
+**Verfügbarkeit der Games-Spalte in TXT-Snapshots:**
+
+| Zeitraum | Rhythmus | Spaltenname | Verfügbar |
+|---|---|---|---|
+| 2006–2012-07 | quartalsweise | `Games` (in `GamesBorn`) | ✅ vorhanden |
+| 2012-08–2025 | monatlich | `Gms` | ✅ vorhanden |
+| 2026+ | monatlich | `SGm` | ✅ vorhanden |
+
+Die Spielanzahl ist also in **allen** FIDE-TXT-Snapshots enthalten — auch vor 2012.
+**Aktuell importieren wir jedoch nur ab 2012-08-01**, weil wir nur monatliche
+Perioden scrapen. Die quartalsweisen Pre-2012-Daten könnten zukünftig hinzugefügt
+werden, falls quartalsweise Perioden gescrapt werden sollen.
+
+**Einmalig ausführen** (befüllt num_games für alle ~1,8 Mio. Spieler ab 2012-08):
 ```bash
 DATABASE_URL=postgresql://fide:...@localhost:5434/fidedb \
-  python scripts/import_rating_snapshots.py --force
+  python scripts/import_rating_snapshots.py --force --from-period 2012-08-01
 ```
 
 **Verifizierung — so prüft man ob es funktioniert:**

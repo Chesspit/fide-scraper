@@ -200,12 +200,33 @@ def scrape_group(
     if not periods:
         return 0, pg_conn
 
-    from scraper.db import get_pending_periods
+    from scraper.db import get_pending_periods, save_period_no_data
     pending = get_pending_periods(pg_conn, periods, fide_ids=fide_ids)
 
     if not pending:
         logger.info("Group %s/%d: all %d player-periods already scraped",
                     group.federation, group.year, len(fide_ids) * len(periods))
+        return 0, pg_conn
+
+    # Pre-filter: skip periods where num_games=0 in rating_history (no games played).
+    # NULL means no TXT snapshot → must scrape. Only skip confirmed-zero months.
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """SELECT fide_id, period FROM rating_history
+               WHERE (fide_id, period) = ANY(%s) AND num_games = 0""",
+            ([list(p) for p in pending],)
+        )
+        skip_set = {(r[0], r[1]) for r in cur.fetchall()}
+
+    if skip_set:
+        for fide_id, period in skip_set:
+            period_str = period.isoformat() if hasattr(period, "isoformat") else period
+            save_period_no_data(pg_conn, fide_id, period_str)
+        pg_conn.commit()
+        logger.info("Pre-filter: %d combos skipped (num_games=0 in TXT snapshot)", len(skip_set))
+        pending = [(fid, p) for fid, p in pending if (fid, p) not in skip_set]
+
+    if not pending:
         return 0, pg_conn
 
     logger.info("Group %s/%d/%d-%d: %d pending combos (%d players × up to %d periods)",

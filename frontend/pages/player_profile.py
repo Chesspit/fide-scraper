@@ -10,7 +10,7 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.graph_objects as go
 import psycopg2
-from dash import Input, Output, State, callback, dcc, html
+from dash import Input, Output, State, callback, dcc, html, no_update
 
 dash.register_page(
     __name__,
@@ -466,7 +466,9 @@ layout = html.Div(
     Input("pp-search-dd", "search_value"),
 )
 def update_search_options(q):
-    return search_players(q or "")
+    if not q or len(q) < 2:
+        return no_update
+    return search_players(q)
 
 
 # ---------------------------------------------------------------------------

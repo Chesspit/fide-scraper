@@ -176,7 +176,7 @@ def update_group_priority(group_id: int, new_priority: int) -> None:
 # DB helpers — Tab 2: Queue
 # ---------------------------------------------------------------------------
 def query_queue() -> list[dict]:
-    """All non-done, non-skipped groups sorted by priority (ascending = highest first)."""
+    """Top 500 non-done, non-skipped groups sorted by priority (ascending = highest first)."""
     conn = get_conn()
     rows = conn.execute(
         f"""SELECT id, priority, federation, continent, year,
@@ -193,7 +193,8 @@ def query_queue() -> list[dict]:
                   COALESCE(last_run_at, '–') AS last_run_at
            FROM scrape_groups
            WHERE status IN ('pending', 'running', 'failed')
-           ORDER BY priority ASC, federation ASC""",
+           ORDER BY priority ASC, federation ASC
+           LIMIT 500""",
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]

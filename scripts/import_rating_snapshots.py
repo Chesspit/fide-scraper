@@ -158,22 +158,27 @@ def insert_new_players(conn, players: list[dict]) -> int:
 
 
 def upsert_rating_history(conn, players: list[dict], period: str) -> int:
-    """Upsert published_rating for every fide_id in the snapshot."""
-    # Deduplicate by fide_id — older FIDE files occasionally list a player twice.
-    # Keep the last occurrence (dict preserves insertion order in Python 3.7+).
+    """Upsert published_rating and num_games for every fide_id in the snapshot."""
     seen: dict[int, tuple] = {}
     for p in players:
         if p["std_rating"]:
-            seen[p["fide_id"]] = (p["fide_id"], period, p["std_rating"])
+            seen[p["fide_id"]] = (
+                p["fide_id"],
+                period,
+                p["std_rating"],
+                p.get("std_games"),  # None for pre-2013 snapshots without SGm
+            )
     rows = list(seen.values())
     if not rows:
         return 0
 
     sql = """
-        INSERT INTO rating_history (fide_id, period, published_rating)
+        INSERT INTO rating_history (fide_id, period, published_rating, num_games)
         VALUES %s
         ON CONFLICT (fide_id, period)
-        DO UPDATE SET published_rating = EXCLUDED.published_rating
+        DO UPDATE SET
+            published_rating = EXCLUDED.published_rating,
+            num_games = COALESCE(EXCLUDED.num_games, rating_history.num_games)
     """
     with conn:
         with conn.cursor() as cur:

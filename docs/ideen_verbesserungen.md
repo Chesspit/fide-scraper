@@ -1,6 +1,6 @@
 # Ideen für Verbesserungen
 
-Stand: 25. April 2026
+Stand: 18. Mai 2026
 
 ---
 
@@ -93,7 +93,7 @@ WHERE ABS(gr.opponent_rating - p.std_rating) > 200
 ORDER BY diff DESC;
 ```
 
-### B3. No-data-Ursachen unterscheiden *(mittel, methodisch wichtig)*
+### B3. No-data-Ursachen unterscheiden *(mittel, methodisch wichtig)* — ✅ erledigt (Migration 011)
 
 `status='no_data'` in `scrape_periods` hat aktuell **drei unterschiedliche Bedeutungen**,
 die nicht unterschieden werden:
@@ -150,7 +150,7 @@ Damit wird `no_data_reason = 'inactive'` zum echten Indikator für Turnierfreque
 Die Rate pro Gruppe und Zeitraum ist besonders relevant für den COVID-Einbruch 2020
 und den Vergleich female_top vs. male_control.
 
-### B4. Dynamische Gruppenzugehörigkeit *(gross, methodisch wichtig — jetzt direkt umsetzbar)*
+### B4. Dynamische Gruppenzugehörigkeit *(gross, methodisch wichtig)* — ✅ erledigt (Migration 012)
 
 Die aktuelle Logik friert den ELO-Stand April 2026 ein. Ein Spieler mit heutigem
 Rating 2420 ist in `male_control`, war aber 2012 vielleicht bei 1900. Sauberer wäre
@@ -163,9 +163,9 @@ FROM rating_history
 WHERE published_rating BETWEEN 2400 AND 2600
 ```
 
-**Stand 2026-04-25:** Mit 164 monatlichen Snapshots (Sep 2012 – Apr 2026, ab 2026 bis 2006
-erweitert) ist die Datenbasis vollständig vorhanden. Kein neues Scraping nötig —
-nur ein Schema-Umbau.
+**Umgesetzt 2026-05:** View `v_dynamic_membership` (Migration 012) — dynamische Gruppenzugehörigkeit
+pro (fide_id, period) basierend auf `published_rating`. Notebooks können zwischen statischer
+(`analysis_group`) und dynamischer Zugehörigkeit wechseln.
 
 ### B5. TXT-Snapshots *(teilweise erledigt)*
 
@@ -232,19 +232,48 @@ nützlich für Feedback von Dritten und als Begleitmedium zu einer Publikation.
 
 ## D — Erweiterung der weiblichen Population
 
-### D1. Frauen ELO 2200–2400 *(Priorität 1)*
+### D0. Alle aktiven Spielerinnen weltweit *(Priorität 0 — neue Idee 2026-05-18)* ⭐
 
-Die natürlichste Erweiterung der Kernfrage. Aktuell ist `female_top` auf 2400–2600
-beschränkt — eine relativ willkürliche Grenze. Mit ~120 aktiven Spielerinnen in diesem
-Band liesse sich zeigen, ob die beobachteten Muster spezifisch für die Spitze sind
-oder über alle Leistungsebenen gelten. Ergänzt durch age-matched `male_control`
-für dieselbe ELO-Range.
+**Idee:** Alle 22.738 aktiven FIDE-Spielerinnen scrapen — komplett, ohne ELO-Filter.
+Das ergibt eine vollständige weibliche Längsschnittstudie über alle Leistungsebenen.
+
+**Datenbasis (Stand April 2026):**
+
+| ELO-Band | Spielerinnen | Gescrapt | Fehlt |
+|---|---|---|---|
+| ≥ 2400 | 45 | 45 | 0 ✅ |
+| 2200–2399 | 322 | 321 | 1 ✅ |
+| 2000–2199 | 1.068 | 115 | 953 |
+| 1800–1999 | 2.884 | 77 | 2.807 |
+| 1600–1799 | 5.941 | 99 | 5.842 |
+| 1400–1599 | 12.436 | 153 | 12.283 |
+| < 1400 | 42 | 0 | 42 |
+| **Total** | **22.738** | **810** | **21.928** |
+
+**Warum machbar:** 22.738 Spielerinnen ist überschaubar — deutlich weniger als z.B. alle GMs (~5.000)
+oder alle aktiven Deutschen (~50.000). Die bestehende Infrastruktur (Mac Mini Backfill + VPS Orchestrator)
+kann das stemmen.
+
+**Umsetzung:** Neue Analysis-Gruppen nach ELO-Band:
+- `female_2000` — ELO 2000–2199, F (~1.068 Spielerinnen)
+- `female_1800` — ELO 1800–1999, F (~2.884 Spielerinnen)
+- `female_1600` — ELO 1600–1799, F (~5.941 Spielerinnen)
+- `female_1400` — ELO 1400–1599, F (~12.436 Spielerinnen)
+
+Seed via `seed_players.py`, Backfill lokal (Mac Mini) oder via VPS Orchestrator.
+Zeitschätzung: ~3–4 Wochen Mac Mini Laufzeit bei sequenziellem Backfill.
+
+**Analytischer Mehrwert:** Komplette weibliche Pyramide — von Anfängerinnen bis zur Weltspitze.
+Ermöglicht Analysen zu Aufstiegsdynamiken, Dropout-Raten, Alters-Rating-Kurven für Frauen global.
+
+### D1. Frauen ELO 2200–2400 *(Priorität 1)* — ✅ female_2200 gescrapt
+
+Die natürlichste Erweiterung der Kernfrage. `female_2200` (321 Spielerinnen) ist vollständig
+gescrapt. Die male-Kontrollgruppe für dieses Band fehlt noch.
 
 ### D2. Frauen ELO 2000–2200 *(Priorität 2)*
 
-Deutlich grössere Gruppe (~250 Spielerinnen), die den Massenbereich des
-Frauenschachs abdeckt. Mehr statistische Power, direkter Vergleich mit der
-sub-elite-Ebene.
+~1.068 Spielerinnen — direkt umsetzbar als `female_2000` Gruppe (siehe D0).
 
 ### D3. Inaktive Spitzenspielerinnen mit historisch hohem Rating *(Priorität 2)*
 
@@ -512,16 +541,16 @@ erfordert deutlich weniger Scraping als eine komplette Neudefinition der Gruppen
 | Performance vs. Erwartung (A2) | klein | neue Kerndimension | Hoch | ✅ erledigt |
 | Open/Frauenturnier-Split (A1) | mittel | zentral für Interpretation | Hoch | ✅ erledigt |
 | tournament_type closed/knockout | klein | Formatanalyse | Hoch | ✅ erledigt |
-| No-data-Rate analysieren (B3) | klein | neue Dimension | Mittel | ⬜ |
+| No-data-Ursachen (B3) | klein | neue Dimension | Mittel | ✅ erledigt (Migration 011) |
 | Online vs. OTB (B7) | mittel | COVID-Bereinigung | Mittel | ⬜ |
 | TXT-Snapshots 2010–2014 (B5) | mittel | QC + Resolver | Mittel | ✅ Sep 2012+ |
 | Regressionsmodell (A6) | mittel | statistischer Haupttest | Mittel | ⬜ |
 | Karriere-Persistenz (A3) | mittel | neue Fragestellung | Mittel | ⬜ |
-| Dynamische Gruppenzugehörigkeit (B4) | SQL | methodisch sauber | Mittel | ⬜ jetzt möglich |
+| Dynamische Gruppenzugehörigkeit (B4) | SQL | methodisch sauber | Mittel | ✅ erledigt (Migration 012) |
 | Survivorship-Bias (B8) | SQL | Validierung | Mittel | ⬜ jetzt möglich |
 | Regionale Analyse (A4) | mittel | Kontextualisierung | Niedrig | ⬜ |
 | Turnierkategorie scrapen (B6) | gross | vollständige Formatklassif. | Niedrig | ⬜ |
-| Dashboard (C2) | gross | Reichweite | Niedrig | ⬜ |
+| Dashboard (C2) | gross | Reichweite | Niedrig | ✅ erledigt (scelo.chesspit.net) |
 | Publikation (C1) | gross | Sichtbarkeit | Niedrig | ⬜ |
 
 ### ELO-Historie-Analysen (F) — kein neues Scraping nötig
@@ -540,12 +569,12 @@ erfordert deutlich weniger Scraping als eine komplette Neudefinition der Gruppen
 
 | Gruppe | Spieler (ca.) | Scraping-Aufwand | Neue Fragestellung | Priorität |
 |---|---|---|---|---|
-| Frauen 2200–2400 + Kontrolle (D1) | ~240 | mittel | Muster über ELO-Bänder | **1** |
+| Frauen 2200–2400 + Kontrolle (D1) | ~321 | mittel | Muster über ELO-Bänder | **1** — female_2200 ✅ gescrapt, male-Kontrolle fehlt noch |
 | Alle GMs — Altern (E1) | ~1.800 | gross | Leistungspeak & Abstieg | **1** |
 | COVID-Analyse bestehend + Infra (E2) | ~200 neu | klein | Online vs. OTB Effekte | **1** |
 | Frauen 2000–2200 + Kontrolle (D2) | ~500 | gross | Breite Masse | **2** |
 | Alle IMs — Durchbruch (E3) | ~4.000 | sehr gross | IM→GM Konversion | **2** |
-| 2300-Schwelle (E4) | ~2.000 | gross | Stagnationsphänomen | **2** |
+| 2300-Schwelle (E4) | ~2.000 | gross | Stagnationsphänomen | **2** — global_20b–28b decken ELO 2300–2350 ab (pending/laufend) |
 | Jugenddurchbruch (E5) | ~500 | mittel | Talententwicklung | **2** |
 | Inaktive Spitzenspielerinnen (D3) | ~15 | klein | Survivorship-Bias | **2** |
 | Gefallene 2400er-Spielerinnen (D4) | ~40 | mittel | Selektionseffekte | **3** |

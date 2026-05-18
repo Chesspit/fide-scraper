@@ -87,7 +87,29 @@ def main():
             logger.info("Nothing to backfill — all periods already processed.")
             return
 
-        logger.info("Backfilling %d player-period combinations...", total)
+        # Pre-filter: skip periods where num_games=0 in rating_history (player had no games).
+        # Only skip if num_games IS NOT NULL — NULL means no TXT snapshot available, so we
+        # must scrape to find out. This avoids HTTP requests for known-empty months.
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT fide_id, period FROM rating_history
+                   WHERE (fide_id, period) = ANY(%s) AND num_games = 0""",
+                ([list(p) for p in pending],)
+            )
+            skip_set = {(r[0], r[1]) for r in cur.fetchall()}
+
+        if skip_set:
+            period_strs = [
+                (fid, p.isoformat() if hasattr(p, "isoformat") else p)
+                for fid, p in skip_set
+            ]
+            for fide_id, period_str in period_strs:
+                conn = save_period_no_data(conn, fide_id, period_str)
+            logger.info("Pre-filter: %d periods skipped (num_games=0 in TXT snapshot)",
+                        len(skip_set))
+            pending = [(fid, p) for fid, p in pending if (fid, p) not in skip_set]
+
+        logger.info("Backfilling %d player-period combinations...", len(pending))
 
         errors = 0
         for i, (fide_id, period) in enumerate(pending, 1):

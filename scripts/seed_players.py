@@ -104,6 +104,11 @@ def detect_columns_from_header(header_line: str) -> dict:
     if rating_pos >= 0:
         cols["std_rating"] = (rating_pos, rating_pos + 5)
 
+    # SGm = Standard Games played this period (right after SRtng)
+    sgm_pos = header_line.find("SGm")
+    if sgm_pos >= 0:
+        cols["std_games"] = (sgm_pos, sgm_pos + 4)
+
     if len(cols) >= 6:
         logger.info("Detected column positions (rating col: %s): %s", rating_marker, cols)
         return cols
@@ -172,6 +177,12 @@ def parse_player_line(line: str, columns: dict) -> dict | None:
     # FIDE flags: 'i' = inactive, 'wi' = woman inactive. Anything else → active.
     active = flag not in ("i", "wi")
 
+    games_str = extract("std_games") if "std_games" in columns else ""
+    try:
+        std_games = int(games_str) if games_str else None
+    except ValueError:
+        std_games = None
+
     return {
         "fide_id": int(fide_id_str),
         "name": name,
@@ -182,6 +193,7 @@ def parse_player_line(line: str, columns: dict) -> dict | None:
         "std_rating": std_rating,
         "birth_year": birth_year,
         "active": active,
+        "std_games": std_games,
     }
 
 

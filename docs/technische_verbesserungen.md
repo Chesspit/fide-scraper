@@ -1,6 +1,6 @@
 # Technische Verbesserungen
 
-Stand: 10. Mai 2026
+Stand: 18. Mai 2026
 
 ---
 
@@ -124,6 +124,74 @@ auf einem Land lassen (Schweiz empfohlen — FIDE-Server in Lausanne).
 ---
 
 ## 1. Scraping-Geschwindigkeit
+
+### 1.0 SGm Pre-Filter: no_data ohne HTTP-Request *(implementiert 2026-05-18)* ⭐
+
+**Idee:** Die FIDE TXT-Snapshots enthalten pro Spieler und Monat die Spalte `SGm`
+(Standard Games played). Wenn `SGm = 0`, hat der Spieler in diesem Monat keine
+FIDE-gewerteten Partien gespielt — ein HTTP-Request würde garantiert `no_data` liefern.
+Diese Requests können komplett übersprungen werden.
+
+**Gemessene Einsparung nach ELO-Band:**
+
+| ELO-Band | no_data-Rate | Geschwindigkeitsgewinn |
+|---|---|---|
+| ≥ 2400 | 59% | 2,4× schneller |
+| 2300–2399 | 62% | 2,6× schneller |
+| 2000–2199 | 62% | 2,6× schneller |
+| 1800–1999 | 69% | 3,2× schneller |
+| 1600–1799 | 77% | 4,3× schneller |
+| 1400–1599 | 83% | 5,9× schneller |
+
+**Implementierung (3 Dateien):**
+
+1. **`scripts/seed_players.py`** — `detect_columns_from_header()` erkennt `SGm`-Spaltenposition;
+   `parse_player_line()` gibt `std_games` im Dict zurück.
+
+2. **`scripts/import_rating_snapshots.py`** — `upsert_rating_history()` schreibt
+   `num_games` (= SGm) in `rating_history` via UPSERT. Gilt für alle 195 Snapshots
+   (2006–2026). Pre-2013-Snapshots ohne SGm setzen `num_games = NULL` (kein Skip).
+
+3. **`scripts/backfill.py`** + **`orchestrator/worker.py`** — Pre-Filter vor der
+   Haupt-Scraping-Schleife:
+   ```python
+   # num_games=0 → direkt no_data schreiben, kein HTTP-Request
+   # num_games IS NULL → Request trotzdem machen (kein TXT-Snapshot vorhanden)
+   ```
+
+**Einmalig ausführen** (befüllt num_games für alle ~1,8 Mio. Spieler rückwirkend):
+```bash
+DATABASE_URL=postgresql://fide:...@localhost:5434/fidedb \
+  python scripts/import_rating_snapshots.py --force
+```
+
+**Verifizierung — so prüft man ob es funktioniert:**
+```sql
+-- 1. num_games ist befüllt:
+SELECT COUNT(*) FROM rating_history WHERE num_games IS NOT NULL;
+-- Erwartung: > 100 Mio. Zeilen
+
+-- 2. Verhältnis überspringbar / gesamt:
+SELECT
+  SUM(CASE WHEN num_games = 0 THEN 1 ELSE 0 END) AS skip,
+  SUM(CASE WHEN num_games > 0 THEN 1 ELSE 0 END) AS scrape,
+  SUM(CASE WHEN num_games IS NULL THEN 1 ELSE 0 END) AS unknown
+FROM rating_history;
+-- Erwartung: skip ≈ 60-80% je nach ELO-Band
+```
+
+**Im Backfill-Log erkennbar:**
+```
+Pre-filter: 4832 periods skipped (num_games=0 in TXT snapshot)
+Backfilling 3891 player-period combinations...
+```
+Ohne den Filter stünde dort: `Backfilling 8723 player-period combinations...`
+
+**Wichtige Einschränkung:** `num_games IS NULL` bedeutet kein TXT-Snapshot vorhanden
+(v.a. Spieler die erst nach 2026-04 hinzugekommen sind, oder Pre-2013-Perioden ohne SGm).
+Diese werden normal gescrapt.
+
+---
 
 ### 1.1 Menschliches Sleep-Muster *(implementiert 2026-04-29)*
 

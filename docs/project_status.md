@@ -1,6 +1,6 @@
 # FIDE Scraper — Projektdokumentation
 
-Stand: 13. Mai 2026
+Stand: 18. Mai 2026
 
 ---
 
@@ -122,12 +122,12 @@ Feldern: `elo_min`, `elo_max`, `federations`, `sampling`, `priority`,
 
 | Prio | Gruppen | Spieler | Inhalt | Status |
 |-----:|--------:|--------:|--------|--------|
-| 1 | 5 | 1.587 | Kern-Analysegruppen | partial/complete |
-| 2 | 1 | 170 | male_2200 | partial (2013–2026) |
-| 3 | 19 | ~2.800 | global_02–20 (weltweit ≥2345) | global_02 ✅, global_03 ⏳ |
+| 1 | 5 | 1.587 | Kern-Analysegruppen | partial |
+| 2 | 1 | 170 | male_2200 | ⛔ skipped (gestrichen 2026-05-18) |
+| 3 | 35 | ~3.600 | global_02–28b (weltweit ≥2300) | 33 complete, 20a läuft, 20b–28b pending |
 | 4 | 8 | 1.163 | dach_01–08 (SUI+AUT+GER ≥2200) | pending |
 | 5 | 40 | 5.988 | sui_01–20 + aut_01–20 (1400–2199) | pending |
-| 6 | 86 | 12.948 | ger_01–86 (1400–2199) | pending |
+| 6 | 86 | 12.948 | ger_01–86 (≥2000 priorisiert, <2000 deprioritisiert) | pending |
 
 Das Age-Matching der Kontrollgruppe orientiert sich an der Geburtsjahr-Dekaden-
 Verteilung der 64 Frauen, damit altersbedingte Effekte (K-Faktor, Karrierephase)
@@ -255,13 +255,13 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 
 ---
 
-## 5. Aktueller Datensatz-Stand (2026-05-09)
+## 5. Aktueller Datensatz-Stand (2026-05-18)
 
 | Kennzahl | Wert |
 |---|---|
-| **Gesamt-Partien** | **~1.800.000+** |
+| **Gesamt-Partien** | **~2.440.000** |
 | **Gegner aufgelöst** | **~97,5 %** |
-| **Spieler mit Daten** | **~2.700+** |
+| **Spieler mit Daten** | **14.043** |
 | **Früheste Periode mit Daten** | **2008-04** |
 | **Neueste Periode** | **2026-04** |
 
@@ -274,10 +274,10 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 | elite_2600 | 202 | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
 | female_2200 | 321 | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
 | swiss_2026 | 349 | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
-| male_2200 | 170 | 2013-01 – 2026-04 | ✅ complete |
-| global_02–13a | ~1.200 | ELO 2391–2603 | ✅ complete (2012-08 – 2026-04) |
-| global_13b | 132 | ELO 2395–2398 | ⬜ pending (Start 2026-05-12) |
-| global_14–20b | — | ELO 2345–2394 | ⬜ pending |
+| male_2200 | 170 | — | ⛔ skipped (gestrichen 2026-05-18) |
+| global_02–19b | 57–147 | ELO 2351–2603 | ✅ complete (33 Gruppen, 2012-08 – 2026-04) |
+| global_20a | 72 | ELO 2345–2347 | 🔄 läuft (seit 2026-05-18) |
+| global_20b–28b | — | ELO 2300–2350 | ⬜ pending (17 Gruppen) |
 
 > **FIDE-Perioden:** `scraper/main.py` überspringt automatisch strukturell leere Monate
 > (is_valid_fide_period): 2008 Apr/Jul/Okt, 2009 Jan/Apr/Jul/Sep/Nov,
@@ -527,11 +527,10 @@ Enthält zusätzlich QC-Zellen: Vergleich `Σ rating_change_weighted` mit tatsä
 
 | Aufgabe | Priorität | Status |
 |---|---|---|
-| global_13b–20b via Mac Mini | Hoch | ⬜ global_13b morgen (2026-05-12) |
-| male_2200 2008-04–2012-12 nachholen | Mittel | ⬜ noch nicht gescrapt |
+| global_20a–28b via Mac Mini (ELO 2300–2347) | Hoch | 🔄 20a läuft, 20b–28b pending |
+| April-Nachscrape (38 Spieler, global_09b/10a/17b) | Mittel | ⬜ nach global_20a |
 | dach_01–08 seeden + starten | Mittel | ⬜ nach global-Gruppen |
 | Kern-Gruppen 2008 nachholen | Mittel | ⬜ 3 Quartalsperioden fehlen |
-| Datacenter-Proxy testen (VPS) | Mittel | ⬜ günstiger als Residential wenn FIDE nicht IP-typ-basiert blockt |
 | Notebooks 01–09 ausführen | Mittel | ⬜ Daten bereit |
 | resolve_opponents nach Backfills | Niedrig | ⬜ lokal oder VPS |
 | Parquet-Export aktualisieren | Niedrig | ⬜ nach grösserem Backfill |

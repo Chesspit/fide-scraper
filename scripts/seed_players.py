@@ -65,6 +65,10 @@ def detect_columns_from_header(header_line: str) -> dict:
         m = MONTH_RATING_PATTERN.search(header_line)
         if m:
             cols["std_rating"] = (m.start(), m.start() + 5)
+            # "GamesBorn" in pre-2013: Games immediately follows the rating (5 chars wide)
+            games_pos = header_line.find("Games")
+            if games_pos >= 0:
+                cols["std_games"] = (games_pos, games_pos + 5)
             logger.info("Detected pre-2013 column layout (rating col: %s, no Sex/WTit): %s",
                         m.group(), cols)
             return cols
@@ -104,10 +108,13 @@ def detect_columns_from_header(header_line: str) -> dict:
     if rating_pos >= 0:
         cols["std_rating"] = (rating_pos, rating_pos + 5)
 
-    # SGm = Standard Games played this period (right after SRtng)
-    sgm_pos = header_line.find("SGm")
-    if sgm_pos >= 0:
-        cols["std_games"] = (sgm_pos, sgm_pos + 4)
+    # Standard Games played this period — column name changed over the years:
+    # Pre-2013: "Games", 2013-2025: "Gms", 2026+: "SGm"
+    for games_label, width in [("SGm", 4), ("Gms", 4), ("Games", 5)]:
+        gpos = header_line.find(games_label)
+        if gpos >= 0:
+            cols["std_games"] = (gpos, gpos + width)
+            break
 
     if len(cols) >= 6:
         logger.info("Detected column positions (rating col: %s): %s", rating_marker, cols)

@@ -253,6 +253,8 @@ def main():
                         help="Show scraped-vs-published mismatches")
     parser.add_argument("--force", action="store_true",
                         help="Re-import already-imported periods (default: skip)")
+    parser.add_argument("--from-period", type=str, default=None,
+                        help="Only import snapshots from this period onwards (YYYY-MM-01)")
     args = parser.parse_args()
 
     conn = psycopg2.connect(
@@ -276,7 +278,12 @@ def main():
                 logger.info("No snapshot files found in %s", DATA_DIR)
                 sys.exit(0)
 
-            logger.info("Found %d snapshot files", len(snapshots))
+            if args.from_period:
+                snapshots = [(f, p) for f, p in snapshots if p >= args.from_period]
+                logger.info("Filtered to %d snapshot files (from %s)", len(snapshots), args.from_period)
+            else:
+                logger.info("Found %d snapshot files", len(snapshots))
+
             for filepath, period in snapshots:
                 import_snapshot(conn, filepath, period, force=args.force)
 

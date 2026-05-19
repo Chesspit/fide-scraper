@@ -221,9 +221,15 @@ def scrape_group(
         skip_set = {(r[0], r[1]) for r in cur.fetchall()}
 
     if skip_set:
-        for fide_id, period in skip_set:
-            period_str = period.isoformat() if hasattr(period, "isoformat") else period
-            save_period_no_data(pg_conn, fide_id, period_str)
+        import psycopg2.extras
+        with pg_conn.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur,
+                """INSERT INTO scrape_periods (fide_id, period, status, scraped_at)
+                   VALUES %s ON CONFLICT (fide_id, period) DO NOTHING""",
+                [(fid, (p.isoformat() if hasattr(p, "isoformat") else p), "no_data", "NOW()")
+                 for fid, p in skip_set],
+            )
         pg_conn.commit()
         logger.info("Pre-filter: %d combos skipped (num_games=0 in TXT snapshot)", len(skip_set))
         pending = [(fid, p) for fid, p in pending if (fid, p) not in skip_set]

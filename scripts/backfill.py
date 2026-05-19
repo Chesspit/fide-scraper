@@ -101,12 +101,20 @@ def main():
             skip_set = {(r[0], r[1]) for r in cur.fetchall()}
 
         if skip_set:
-            period_strs = [
-                (fid, p.isoformat() if hasattr(p, "isoformat") else p)
-                for fid, p in skip_set
-            ]
-            for fide_id, period_str in period_strs:
-                conn = save_period_no_data(conn, fide_id, period_str)
+            # Batch-insert alle no_data-Einträge auf einmal — viel schneller als einzeln
+            with conn.cursor() as cur:
+                import psycopg2.extras
+                rows = [
+                    (fid, p.isoformat() if hasattr(p, "isoformat") else p)
+                    for fid, p in skip_set
+                ]
+                psycopg2.extras.execute_values(
+                    cur,
+                    """INSERT INTO scrape_periods (fide_id, period, status, scraped_at)
+                       VALUES %s ON CONFLICT (fide_id, period) DO NOTHING""",
+                    [(fid, period, "no_data", "NOW()") for fid, period in rows],
+                )
+            conn.commit()
             logger.info("Pre-filter: %d periods skipped (num_games=0 in TXT snapshot)",
                         len(skip_set))
             pending = [(fid, p) for fid, p in pending if (fid, p) not in skip_set]

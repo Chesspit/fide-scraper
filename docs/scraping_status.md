@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-18 Abend (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-05-19 Abend (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -8,9 +8,9 @@ Stand: 2026-05-18 Abend (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **2.500.507** |
-| Spieler mit ok-Daten | **14.148** |
-| Global-Gruppen complete | **35** (global_02 – global_20b) |
+| Partien gesamt | **2.590.233** |
+| Spieler mit ok-Daten | **14.420** |
+| Global-Gruppen complete | **37** (global_02 – global_21b) |
 
 ---
 
@@ -40,9 +40,11 @@ Stand: 2026-05-18 Abend (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Gruppe | Spieler | ELO-Range | Status |
 |--------|--------:|-----------|--------|
-| global_20a | 72 | 2345–2347 | ✅ complete (2026-05-18, 5h 51min) |
-| global_20b | 72 | 2348–2350 | ✅ complete (2026-05-18, 5h 54min) |
-| global_21a | 78 | 2342–2344 | ⬜ **NÄCHSTE** (geseeded, bereit zum Start) |
+| global_20a | 72 | 2345–2347 | ✅ complete (2026-05-18) |
+| global_20b | 72 | 2348–2350 | ✅ complete (2026-05-18) |
+| global_21a | 78 | 2342–2344 | ✅ complete (2026-05-19, 6h 54min) |
+| global_21b | 73 | 2339–2341 | ✅ complete (2026-05-19, 5h 02min) |
+| global_22a | 56 | 2337–2338 | ⬜ **NÄCHSTE** (geseeded, bereit zum Start) |
 | global_21b | — | 2339–2341 | ⬜ pending |
 | global_22a–28b | — | 2300–2338 | ⬜ pending (14 Gruppen, neu 2026-05-18) |
 
@@ -59,6 +61,20 @@ Nach global_28b ist ELO ≥ 2300 weltweit vollständig abgedeckt (~815 weitere S
 - Dashboard: **https://scelo.chesspit.net** (BasicAuth: peter / persönliches PW)
 - **Profile: semi_aggressive 60% / normal 40%** (geändert 2026-05-18, semi_conservative auf 0%)
 - Worker läuft dauerhaft als Python-Prozess auf VPS (root)
+
+---
+
+## Änderungen Session 2026-05-19
+
+| Was | Details |
+|-----|---------|
+| global_21a ✅ | 78 Spieler, ELO 2342–2344, 6h 54min, 75 Errors |
+| global_21b ✅ | 73 Spieler, ELO 2339–2341, 5h 02min, 0 Errors |
+| global_22a | 56 Spieler geseeded, bereit zum Start |
+| Pre-Filter | Implementiert + deployed (Mac Mini + VPS); ~55% skip-Rate |
+| num_games | 165 TXT-Snapshots importiert (2012-08 bis 2026-04) |
+| VPS Queue | 104 Gruppen (Prio ≤129) zufällig gemischt |
+| Dashboard | Infobar letzte Gruppe, Partien/Spieler, Größe (MB) |
 
 ---
 

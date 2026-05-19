@@ -244,6 +244,7 @@ def scrape_group(
 
     records_found = 0
     _bytes_session = read_worker_state().get("mb_downloaded", 0.0) * 1024 * 1024
+    _bytes_group_start = _bytes_session  # Startpunkt für MB-Tracking dieser Gruppe
     _consecutive_failures = 0
 
     for _combo_idx, (fide_id, period) in enumerate(pending, start=1):
@@ -310,10 +311,11 @@ def scrape_group(
         wait = qm.get_wait_time(profile)
         time.sleep(wait)
 
+    mb_group = (_bytes_session - _bytes_group_start) / 1024 / 1024
     write_state(combos_done=_combo_idx if pending else 0,
                 mb_downloaded=_bytes_session / 1024 / 1024)
 
-    return records_found, pg_conn
+    return records_found, pg_conn, mb_group
 
 
 # ---------------------------------------------------------------------------
@@ -430,10 +432,11 @@ def run(
             run_started = time.strftime("%Y-%m-%dT%H:%M:%S")
 
             try:
-                records, pg_conn = scrape_group(group, pg_conn, proxy_manager, profile, qm)
+                records, pg_conn, mb_group = scrape_group(group, pg_conn, proxy_manager, profile, qm)
                 qm.mark_done(group.id, records)
                 qm.log_run(group.id, run_started, "success",
-                           records_found=records, profile_used=profile.get("name", ""))
+                           records_found=records, profile_used=profile.get("name", ""),
+                           mb_downloaded=mb_group)
                 new_done = state.get("groups_done", 0) + 1
                 write_state(groups_done=new_done)
                 _max_g = state.get("max_groups")

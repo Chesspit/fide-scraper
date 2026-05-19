@@ -245,14 +245,12 @@ def query_completed() -> list[dict]:
                g.player_count,
                g.records_found,
                r.profile_used,
-               CASE COALESCE(r.profile_used, '')
-                   WHEN 'conservative' THEN 'Langsam · Proxy immer'
-                   WHEN 'normal'       THEN 'Normal · Proxy aktiv'
-                   WHEN 'aggressive'   THEN 'Schnell · kein Proxy'
-                   ELSE '–'
-               END                                          AS taktik,
-               CASE r.proxy_used WHEN '' THEN '–' WHEN NULL THEN '–'
-                   ELSE 'Ja' END                            AS proxy,
+               CASE
+                   WHEN g.player_count > 0 AND g.records_found > 0
+                   THEN ROUND(CAST(g.records_found AS REAL) / g.player_count, 1)
+                   ELSE NULL
+               END                                          AS partien_per_spieler,
+               ROUND(COALESCE(r.mb_downloaded, 0), 1)      AS mb,
                g.last_run_at,
                ROUND(
                    (julianday(r.finished_at) - julianday(r.started_at)) * 24, 2
@@ -273,6 +271,7 @@ def query_completed() -> list[dict]:
                SELECT group_id,
                       started_at, finished_at,
                       records_found, profile_used, proxy_used,
+                      COALESCE(mb_downloaded, 0) AS mb_downloaded,
                       ROW_NUMBER() OVER (PARTITION BY group_id
                                         ORDER BY finished_at DESC) AS rn
                FROM scrape_runs
@@ -738,17 +737,17 @@ tab_queue = dbc.Container(fluid=True, children=[
 # Tab 3 — Completed layout
 # ---------------------------------------------------------------------------
 COMPLETED_COLUMNS = [
-    {"name": "Föd.",          "id": "federation"},
-    {"name": "Kontinent",     "id": "continent"},
-    {"name": "Jahr",          "id": "year"},
-    {"name": "ELO-Band",      "id": "elo_band"},
-    {"name": "Spieler",       "id": "player_count"},
-    {"name": "Partien",       "id": "records_found"},
-    {"name": "Taktik",        "id": "taktik"},
-    {"name": "Proxy",         "id": "proxy"},
-    {"name": "Dauer (h)",     "id": "duration_h"},
-    {"name": "Rate/h",        "id": "rate_per_h"},
-    {"name": "Abgeschlossen", "id": "last_run_at"},
+    {"name": "Föd.",           "id": "federation"},
+    {"name": "Kontinent",      "id": "continent"},
+    {"name": "Jahr",           "id": "year"},
+    {"name": "ELO-Band",       "id": "elo_band"},
+    {"name": "Spieler",        "id": "player_count"},
+    {"name": "Partien",        "id": "records_found"},
+    {"name": "Partien/Spieler","id": "partien_per_spieler"},
+    {"name": "MB",             "id": "mb"},
+    {"name": "Dauer (h)",      "id": "duration_h"},
+    {"name": "Rate/h",         "id": "rate_per_h"},
+    {"name": "Abgeschlossen",  "id": "last_run_at"},
 ]
 
 tab_completed = dbc.Container(fluid=True, children=[

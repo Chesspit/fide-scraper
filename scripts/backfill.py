@@ -91,10 +91,12 @@ def main():
         # Only skip if num_games IS NOT NULL — NULL means no TXT snapshot available, so we
         # must scrape to find out. This avoids HTTP requests for known-empty months.
         with conn.cursor() as cur:
+            fide_ids = list({fid for fid, _ in pending})
+            periods  = list({p   for _,  p in pending})
             cur.execute(
                 """SELECT fide_id, period FROM rating_history
-                   WHERE (fide_id, period) = ANY(%s) AND num_games = 0""",
-                ([list(p) for p in pending],)
+                   WHERE fide_id = ANY(%s) AND period = ANY(%s) AND num_games = 0""",
+                (fide_ids, periods)
             )
             skip_set = {(r[0], r[1]) for r in cur.fetchall()}
 

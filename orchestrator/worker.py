@@ -211,10 +211,12 @@ def scrape_group(
     # Pre-filter: skip periods where num_games=0 in rating_history (no games played).
     # NULL means no TXT snapshot → must scrape. Only skip confirmed-zero months.
     with pg_conn.cursor() as cur:
+        fide_ids = list({fid for fid, _ in pending})
+        periods  = list({p   for _,  p in pending})
         cur.execute(
             """SELECT fide_id, period FROM rating_history
-               WHERE (fide_id, period) = ANY(%s) AND num_games = 0""",
-            ([list(p) for p in pending],)
+               WHERE fide_id = ANY(%s) AND period = ANY(%s) AND num_games = 0""",
+            (fide_ids, periods)
         )
         skip_set = {(r[0], r[1]) for r in cur.fetchall()}
 

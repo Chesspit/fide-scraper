@@ -197,7 +197,10 @@ def query_queue() -> list[dict]:
            LIMIT 500""",
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+    for row in result:
+        row["last_run_at"] = _fmt_dt(row.get("last_run_at"))
+    return result
 
 
 def update_group_profile_db(group_id: int, profile: str) -> None:
@@ -397,7 +400,6 @@ _OV_LEGEND = [
     ("#DCEDC8", "<30%"),
     ("#81C784", "<50%"),
     ("#43A047", "<70%"),
-    ("#2E7D32", "<90%"),
     ("#0D4A18", "100%"),
 ]
 

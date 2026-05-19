@@ -119,7 +119,8 @@ def main():
                         len(skip_set))
             pending = [(fid, p) for fid, p in pending if (fid, p) not in skip_set]
 
-        logger.info("Backfilling %d player-period combinations...", len(pending))
+        total = len(pending)  # nach Pre-Filter aktualisieren
+        logger.info("Backfilling %d player-period combinations...", total)
 
         errors = 0
         for i, (fide_id, period) in enumerate(pending, 1):

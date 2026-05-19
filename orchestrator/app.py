@@ -747,7 +747,7 @@ COMPLETED_COLUMNS = [
     {"name": "Spieler",        "id": "player_count"},
     {"name": "Partien",        "id": "records_found"},
     {"name": "Partien/Spieler","id": "partien_per_spieler"},
-    {"name": "MB",             "id": "mb"},
+    {"name": "Größe (MB)",      "id": "mb"},
     {"name": "Dauer (h)",      "id": "duration_h"},
     {"name": "Rate/h",         "id": "rate_per_h"},
     {"name": "Abgeschlossen",  "id": "last_run_at"},

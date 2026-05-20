@@ -762,8 +762,6 @@ tab_completed = dbc.Container(fluid=True, children=[
             width="auto",
         ),
     ], align="center"),
-    # Letzte abgeschlossene Gruppe — Infobar
-    html.Div(id="last-completed-info", className="mb-3"),
     dash_table.DataTable(
         id="completed-table",
         columns=COMPLETED_COLUMNS,
@@ -1130,45 +1128,14 @@ def apply_queue_profile(n_clicks, group_id, profile_val):
 @app.callback(
     Output("completed-table", "data"),
     Output("completed-count", "children"),
-    Output("last-completed-info", "children"),
     Input("interval-completed", "n_intervals"),
     Input("main-tabs", "active_tab"),
 )
 def refresh_completed(_, active_tab):
     if active_tab != "tab-completed":
-        return dash.no_update, dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update
     rows = query_completed()
-
-    # Infobar: letzte abgeschlossene Gruppe
-    info = html.Div()
-    if rows:
-        r = rows[0]
-        def _card(label, value, color="secondary"):
-            return dbc.Col(dbc.Card(dbc.CardBody([
-                html.Div(label, className="text-muted", style={"fontSize": "0.75rem"}),
-                html.Div(str(value) if value is not None else "–",
-                         className=f"fw-bold text-{color}", style={"fontSize": "1.1rem"}),
-            ], className="p-2"), className="text-center"), width="auto")
-
-        gruppe = f"{r.get('federation','?')} {r.get('year','?')} · {r.get('elo_band','?')}"
-        info = dbc.Card([
-            dbc.CardHeader(html.Span([
-                html.Strong("Zuletzt abgeschlossen: "),
-                html.Span(gruppe, className="text-success"),
-                html.Span(f"  ·  {r.get('last_run_at','')}", className="text-muted ms-2",
-                          style={"fontSize": "0.85rem"}),
-            ]), className="py-2"),
-            dbc.CardBody(dbc.Row([
-                _card("Spieler",         r.get("player_count")),
-                _card("Partien",         r.get("records_found"),        "success"),
-                _card("Partien/Spieler", r.get("partien_per_spieler"),  "primary"),
-                _card("Dauer (h)",       r.get("duration_h")),
-                _card("Rate/h",          r.get("rate_per_h"),           "info"),
-                _card("Größe (MB)",      r.get("mb")),
-            ], className="g-2"), className="py-2"),
-        ], className="border-success mb-2")
-
-    return rows, f"{len(rows):,} Gruppen", info
+    return rows, f"{len(rows):,} Gruppen"
 
 
 # ===========================================================================

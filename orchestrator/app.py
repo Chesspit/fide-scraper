@@ -875,11 +875,11 @@ def refresh_heatmap(_, federation):
     ]
 
     _PROFILE_ABBR = {
-        "semi_aggressive":  "AGGR",
-        "aggressive":       "AGG",
-        "normal":           "NORM",
-        "semi_conservative":"CONV",
-        "conservative":     "CONS",
+        "semi_aggressive":  "semi-aggr.",
+        "aggressive":       "aggr.",
+        "normal":           "normal",
+        "semi_conservative":"semi-conv.",
+        "conservative":     "conserv.",
     }
 
     if threads:
@@ -908,17 +908,17 @@ def refresh_heatmap(_, federation):
             badge_cls = f"badge bg-{badge_color} me-1" + (
                 " text-dark" if badge_color == "warning" else "")
 
+            grp_str = f"{fed}/{year} · {elo}" if elo else grp
             lines = [
                 html.Div([
                     html.Span(f"T{slot}", className=badge_cls),
-                    html.Span(abbr, className="fw-semibold"),
+                    html.Span(f"{abbr}  {grp_str}", className="fw-semibold"),
                 ], className="lh-sm"),
-                html.Div(f"{fed}/{year}", className="text-muted lh-sm"),
-                html.Div(elo or "–",     className="text-muted lh-sm"),
-                html.Div(f"{player_str}{combo_str}", className="lh-sm"),
+                html.Div(
+                    f"{player_str}{combo_str}" + (f"  {perf_str}" if perf_str else ""),
+                    className="text-muted lh-sm",
+                ),
             ]
-            if perf_str:
-                lines.append(html.Div(perf_str, className="text-muted lh-sm"))
 
             thread_blocks.append(html.Div(lines, style={
                 "borderLeft": f"3px solid var(--bs-{badge_color})",

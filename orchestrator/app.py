@@ -623,9 +623,11 @@ tab_heatmap = dbc.Container(fluid=True, children=[
         dbc.Col([
             dbc.Label("Worker", className="small text-muted mb-1"),
             html.Div([
-                dbc.Button("▶ Start",  id="btn-start",  color="success", size="sm", className="me-1"),
-                dbc.Button("⏸ Pause",  id="btn-pause",  color="warning", size="sm", className="me-1"),
-                dbc.Button("⏹ Stop",   id="btn-stop",   color="danger",  size="sm"),
+                dbc.Button("▶ Start",    id="btn-start",   color="success", size="sm", className="me-1"),
+                dbc.Button("⏸ Pause",    id="btn-pause",   color="warning", size="sm", className="me-1"),
+                dbc.Button("⏹ Stop",     id="btn-stop",    color="danger",  size="sm", className="me-1"),
+                dbc.Button("🔄 Neustart", id="btn-restart", color="info",    size="sm",
+                           title="Aktuelle Gruppe abschließen, dann Worker neu starten (lädt neue Konfiguration)"),
             ]),
         ], width=2),
         dbc.Col([
@@ -988,14 +990,15 @@ def set_max_workers(value):
 
 @app.callback(
     Output("worker-cmd-out", "children"),
-    Input("btn-start", "n_clicks"),
-    Input("btn-pause", "n_clicks"),
-    Input("btn-stop",  "n_clicks"),
+    Input("btn-start",   "n_clicks"),
+    Input("btn-pause",   "n_clicks"),
+    Input("btn-stop",    "n_clicks"),
+    Input("btn-restart", "n_clicks"),
     State("input-max-groups", "value"),
     State("input-max-hours",  "value"),
     prevent_initial_call=True,
 )
-def handle_worker_buttons(start, pause, stop, max_groups, max_hours):
+def handle_worker_buttons(start, pause, stop, restart, max_groups, max_hours):
     triggered = callback_context.triggered_id
     if triggered == "btn-start":
         state = read_worker_state()
@@ -1009,6 +1012,10 @@ def handle_worker_buttons(start, pause, stop, max_groups, max_hours):
         write_worker_state("pause")
     elif triggered == "btn-stop":
         write_worker_state("stopped")
+    elif triggered == "btn-restart":
+        # Aktuelle Gruppe(n) fertig scrapen, dann Worker-Prozess beenden.
+        # Docker restart: unless-stopped startet ihn mit neuer Config (profiles.yaml) neu.
+        write_worker_state("restart")
     return ""
 
 

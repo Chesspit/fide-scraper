@@ -432,8 +432,8 @@ def run_slot(
             state = read_worker_state()
             cmd = state.get("command", "stopped")
 
-            if cmd == "stopped":
-                logger.info("Thread %d: Stop-Befehl empfangen", slot)
+            if cmd in ("stopped", "restart"):
+                logger.info("Thread %d: %s-Befehl empfangen", slot, cmd)
                 stop_event.set()
                 break
 
@@ -629,6 +629,13 @@ def _run_parallel_loop(
             except Exception:
                 logger.exception("Unbehandelte Exception in Thread-Pool")
 
+    # Restart-Command: Worker-Prozess beenden → Docker startet ihn neu mit neuer Config
+    final_cmd = read_worker_state().get("command")
+    if final_cmd == "restart":
+        logger.info("Restart-Befehl: Worker-Prozess exitiert — Docker-Neustart erwartet")
+        write_state(command="run", threads=[])   # nach Neustart sofort loslegen
+        sys.exit(0)
+
     write_state(command="stopped", threads=[])
     logger.info("Alle %d Threads beendet", max_w)
 
@@ -699,8 +706,12 @@ def _run_single_loop(
                     pass
 
             # ── Dashboard-Command ─────────────────────────────────────────
-            # "stopped" und "pause" → warten (Container läuft weiter, wartet auf "run")
             cmd = state.get("command", "stopped")
+            if cmd == "restart":
+                logger.info("Restart-Befehl: Worker-Prozess exitiert — Docker-Neustart erwartet")
+                write_state(command="run", current_group=None)  # nach Neustart sofort loslegen
+                sys.exit(0)
+            # "stopped" und "pause" → warten (Container läuft weiter, wartet auf "run")
             if cmd in ("stopped", "pause"):
                 write_state(current_group=None)
                 time.sleep(_PAUSE_POLL_INTERVAL)

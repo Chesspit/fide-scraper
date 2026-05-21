@@ -38,7 +38,7 @@ services:
     volumes:
       - orchestrator_data:/data
       - ../config.yaml:/app/config.yaml:ro
-      - ./profiles.yaml:/app/orchestrator/profiles.yaml:ro
+      - ./profiles.yaml:/app/orchestrator/profiles.yaml  # schreibbar: Dashboard persistiert Profil + max_workers
     ports:
       - "127.0.0.1:8050:8050"
     networks:

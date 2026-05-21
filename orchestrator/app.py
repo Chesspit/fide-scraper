@@ -601,7 +601,6 @@ tab_heatmap = dbc.Container(fluid=True, children=[
                 options=[{"label": f"{n}×", "value": n} for n in (1, 2, 3, 4)],
                 value=_get_concurrency_cfg().get("max_workers", 1),
                 clearable=False,
-                title="Wirksam nach Worker-Neustart",
             ),
         ], width=1),
         dbc.Col([

@@ -874,6 +874,14 @@ def refresh_heatmap(_, federation):
         )
     ]
 
+    _PROFILE_ABBR = {
+        "semi_aggressive":  "AGGR",
+        "aggressive":       "AGG",
+        "normal":           "NORM",
+        "semi_conservative":"CONV",
+        "conservative":     "CONS",
+    }
+
     if threads:
         # Parallel-Modus: alle Threads nebeneinander in einem Flex-Container
         thread_blocks = []
@@ -890,30 +898,32 @@ def refresh_heatmap(_, federation):
             fed  = parts[0] if parts else grp
             year = parts[1] if len(parts) > 1 else ""
             elo  = parts[2] if len(parts) > 2 else ""
-            grp_str = f"{fed}/{year} · {elo}" if elo else grp
 
             combo_str  = f"{c_done}/{c_total}" if c_total else str(c_done)
             player_str = f"{n_players}P · " if n_players else ""
             perf_str   = _speed_eta(started_at, c_done, c_total)
+            abbr       = _PROFILE_ABBR.get(t_profile, t_profile[:4].upper())
 
             badge_color = _SLOT_BADGE[slot % len(_SLOT_BADGE)]
             badge_cls = f"badge bg-{badge_color} me-1" + (
                 " text-dark" if badge_color == "warning" else "")
 
-            thread_blocks.append(html.Div([
+            lines = [
                 html.Div([
                     html.Span(f"T{slot}", className=badge_cls),
-                    html.Span(f"{t_profile}", className="fw-semibold me-1"),
-                    html.Span(grp_str, className="text-muted"),
+                    html.Span(abbr, className="fw-semibold"),
                 ], className="lh-sm"),
-                html.Div(
-                    f"{player_str}{combo_str}" + (f"  {perf_str}" if perf_str else ""),
-                    className="text-muted lh-sm",
-                ),
-            ], style={
+                html.Div(f"{fed}/{year}", className="text-muted lh-sm"),
+                html.Div(elo or "–",     className="text-muted lh-sm"),
+                html.Div(f"{player_str}{combo_str}", className="lh-sm"),
+            ]
+            if perf_str:
+                lines.append(html.Div(perf_str, className="text-muted lh-sm"))
+
+            thread_blocks.append(html.Div(lines, style={
                 "borderLeft": f"3px solid var(--bs-{badge_color})",
                 "paddingLeft": "8px",
-                "marginRight": "20px",
+                "marginRight": "16px",
             }))
 
         status_children.append(

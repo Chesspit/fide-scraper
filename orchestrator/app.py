@@ -204,17 +204,10 @@ def query_queue() -> list[dict]:
     """Top 500 non-done, non-skipped groups sorted by priority (ascending = highest first)."""
     conn = get_conn()
     rows = conn.execute(
-        f"""SELECT id, priority, federation, continent, year,
+        """SELECT id, priority, federation, continent, year,
                   elo_min || '–' || elo_max AS elo_band,
                   player_count, status, retries,
                   COALESCE(device, '') AS device,
-                  COALESCE(profile, '') AS profile,
-                  CASE COALESCE(profile, '')
-                      WHEN 'conservative' THEN 'Langsam · Proxy immer'
-                      WHEN 'normal'       THEN 'Normal · Proxy aktiv'
-                      WHEN 'aggressive'   THEN 'Schnell · kein Proxy'
-                      ELSE '{FUZZY_LABEL}'
-                  END AS taktik,
                   COALESCE(last_run_at, '–') AS last_run_at
            FROM scrape_groups
            WHERE status IN ('pending', 'running', 'failed')
@@ -223,19 +216,20 @@ def query_queue() -> list[dict]:
     ).fetchall()
     conn.close()
     result = [dict(r) for r in rows]
+
+    # Thread-Slot aus worker_state.json anreichern:
+    # current_group im State hat Format "FED/YEAR/ELOMIN–ELOMAX"
+    threads = read_worker_state().get("threads", [])
+    thread_map = {
+        t.get("current_group", ""): f"T{t.get('slot', '?')}"
+        for t in threads
+        if t.get("current_group")
+    }
     for row in result:
         row["last_run_at"] = _fmt_dt(row.get("last_run_at"))
+        grp_label = f"{row['federation']}/{row['year']}/{row['elo_band']}"
+        row["thread_slot"] = thread_map.get(grp_label, "–")
     return result
-
-
-def update_group_profile_db(group_id: int, profile: str) -> None:
-    conn = get_conn()
-    conn.execute(
-        "UPDATE scrape_groups SET profile=? WHERE id=?",
-        (profile if profile else None, group_id),
-    )
-    conn.commit()
-    conn.close()
 
 
 def update_group_device(group_id: int, device: str) -> None:
@@ -663,7 +657,7 @@ tab_heatmap = dbc.Container(fluid=True, children=[
 QUEUE_COLUMNS = [
     {"name": "Priorität",   "id": "priority",    "editable": True,  "type": "numeric"},
     {"name": "Gerät",       "id": "device",      "editable": True,  "presentation": "dropdown"},
-    {"name": "Profil",      "id": "profile",     "editable": False},
+    {"name": "Thread",      "id": "thread_slot", "editable": False},
     {"name": "Föd.",        "id": "federation",  "editable": False},
     {"name": "Kontinent",   "id": "continent",   "editable": False},
     {"name": "Jahr",        "id": "year",        "editable": False, "type": "numeric"},
@@ -681,16 +675,8 @@ DEVICE_OPTIONS = [
     {"label": "vps",           "value": "vps"},
 ]
 
-PROFILE_OPTIONS = [
-    {"label": "— (fuzzy)",     "value": ""},
-    {"label": "conservative",  "value": "conservative"},
-    {"label": "normal",        "value": "normal"},
-    {"label": "aggressive",    "value": "aggressive"},
-]
-
 tab_queue = dbc.Container(fluid=True, children=[
     dcc.Interval(id="interval-queue", interval=15_000, n_intervals=0),
-    dcc.Store(id="queue-selected-id"),
 
     dbc.Row([
         dbc.Col(html.H5("Scraping-Queue", className="text-secondary fw-bold my-3"), width="auto"),
@@ -699,41 +685,6 @@ tab_queue = dbc.Container(fluid=True, children=[
             width="auto",
         ),
     ], align="center", className="mb-1"),
-
-    # ── Profil-Aktionsleiste (oben, immer sichtbar) ───────────────────────
-    dbc.Card(
-        dbc.CardBody([
-            dbc.Row([
-                dbc.Col(html.Div(id="queue-sel-label",
-                                 className="small text-muted",
-                                 style={"paddingTop": "6px"}),
-                        width=True),
-                dbc.Col([
-                    dcc.Dropdown(
-                        id="queue-profile-dd",
-                        options=PROFILE_OPTIONS,
-                        placeholder="Profil wählen…",
-                        clearable=True,
-                        style={"fontSize": "13px", "minWidth": "180px"},
-                    ),
-                ], width="auto"),
-                dbc.Col(
-                    dbc.Button("Profil setzen", id="queue-profile-btn",
-                               color="primary", size="sm", disabled=True),
-                    width="auto",
-                ),
-                dbc.Col(
-                    html.Div(id="queue-profile-out",
-                             className="small text-success",
-                             style={"paddingTop": "6px"}),
-                    width="auto",
-                ),
-            ], align="center", className="g-2"),
-        ], className="py-2 px-3"),
-        className="mb-2",
-        style={"border": "1px solid #dee2e6", "borderRadius": "4px",
-               "backgroundColor": "#F8F9FA"},
-    ),
 
     dash_table.DataTable(
         id="queue-table",
@@ -758,14 +709,16 @@ tab_queue = dbc.Container(fluid=True, children=[
              "color": STATUS_COLOR["running"], "fontWeight": "bold"},
             {"if": {"filter_query": '{status} = "failed"',   "column_id": "status"},
              "color": STATUS_COLOR["failed"],  "fontWeight": "bold"},
-            {"if": {"column_id": "priority"}, "backgroundColor": "#FFFDE7"},
-            {"if": {"column_id": "device"},   "backgroundColor": "#E8F5E9"},
-            {"if": {"column_id": "profile"},  "backgroundColor": "#EDE7F6"},
+            {"if": {"column_id": "priority"},    "backgroundColor": "#FFFDE7"},
+            {"if": {"column_id": "device"},      "backgroundColor": "#E8F5E9"},
+            # Thread-Spalte: blau hervorheben wenn aktiv
+            {"if": {"filter_query": '{thread_slot} != "–"', "column_id": "thread_slot"},
+             "backgroundColor": "#E3F2FD", "fontWeight": "bold", "color": "#1565C0"},
         ],
         tooltip_header={
-            "priority": "Klicken zum Bearbeiten — niedrigerer Wert = früher gescrapt",
-            "device":   "Gerät zuweisen — leer = beliebiges Gerät",
-            "profile":  f"Aktuelles Profil — leer = {FUZZY_LABEL}",
+            "priority":    "Klicken zum Bearbeiten — niedrigerer Wert = früher gescrapt",
+            "device":      "Gerät zuweisen — leer = beliebiges Gerät",
+            "thread_slot": "Aktiver Thread-Slot (nur für laufende Gruppen)",
         },
     ),
 
@@ -1166,56 +1119,7 @@ def save_queue_edits(current_data, previous_data):
                 update_group_device(curr["id"], curr.get("device", "") or "")
             except (ValueError, TypeError, KeyError):
                 pass
-        if curr.get("profile") != prev.get("profile"):
-            try:
-                update_group_profile_db(curr["id"], curr.get("profile", "") or "")
-            except (ValueError, TypeError, KeyError):
-                pass
     return ""
-
-
-# ===========================================================================
-# Callbacks — Queue Selektion & Profil-Aktionsleiste
-# ===========================================================================
-
-@app.callback(
-    Output("queue-selected-id", "data"),
-    Output("queue-sel-label",   "children"),
-    Output("queue-profile-btn", "disabled"),
-    Input("queue-table", "selected_rows"),
-    State("queue-table", "data"),
-    prevent_initial_call=True,
-)
-def on_queue_row_select(selected_rows, data):
-    if not selected_rows or not data:
-        return None, "Keine Zeile ausgewählt — Zeile anklicken um Profil zu setzen.", True
-    row = data[selected_rows[0]]
-    gid = row.get("id")
-    label = (f"Ausgewählt: {row.get('federation')} {row.get('year')} "
-             f"ELO {row.get('elo_band')}  |  Aktuelles Profil: "
-             f"{row.get('profile') or '— (fuzzy)'}")
-    return gid, label, False
-
-
-@app.callback(
-    Output("queue-profile-out", "children"),
-    Output("queue-table",       "data",            allow_duplicate=True),
-    Output("queue-count",       "children",        allow_duplicate=True),
-    Input("queue-profile-btn",  "n_clicks"),
-    State("queue-selected-id",  "data"),
-    State("queue-profile-dd",   "value"),
-    prevent_initial_call=True,
-)
-def apply_queue_profile(n_clicks, group_id, profile_val):
-    if not group_id:
-        return "Keine Gruppe ausgewählt.", dash.no_update, dash.no_update
-    try:
-        update_group_profile_db(int(group_id), profile_val or "")
-        label = profile_val if profile_val else "fuzzy"
-        rows  = query_queue()
-        return f"✓ Profil '{label}' gesetzt.", rows, f"{len(rows):,} Gruppen"
-    except Exception as exc:
-        return f"Fehler: {exc}", dash.no_update, dash.no_update
 
 
 # ===========================================================================

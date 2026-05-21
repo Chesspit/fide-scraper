@@ -21,7 +21,8 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from dash import Input, Output, State, callback_context, dash_table, dcc, html
 
-from orchestrator.profile_manager import ProfileManager
+import yaml
+from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.setup_db import DB_PATH, create_db
 
 # ---------------------------------------------------------------------------
@@ -56,6 +57,30 @@ OVERVIEW_FEDERATIONS = ["GER", "SUI", "AUT", "POL", "UKR", "NOR",
                         "·1", "·2", "·3", "·4", "·5", "·6", "·7", "·8"]
 
 pm = ProfileManager()
+
+
+def _get_concurrency_cfg() -> dict:
+    """Read [concurrency] section from profiles.yaml (live, not cached)."""
+    try:
+        with open(PROFILES_PATH, encoding="utf-8") as f:
+            return yaml.safe_load(f).get("concurrency", {})
+    except Exception:
+        return {}
+
+
+def _save_max_workers(n: int) -> None:
+    """Persist max_workers to profiles.yaml [concurrency] section."""
+    try:
+        with open(PROFILES_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if "concurrency" not in data:
+            data["concurrency"] = {}
+        data["concurrency"]["max_workers"] = n
+        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+    except Exception:
+        pass
+
 
 # Fuzzy-Label aus aktuellen Gewichten bauen (wird bei App-Start einmalig gelesen)
 def _fuzzy_label() -> str:
@@ -556,7 +581,7 @@ tab_heatmap = dbc.Container(fluid=True, children=[
                 options=[{"label": c, "value": c} for c in continents],
                 value=default_continent, clearable=False,
             ),
-        ], width=2),
+        ], width=1),
         dbc.Col([
             dbc.Label("Föderation", className="small text-muted mb-1"),
             dcc.Dropdown(id="dd-federation", clearable=False),
@@ -569,6 +594,16 @@ tab_heatmap = dbc.Container(fluid=True, children=[
                 value=pm.get_active()["name"], clearable=False,
             ),
         ], width=2),
+        dbc.Col([
+            dbc.Label("Threads", className="small text-muted mb-1",
+                      title="Wirksam nach Worker-Neustart"),
+            dcc.Dropdown(
+                id="dd-workers",
+                options=[{"label": f"{n}×", "value": n} for n in (1, 2, 3, 4)],
+                value=_get_concurrency_cfg().get("max_workers", 1),
+                clearable=False,
+            ),
+        ], width=1),
         dbc.Col([
             dbc.Label("Max Gruppen", className="small text-muted mb-1"),
             dbc.Input(
@@ -937,6 +972,18 @@ def switch_profile(name):
     if name:
         pm.set_active(name)
     return name
+
+
+@app.callback(
+    Output("dd-workers", "value"),
+    Input("dd-workers", "value"),
+    prevent_initial_call=True,
+)
+def set_max_workers(value):
+    """Persist max_workers to profiles.yaml. Wirksam nach Worker-Neustart."""
+    if value is not None:
+        _save_max_workers(int(value))
+    return value
 
 
 @app.callback(

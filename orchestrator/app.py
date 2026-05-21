@@ -646,7 +646,7 @@ tab_heatmap = dbc.Container(fluid=True, children=[
                 dbc.Button("🔄 Neustart", id="btn-restart", color="info",    size="sm",
                            title="Aktuelle Gruppe abschließen, dann Worker neu starten (lädt neue Konfiguration)"),
             ]),
-        ], width=4),
+        ], width=3),
     ], className="mb-3 align-items-end g-2"),
 
     # Legend

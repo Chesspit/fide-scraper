@@ -8,21 +8,28 @@ Run:
 
 Control (from dashboard or terminal):
     worker_state.json  {"command": "run"} | {"command": "pause"} | {"command": "stopped"}
+
+Parallel mode (configured via profiles.yaml [concurrency]):
+    max_workers > 1 spawns N threads, each claiming its own group from the queue.
+    Each thread runs independently with its own PostgreSQL + SQLite connection.
 """
 
 import json
 import logging
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 
 import requests
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from orchestrator.profile_manager import ProfileManager
+from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.proxy_manager import ProxyJetManager
 from orchestrator.queue_manager import Group, QueueManager
 from scraper.db import (
@@ -41,8 +48,12 @@ _DATA_DIR = Path(os.getenv("ORCHESTRATOR_DATA_DIR", Path(__file__).resolve().par
 WORKER_STATE_PATH = _DATA_DIR / "worker_state.json"
 
 _PAUSE_POLL_INTERVAL = 5      # seconds between pause-state polls
-_EMPTY_QUEUE_SLEEP = 120      # seconds to wait when queue is empty
+_EMPTY_QUEUE_SLEEP = 120      # seconds to wait when queue is empty (single-thread)
+_THREAD_EMPTY_SLEEP = 30      # seconds to wait when queue is empty (per thread)
 _CIRCUIT_BREAKER_THRESHOLD = 15  # consecutive double-failures before aborting group
+
+# Lock protecting all read-modify-write operations on worker_state.json
+_state_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -63,17 +74,70 @@ def read_command() -> str:
 
 
 def write_state(command: str | None = None, **extra) -> None:
-    """Update worker_state.json, preserving existing keys (partial update)."""
+    """Update worker_state.json, preserving existing keys (partial update).
+    Thread-safe: acquires _state_lock before read-modify-write.
+    """
+    with _state_lock:
+        try:
+            data = json.loads(WORKER_STATE_PATH.read_text()) if WORKER_STATE_PATH.exists() else {}
+        except Exception:
+            data = {}
+        if command is not None:
+            data["command"] = command
+        for k, v in extra.items():
+            if v is not None or k in data:
+                data[k] = v
+        WORKER_STATE_PATH.write_text(json.dumps(data, indent=2))
+
+
+def _update_thread_slot(slot: int, **kwargs) -> None:
+    """Update the state entry for a specific thread slot (thread-safe)."""
+    with _state_lock:
+        try:
+            data = json.loads(WORKER_STATE_PATH.read_text()) if WORKER_STATE_PATH.exists() else {}
+        except Exception:
+            data = {}
+        threads = data.setdefault("threads", [])
+        entry = next((t for t in threads if t.get("slot") == slot), None)
+        if entry is None:
+            entry = {"slot": slot}
+            threads.append(entry)
+        entry.update(kwargs)
+        data["threads"] = sorted(threads, key=lambda t: t.get("slot", 0))
+        WORKER_STATE_PATH.write_text(json.dumps(data, indent=2))
+
+
+def _clear_thread_slot(slot: int) -> None:
+    """Remove a thread slot from the threads list (thread-safe)."""
+    with _state_lock:
+        try:
+            data = json.loads(WORKER_STATE_PATH.read_text()) if WORKER_STATE_PATH.exists() else {}
+        except Exception:
+            data = {}
+        data["threads"] = [t for t in data.get("threads", []) if t.get("slot") != slot]
+        WORKER_STATE_PATH.write_text(json.dumps(data, indent=2))
+
+
+def _increment_global_stats(mb_group: float) -> None:
+    """Atomically increment groups_done and mb_downloaded (thread-safe)."""
+    with _state_lock:
+        try:
+            data = json.loads(WORKER_STATE_PATH.read_text()) if WORKER_STATE_PATH.exists() else {}
+        except Exception:
+            data = {}
+        data["groups_done"] = data.get("groups_done", 0) + 1
+        data["mb_downloaded"] = round(data.get("mb_downloaded", 0.0) + mb_group, 2)
+        WORKER_STATE_PATH.write_text(json.dumps(data, indent=2))
+
+
+def _load_concurrency_config() -> dict:
+    """Load the [concurrency] section from profiles.yaml."""
     try:
-        data = json.loads(WORKER_STATE_PATH.read_text()) if WORKER_STATE_PATH.exists() else {}
+        with open(PROFILES_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return data.get("concurrency", {})
     except Exception:
-        data = {}
-    if command is not None:
-        data["command"] = command
-    for k, v in extra.items():
-        if v is not None or k in data:
-            data[k] = v
-    WORKER_STATE_PATH.write_text(json.dumps(data, indent=2))
+        return {}
 
 
 # ---------------------------------------------------------------------------
@@ -184,21 +248,26 @@ def scrape_group(
     proxy_manager: ProxyJetManager,
     profile: dict,
     qm: QueueManager,
-) -> tuple[int, object]:
+    slot: int | None = None,
+) -> tuple[int, object, float]:
     """Scrape all pending player-period combos for this group.
 
-    Returns (records_found, pg_conn) — pg_conn may be reopened on tunnel drop.
+    Args:
+        slot: Thread slot index (None = single-thread mode). Used to write
+              per-thread progress to worker_state.json instead of global keys.
+
+    Returns (records_found, pg_conn, mb_group).
     Raises BlockedError if IP gets hard-blocked (caller should abort worker).
     """
     fide_ids = get_fide_ids(pg_conn, group.federation, group.elo_min, group.elo_max)
     if not fide_ids:
         logger.info("Group %s/%d/%d-%d: no active players found — skipping",
                     group.federation, group.year, group.elo_min, group.elo_max)
-        return 0, pg_conn
+        return 0, pg_conn, 0.0
 
     periods = valid_periods_for_year(group.year)
     if not periods:
-        return 0, pg_conn
+        return 0, pg_conn, 0.0
 
     from scraper.db import get_pending_periods, save_period_no_data
     pending = get_pending_periods(pg_conn, periods, fide_ids=fide_ids)
@@ -206,7 +275,7 @@ def scrape_group(
     if not pending:
         logger.info("Group %s/%d: all %d player-periods already scraped",
                     group.federation, group.year, len(fide_ids) * len(periods))
-        return 0, pg_conn
+        return 0, pg_conn, 0.0
 
     # Pre-filter: skip periods where num_games=0 in rating_history (no games played).
     # NULL means no TXT snapshot → must scrape. Only skip confirmed-zero months.
@@ -235,16 +304,26 @@ def scrape_group(
         pending = [(fid, p) for fid, p in pending if (fid, p) not in skip_set]
 
     if not pending:
-        return 0, pg_conn
+        return 0, pg_conn, 0.0
 
     logger.info("Group %s/%d/%d-%d: %d pending combos (%d players × up to %d periods)",
                 group.federation, group.year, group.elo_min, group.elo_max,
                 len(pending), len(fide_ids), len(periods))
-    write_state(combos_total=len(pending), combos_done=0)
+
+    # Progress init
+    if slot is None:
+        write_state(combos_total=len(pending), combos_done=0)
+    else:
+        _update_thread_slot(slot, combos_total=len(pending), combos_done=0)
 
     records_found = 0
-    _bytes_session = read_worker_state().get("mb_downloaded", 0.0) * 1024 * 1024
-    _bytes_group_start = _bytes_session  # Startpunkt für MB-Tracking dieser Gruppe
+    # MB tracking: thread-local (starts fresh per group) vs. session-cumulative (single-thread)
+    if slot is None:
+        _bytes_session = read_worker_state().get("mb_downloaded", 0.0) * 1024 * 1024
+        _bytes_group_start = _bytes_session
+    else:
+        _bytes_session = 0.0   # thread-local: fresh per group, aggregated by caller
+        _bytes_group_start = 0.0
     _consecutive_failures = 0
 
     for _combo_idx, (fide_id, period) in enumerate(pending, start=1):
@@ -306,16 +385,149 @@ def scrape_group(
 
         # State alle 200 Combos schreiben (~10 Min bei Normalgeschwindigkeit)
         if _combo_idx % 200 == 0:
-            write_state(combos_done=_combo_idx, mb_downloaded=_bytes_session / 1024 / 1024)
+            if slot is None:
+                write_state(combos_done=_combo_idx, mb_downloaded=_bytes_session / 1024 / 1024)
+            else:
+                _update_thread_slot(slot, combos_done=_combo_idx)
 
         wait = qm.get_wait_time(profile)
         time.sleep(wait)
 
     mb_group = (_bytes_session - _bytes_group_start) / 1024 / 1024
-    write_state(combos_done=_combo_idx if pending else 0,
-                mb_downloaded=_bytes_session / 1024 / 1024)
+    if slot is None:
+        write_state(combos_done=_combo_idx if pending else 0,
+                    mb_downloaded=_bytes_session / 1024 / 1024)
+    else:
+        _update_thread_slot(slot, combos_done=_combo_idx if pending else 0)
 
     return records_found, pg_conn, mb_group
+
+
+# ---------------------------------------------------------------------------
+# Parallel worker: one thread per slot
+# ---------------------------------------------------------------------------
+
+def run_slot(
+    slot: int,
+    profile_name: str,
+    device: str | None,
+    proxy_manager: ProxyJetManager,
+    stop_event: threading.Event,
+) -> None:
+    """Thread function: continuously claims and processes groups from the queue.
+
+    Each thread has its own PostgreSQL connection, SQLite QueueManager, and
+    ProfileManager instance — no shared mutable state except proxy_manager
+    (which is thread-safe) and the worker_state.json (protected by _state_lock).
+    """
+    logger.info("Thread %d gestartet [%s]", slot, profile_name)
+    pm_local = ProfileManager()
+    qm_local = QueueManager()
+    pg_conn = None
+
+    try:
+        pg_conn = get_connection()
+
+        while not stop_event.is_set():
+            state = read_worker_state()
+            cmd = state.get("command", "stopped")
+
+            if cmd == "stopped":
+                logger.info("Thread %d: Stop-Befehl empfangen", slot)
+                stop_event.set()
+                break
+
+            if cmd == "pause":
+                time.sleep(_PAUSE_POLL_INTERVAL)
+                continue
+
+            # Limit checks (both threads read the same shared state)
+            max_g  = state.get("max_groups")
+            max_h  = state.get("max_hours")
+            done   = state.get("groups_done", 0)
+            start_at = state.get("started_at")
+
+            if max_g and done >= max_g:
+                logger.info("Thread %d: Gruppen-Limit %d erreicht — stoppe", slot, max_g)
+                stop_event.set()
+                break
+
+            if max_h and start_at:
+                try:
+                    elapsed = time.time() - time.mktime(
+                        time.strptime(start_at, "%Y-%m-%dT%H:%M:%S"))
+                    if elapsed >= max_h * 3600:
+                        logger.info("Thread %d: Zeit-Limit %.1fh erreicht — stoppe", slot, max_h)
+                        stop_event.set()
+                        break
+                except Exception:
+                    pass
+
+            profile = pm_local.pick_fuzzy(override=profile_name)
+            group   = qm_local.get_next_group(device=device)
+
+            if group is None:
+                logger.debug("Thread %d: Queue leer — warte %ds", slot, _THREAD_EMPTY_SLEEP)
+                time.sleep(_THREAD_EMPTY_SLEEP)
+                continue
+
+            label = f"{group.federation}/{group.year}/{group.elo_min}–{group.elo_max}"
+            logger.info("Thread %d: Starte Gruppe %s [%s]", slot, label, profile_name)
+
+            _update_thread_slot(slot,
+                profile=profile_name,
+                current_group=label,
+                combos_done=0,
+                combos_total=None,
+                player_count=group.player_count,
+                group_started_at=time.time(),
+            )
+
+            run_started = time.strftime("%Y-%m-%dT%H:%M:%S")
+            try:
+                records, pg_conn, mb_group = scrape_group(
+                    group, pg_conn, proxy_manager, profile, qm_local, slot=slot
+                )
+                qm_local.mark_done(group.id, records)
+                qm_local.log_run(group.id, run_started, "success",
+                                 records_found=records,
+                                 profile_used=profile_name,
+                                 mb_downloaded=mb_group)
+                _increment_global_stats(mb_group)
+                logger.info("Thread %d: Fertig %s — %d Partien", slot, label, records)
+
+            except InterruptedError:
+                qm_local.reset_to_pending(group.id)
+                qm_local.log_run(group.id, run_started, "failed",
+                                 error_msg="stopped by user", profile_used=profile_name)
+                break
+
+            except BlockedError as exc:
+                logger.error("Thread %d: IP geblockt: %s — Gruppe übersprungen", slot, exc)
+                qm_local.mark_failed(group.id, str(exc))
+                qm_local.log_run(group.id, run_started, "failed",
+                                 error_msg=str(exc), profile_used=profile_name)
+
+            except Exception as exc:
+                logger.exception("Thread %d: Fehler bei %s", slot, label)
+                qm_local.mark_failed(group.id, str(exc))
+                qm_local.log_run(group.id, run_started, "failed",
+                                 error_msg=str(exc), profile_used=profile_name)
+                pg_conn = ensure_connection(pg_conn)
+
+            _clear_thread_slot(slot)
+
+    finally:
+        if pg_conn:
+            try:
+                pg_conn.close()
+            except Exception:
+                pass
+        try:
+            qm_local.close()
+        except Exception:
+            pass
+        logger.info("Thread %d gestoppt", slot)
 
 
 # ---------------------------------------------------------------------------
@@ -329,8 +541,12 @@ def run(
 ) -> None:
     """Main worker loop.
 
+    Reads [concurrency] from profiles.yaml to decide between single-thread
+    (max_workers=1, existing behaviour) and parallel mode (max_workers 2–4).
+
     Args:
         profile_name: Force a specific profile (overrides fuzzy selection).
+                      In parallel mode, overrides the slot-0 profile only.
         max_groups:   Stop cleanly after this many groups are completed.
         max_hours:    Stop cleanly after this many hours of runtime.
     """
@@ -339,6 +555,90 @@ def run(
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
+    cfg   = _load_concurrency_config()
+    max_w = cfg.get("max_workers", 1)
+
+    if max_w > 1:
+        _run_parallel_loop(max_w, cfg.get("worker_profiles", []),
+                           profile_name, max_groups, max_hours)
+    else:
+        _run_single_loop(profile_name, max_groups, max_hours)
+
+
+def _run_parallel_loop(
+    max_w: int,
+    worker_profiles_cfg: list[str],
+    profile_override: str | None,
+    max_groups: int | None,
+    max_hours: float | None,
+) -> None:
+    """Parallel mode: spawn max_w threads, each processing its own groups."""
+    proxy_manager = ProxyJetManager()
+    device = os.getenv("WORKER_DEVICE")
+
+    # Determine profile per slot; CLI --profile overrides slot-0
+    profiles_list = worker_profiles_cfg or (["normal"] * max_w)
+    if profile_override:
+        profiles_list = list(profiles_list)
+        profiles_list[0] = profile_override
+
+    # Reset stale groups from previous run
+    qm_main = QueueManager()
+    reset_count = qm_main.reset_stale_running()
+    if reset_count:
+        logger.info("Startup: %d unterbrochene running-Gruppen → pending zurückgesetzt", reset_count)
+    qm_main.close()
+
+    if device:
+        logger.info("Gerät-Filter: '%s'", device)
+    logger.info("Parallel-Modus: %d Threads — Profile: %s", max_w,
+                ", ".join(f"T{i}={profiles_list[i % len(profiles_list)]}" for i in range(max_w)))
+    if max_groups:
+        logger.info("Limit: %d Gruppen (gesamt über alle Threads)", max_groups)
+    if max_hours:
+        logger.info("Limit: %.1f Stunden", max_hours)
+
+    write_state(
+        command="run",
+        max_workers=max_w,
+        groups_done=0,
+        mb_downloaded=0.0,
+        threads=[],
+        started_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+        max_groups=max_groups,
+        max_hours=max_hours,
+    )
+
+    stop_event = threading.Event()
+
+    with ThreadPoolExecutor(max_workers=max_w, thread_name_prefix="scraper") as executor:
+        futures = [
+            executor.submit(
+                run_slot,
+                slot,
+                profiles_list[slot % len(profiles_list)],
+                device,
+                proxy_manager,
+                stop_event,
+            )
+            for slot in range(max_w)
+        ]
+        for fut in futures:
+            try:
+                fut.result()
+            except Exception:
+                logger.exception("Unbehandelte Exception in Thread-Pool")
+
+    write_state(command="stopped", threads=[])
+    logger.info("Alle %d Threads beendet", max_w)
+
+
+def _run_single_loop(
+    profile_name: str | None,
+    max_groups: int | None,
+    max_hours: float | None,
+) -> None:
+    """Single-thread mode — original sequential worker behaviour, unchanged."""
     pm = ProfileManager()
     proxy_manager = ProxyJetManager()
     qm = QueueManager()
@@ -490,6 +790,8 @@ Beispiele:
 
 Mac Mini (lokal, Tunnel muss laufen):
   WORKER_DEVICE=mac_mini python orchestrator/worker.py --max-hours 8
+
+Parallel-Modus wird automatisch aktiviert wenn profiles.yaml [concurrency] max_workers > 1.
         """,
     )
     parser.add_argument(

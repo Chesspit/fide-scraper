@@ -1,5 +1,17 @@
 active_profile: normal
 
+# Parallelität: wie viele Threads gleichzeitig je eine eigene Gruppe scrapen.
+# max_workers: 1 = sequentiell (bisheriges Verhalten), 2–4 = parallel.
+# worker_profiles: Profil je Thread-Slot (Index 0, 1, 2, 3).
+# Erster Test: max_workers=2; auf 4 hochsetzen sobald stabil.
+concurrency:
+  max_workers: 2
+  worker_profiles:
+    - semi_aggressive
+    - normal
+    - semi_aggressive
+    - semi_aggressive
+
 # Fuzzy-Profilauswahl: Gewichtung für zufällige Profilwahl pro Gruppe
 # Worker wählt bei jedem Gruppen-Start zufällig (gewichtet) — kein erkennbares Muster
 # aggressive + conservative: Gewicht 0 — nur zur Referenz, nicht mehr im Einsatz

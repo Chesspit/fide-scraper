@@ -5,6 +5,7 @@ Example: 260509r9eG8-resi-DE:PASSWORD@proxy-jet.io:1010
 """
 
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -20,6 +21,7 @@ class ProxyJetManager:
         self._host = os.getenv("PROXYJET_HOST", "proxy-jet.io")
         self._port = os.getenv("PROXYJET_PORT", "1010")
         self._cooldown_until: float = 0.0
+        self._lock = threading.Lock()  # thread-safe cooldown state
 
     def get_proxy(self, country: str | None = None) -> dict | None:
         """Return a requests-compatible proxy dict, or None during cooldown.
@@ -27,9 +29,11 @@ class ProxyJetManager:
         Args:
             country: ISO-3166 alpha-2 country code for geo-targeting (e.g. "DE").
                      If None, ProxyJet picks any country automatically.
+        Thread-safe: multiple scraper threads may call this concurrently.
         """
-        if time.time() < self._cooldown_until:
-            return None
+        with self._lock:
+            if time.time() < self._cooldown_until:
+                return None
 
         if not self._user or not self._pw:
             return None
@@ -40,11 +44,14 @@ class ProxyJetManager:
 
     def report_block(self, cooldown_seconds: int = 60) -> None:
         """Call on HTTP 429 or connection error to pause proxy use."""
-        self._cooldown_until = time.time() + cooldown_seconds
+        with self._lock:
+            self._cooldown_until = time.time() + cooldown_seconds
 
     def is_cooling_down(self) -> bool:
-        return time.time() < self._cooldown_until
+        with self._lock:
+            return time.time() < self._cooldown_until
 
     def cooldown_remaining(self) -> float:
         """Seconds remaining in cooldown (0 if not cooling down)."""
-        return max(0.0, self._cooldown_until - time.time())
+        with self._lock:
+            return max(0.0, self._cooldown_until - time.time())

@@ -841,9 +841,53 @@ def refresh_heatmap(_, federation):
     limit_str = f" · {', '.join(limits)}" if limits else ""
 
     status_parts = [f"Worker: {cmd}{limit_str}"]
+    import time as _time
+
+    threads = ws.get("threads", [])
     current_group = ws.get("current_group")
-    if current_group:
-        import time as _time
+
+    if threads:
+        # Parallel-Modus: eine Zeile pro aktivem Thread
+        for t in sorted(threads, key=lambda x: x.get("slot", 0)):
+            slot        = t.get("slot", "?")
+            t_profile   = t.get("profile", "?")
+            grp         = t.get("current_group", "–")
+            c_done      = t.get("combos_done", 0)
+            c_total     = t.get("combos_total")
+            n_players   = t.get("player_count")
+            started_at  = t.get("group_started_at")
+
+            # Label aufsplitten: "GER/2025/2400–2600" → "GER/2025 · ELO 2400–2600"
+            parts = grp.split("/")
+            fed  = parts[0] if parts else grp
+            year = parts[1] if len(parts) > 1 else ""
+            elo  = parts[2] if len(parts) > 2 else ""
+            grp_str = f"{fed}/{year} · ELO {elo}" if elo else grp
+
+            combo_str  = f"{c_done}/{c_total}" if c_total else str(c_done)
+            player_str = f"{n_players}P · " if n_players else ""
+
+            speed_str = eta_str = ""
+            if started_at and c_done:
+                elapsed = _time.time() - started_at
+                if elapsed > 0:
+                    cph = c_done / elapsed * 3600
+                    speed_str = f" · {cph:.0f} c/h"
+                    if c_total and c_total > c_done:
+                        eta_sec = (c_total - c_done) / (c_done / elapsed)
+                        eta_str = f" · ETA {int(eta_sec // 3600)}h{int((eta_sec % 3600) // 60):02d}m"
+
+            status_parts.append(
+                f"T{slot} [{t_profile}]: {grp_str}  {player_str}[{combo_str}]{speed_str}{eta_str}"
+            )
+
+        mb_total   = ws.get("mb_downloaded", 0.0)
+        done_total = ws.get("groups_done", 0)
+        max_w      = ws.get("max_workers", len(threads))
+        status_parts.append(f"Gesamt: {done_total} Gruppen ✓ · {mb_total:.1f} MB · {max_w}× parallel")
+
+    elif current_group:
+        # Single-Thread-Modus (bisheriges Verhalten)
         profile_name = ws.get("current_profile", "?")
         c_done = ws.get("combos_done", 0)
         c_total = ws.get("combos_total")

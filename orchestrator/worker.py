@@ -492,27 +492,31 @@ def run_slot(
                 qm_local.log_run(group.id, run_started, "success",
                                  records_found=records,
                                  profile_used=profile_name,
-                                 mb_downloaded=mb_group)
+                                 mb_downloaded=mb_group,
+                                 thread_slot=slot)
                 _increment_global_stats(mb_group)
                 logger.info("Thread %d: Fertig %s — %d Partien", slot, label, records)
 
             except InterruptedError:
                 qm_local.reset_to_pending(group.id)
                 qm_local.log_run(group.id, run_started, "failed",
-                                 error_msg="stopped by user", profile_used=profile_name)
+                                 error_msg="stopped by user", profile_used=profile_name,
+                                 thread_slot=slot)
                 break
 
             except BlockedError as exc:
                 logger.error("Thread %d: IP geblockt: %s — Gruppe übersprungen", slot, exc)
                 qm_local.mark_failed(group.id, str(exc))
                 qm_local.log_run(group.id, run_started, "failed",
-                                 error_msg=str(exc), profile_used=profile_name)
+                                 error_msg=str(exc), profile_used=profile_name,
+                                 thread_slot=slot)
 
             except Exception as exc:
                 logger.exception("Thread %d: Fehler bei %s", slot, label)
                 qm_local.mark_failed(group.id, str(exc))
                 qm_local.log_run(group.id, run_started, "failed",
-                                 error_msg=str(exc), profile_used=profile_name)
+                                 error_msg=str(exc), profile_used=profile_name,
+                                 thread_slot=slot)
                 pg_conn = ensure_connection(pg_conn)
 
             _clear_thread_slot(slot)

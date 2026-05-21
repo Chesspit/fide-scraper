@@ -268,6 +268,10 @@ def query_completed() -> list[dict]:
                g.records_found,
                r.profile_used,
                CASE
+                   WHEN r.thread_slot IS NOT NULL THEN 'T' || r.thread_slot
+                   ELSE '–'
+               END                                          AS thread_slot,
+               CASE
                    WHEN g.player_count > 0 AND g.records_found > 0
                    THEN ROUND(CAST(g.records_found AS REAL) / g.player_count, 1)
                    ELSE NULL
@@ -292,7 +296,7 @@ def query_completed() -> list[dict]:
            LEFT JOIN (
                SELECT group_id,
                       started_at, finished_at,
-                      records_found, profile_used, proxy_used,
+                      records_found, profile_used, proxy_used, thread_slot,
                       COALESCE(mb_downloaded, 0) AS mb_downloaded,
                       ROW_NUMBER() OVER (PARTITION BY group_id
                                         ORDER BY finished_at DESC) AS rn
@@ -729,6 +733,7 @@ tab_queue = dbc.Container(fluid=True, children=[
 # Tab 3 — Completed layout
 # ---------------------------------------------------------------------------
 COMPLETED_COLUMNS = [
+    {"name": "Thread",         "id": "thread_slot"},
     {"name": "Föd.",           "id": "federation"},
     {"name": "Kontinent",      "id": "continent"},
     {"name": "Jahr",           "id": "year"},
@@ -764,7 +769,18 @@ tab_completed = dbc.Container(fluid=True, children=[
         style_cell={"fontSize": "0.85rem", "padding": "6px 10px", "textAlign": "left"},
         style_data_conditional=[
             {"if": {"row_index": "odd"}, "backgroundColor": "#FAFAFA"},
+            {"if": {"filter_query": '{thread_slot} = "T0"', "column_id": "thread_slot"},
+             "backgroundColor": "#BBDEFB", "fontWeight": "bold", "color": "#0D47A1"},
+            {"if": {"filter_query": '{thread_slot} = "T1"', "column_id": "thread_slot"},
+             "backgroundColor": "#C8E6C9", "fontWeight": "bold", "color": "#1B5E20"},
+            {"if": {"filter_query": '{thread_slot} = "T2"', "column_id": "thread_slot"},
+             "backgroundColor": "#FFF9C4", "fontWeight": "bold", "color": "#F57F17"},
+            {"if": {"filter_query": '{thread_slot} = "T3"', "column_id": "thread_slot"},
+             "backgroundColor": "#B2EBF2", "fontWeight": "bold", "color": "#006064"},
         ],
+        tooltip_header={
+            "thread_slot": "Thread-Slot der diesen Job bearbeitet hat (T0–T3 = parallel, – = Einzelthread oder unbekannt)",
+        },
     ),
 ], className="py-3")
 

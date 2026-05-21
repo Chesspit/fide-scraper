@@ -223,15 +223,16 @@ class QueueManager:
         proxy_used: str = "",
         profile_used: str = "",
         mb_downloaded: float = 0.0,
+        thread_slot: int | None = None,
     ) -> None:
         conn = self._connect()
         conn.execute(
             """INSERT INTO scrape_runs
                (group_id, started_at, finished_at, status,
-                records_found, error_msg, proxy_used, profile_used, mb_downloaded)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                records_found, error_msg, proxy_used, profile_used, mb_downloaded, thread_slot)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (group_id, started_at, _now(), status,
-             records_found, error_msg[:500], proxy_used, profile_used, mb_downloaded),
+             records_found, error_msg[:500], proxy_used, profile_used, mb_downloaded, thread_slot),
         )
         conn.commit()
 

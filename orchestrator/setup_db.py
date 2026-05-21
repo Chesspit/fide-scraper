@@ -61,6 +61,7 @@ def _apply_schema(conn: sqlite3.Connection) -> None:
         "ALTER TABLE scrape_groups ADD COLUMN device TEXT",   # NULL = any device
         "ALTER TABLE scrape_groups ADD COLUMN profile TEXT",  # NULL = fuzzy selection
         "ALTER TABLE scrape_runs ADD COLUMN mb_downloaded REAL",  # MB pro Gruppe
+        "ALTER TABLE scrape_runs ADD COLUMN thread_slot INTEGER",  # Thread-Slot (0–3)
     ]:
         try:
             conn.execute(stmt)

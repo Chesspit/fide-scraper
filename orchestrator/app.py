@@ -733,7 +733,6 @@ tab_queue = dbc.Container(fluid=True, children=[
 # Tab 3 — Completed layout
 # ---------------------------------------------------------------------------
 COMPLETED_COLUMNS = [
-    {"name": "Thread",         "id": "thread_slot"},
     {"name": "Föd.",           "id": "federation"},
     {"name": "Kontinent",      "id": "continent"},
     {"name": "Jahr",           "id": "year"},
@@ -744,6 +743,7 @@ COMPLETED_COLUMNS = [
     {"name": "Größe (MB)",      "id": "mb"},
     {"name": "Dauer (h)",      "id": "duration_h"},
     {"name": "Rate/h",         "id": "rate_per_h"},
+    {"name": "Thread",         "id": "thread_slot"},
     {"name": "Abgeschlossen",  "id": "last_run_at"},
 ]
 

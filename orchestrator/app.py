@@ -678,68 +678,53 @@ DEVICE_OPTIONS = [
 tab_queue = dbc.Container(fluid=True, children=[
     dcc.Interval(id="interval-queue", interval=15_000, n_intervals=0),
 
+    # ── Kopfzeile: Titel · Badge · Worker-Status ─────────────────────────
     dbc.Row([
-        # ── Linke Spalte: Tabellen-Header + Tabelle ──────────────────────
-        dbc.Col([
-            dbc.Row([
-                dbc.Col(html.H5("Scraping-Queue", className="text-secondary fw-bold my-3"), width="auto"),
-                dbc.Col(
-                    dbc.Badge(id="queue-count", color="primary", className="ms-2 align-self-center"),
-                    width="auto",
-                ),
-            ], align="center", className="mb-1"),
+        dbc.Col(html.H5("Scraping-Queue", className="text-secondary fw-bold my-3"), width="auto"),
+        dbc.Col(
+            dbc.Badge(id="queue-count", color="primary", className="ms-2 align-self-center"),
+            width="auto",
+        ),
+        dbc.Col(
+            html.Div(id="worker-status", className="small ms-4"),
+            width=True,
+        ),
+    ], align="center", className="mb-1"),
 
-            dash_table.DataTable(
-                id="queue-table",
-                columns=QUEUE_COLUMNS,
-                data=[],
-                editable=True,
-                row_selectable="single",
-                dropdown={
-                    "device": {"options": DEVICE_OPTIONS, "clearable": True},
-                },
-                page_size=50,
-                page_action="native",
-                sort_action="native",
-                filter_action="native",
-                style_table={"overflowX": "auto"},
-                style_header={"backgroundColor": "#F0F0F0", "fontWeight": "bold", "fontSize": "0.85rem"},
-                style_cell={"fontSize": "0.85rem", "padding": "6px 10px", "textAlign": "left"},
-                style_data_conditional=[
-                    {"if": {"filter_query": '{status} = "pending"',  "column_id": "status"},
-                     "color": STATUS_COLOR["pending"], "fontWeight": "bold"},
-                    {"if": {"filter_query": '{status} = "running"',  "column_id": "status"},
-                     "color": STATUS_COLOR["running"], "fontWeight": "bold"},
-                    {"if": {"filter_query": '{status} = "failed"',   "column_id": "status"},
-                     "color": STATUS_COLOR["failed"],  "fontWeight": "bold"},
-                    {"if": {"column_id": "priority"},    "backgroundColor": "#FFFDE7"},
-                    {"if": {"column_id": "device"},      "backgroundColor": "#E8F5E9"},
-                    {"if": {"filter_query": '{thread_slot} != "–"', "column_id": "thread_slot"},
-                     "backgroundColor": "#E3F2FD", "fontWeight": "bold", "color": "#1565C0"},
-                ],
-                tooltip_header={
-                    "priority":    "Klicken zum Bearbeiten — niedrigerer Wert = früher gescrapt",
-                    "device":      "Gerät zuweisen — leer = beliebiges Gerät",
-                    "thread_slot": "Aktiver Thread-Slot (nur für laufende Gruppen)",
-                },
-            ),
-        ], width=9),
-
-        # ── Rechte Spalte: Worker-Status ─────────────────────────────────
-        dbc.Col([
-            html.H5("Worker-Status", className="text-secondary fw-bold my-3"),
-            dbc.Card(
-                dbc.CardBody(
-                    html.Div(id="worker-status", className="small"),
-                    className="p-2",
-                ),
-                style={"position": "sticky", "top": "1rem",
-                       "border": "1px solid #dee2e6", "borderRadius": "6px",
-                       "backgroundColor": "#F8F9FA"},
-            ),
-        ], width=3),
-
-    ], className="g-3"),
+    dash_table.DataTable(
+        id="queue-table",
+        columns=QUEUE_COLUMNS,
+        data=[],
+        editable=True,
+        row_selectable="single",
+        dropdown={
+            "device": {"options": DEVICE_OPTIONS, "clearable": True},
+        },
+        page_size=50,
+        page_action="native",
+        sort_action="native",
+        filter_action="native",
+        style_table={"overflowX": "auto"},
+        style_header={"backgroundColor": "#F0F0F0", "fontWeight": "bold", "fontSize": "0.85rem"},
+        style_cell={"fontSize": "0.85rem", "padding": "6px 10px", "textAlign": "left"},
+        style_data_conditional=[
+            {"if": {"filter_query": '{status} = "pending"',  "column_id": "status"},
+             "color": STATUS_COLOR["pending"], "fontWeight": "bold"},
+            {"if": {"filter_query": '{status} = "running"',  "column_id": "status"},
+             "color": STATUS_COLOR["running"], "fontWeight": "bold"},
+            {"if": {"filter_query": '{status} = "failed"',   "column_id": "status"},
+             "color": STATUS_COLOR["failed"],  "fontWeight": "bold"},
+            {"if": {"column_id": "priority"},    "backgroundColor": "#FFFDE7"},
+            {"if": {"column_id": "device"},      "backgroundColor": "#E8F5E9"},
+            {"if": {"filter_query": '{thread_slot} != "–"', "column_id": "thread_slot"},
+             "backgroundColor": "#E3F2FD", "fontWeight": "bold", "color": "#1565C0"},
+        ],
+        tooltip_header={
+            "priority":    "Klicken zum Bearbeiten — niedrigerer Wert = früher gescrapt",
+            "device":      "Gerät zuweisen — leer = beliebiges Gerät",
+            "thread_slot": "Aktiver Thread-Slot (nur für laufende Gruppen)",
+        },
+    ),
 
     html.Div(id="queue-save-out", style={"display": "none"}),
 ], className="py-3")

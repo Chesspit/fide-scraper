@@ -7,10 +7,10 @@ active_profile: normal
 concurrency:
   max_workers: 2
   worker_profiles:
-    - semi_aggressive
-    - normal
-    - semi_aggressive
-    - semi_aggressive
+    - semi_aggressive   # T0
+    - normal            # T1
+    - semi_conservative # T2
+    - semi_aggressive   # T3
 
 # Fuzzy-Profilauswahl: Gewichtung für zufällige Profilwahl pro Gruppe
 # Worker wählt bei jedem Gruppen-Start zufällig (gewichtet) — kein erkennbares Muster

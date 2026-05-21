@@ -829,92 +829,107 @@ def refresh_heatmap(_, federation):
     if max_h: limits.append(f"max {max_h}h")
     limit_str = f" · {', '.join(limits)}" if limits else ""
 
-    status_parts = [f"Worker: {cmd}{limit_str}"]
     import time as _time
 
-    threads = ws.get("threads", [])
+    _SLOT_BADGE = ["primary", "success", "warning", "info"]
+
+    def _speed_eta(started_at, c_done, c_total):
+        if not started_at or not c_done:
+            return ""
+        elapsed = _time.time() - started_at
+        if elapsed <= 0:
+            return ""
+        cph = c_done / elapsed * 3600
+        s = f"{cph:.0f} c/h"
+        if c_total and c_total > c_done:
+            eta_sec = (c_total - c_done) / (c_done / elapsed)
+            s += f" · ETA {int(eta_sec // 3600)}h{int((eta_sec % 3600) // 60):02d}m"
+        return s
+
+    threads      = ws.get("threads", [])
     current_group = ws.get("current_group")
+    done_total   = ws.get("groups_done", 0)
+    max_w        = ws.get("max_workers", 1)
+
+    status_children = [
+        html.Div(
+            f"Worker: {cmd}{limit_str}" + (f" · {max_w}×" if max_w > 1 else ""),
+            className="fw-semibold mb-1",
+        )
+    ]
 
     if threads:
-        # Parallel-Modus: eine Zeile pro aktivem Thread
+        # Parallel-Modus: ein Block pro Thread
         for t in sorted(threads, key=lambda x: x.get("slot", 0)):
-            slot        = t.get("slot", "?")
-            t_profile   = t.get("profile", "?")
-            grp         = t.get("current_group", "–")
-            c_done      = t.get("combos_done", 0)
-            c_total     = t.get("combos_total")
-            n_players   = t.get("player_count")
-            started_at  = t.get("group_started_at")
+            slot       = t.get("slot", 0)
+            t_profile  = t.get("profile", "?")
+            grp        = t.get("current_group", "–")
+            c_done     = t.get("combos_done", 0)
+            c_total    = t.get("combos_total")
+            n_players  = t.get("player_count")
+            started_at = t.get("group_started_at")
 
-            # Label aufsplitten: "GER/2025/2400–2600" → "GER/2025 · ELO 2400–2600"
             parts = grp.split("/")
             fed  = parts[0] if parts else grp
             year = parts[1] if len(parts) > 1 else ""
             elo  = parts[2] if len(parts) > 2 else ""
-            grp_str = f"{fed}/{year} · ELO {elo}" if elo else grp
+            grp_str = f"{fed}/{year} · {elo}" if elo else grp
 
-            combo_str  = f"{c_done}/{c_total}" if c_total else str(c_done)
+            combo_str = f"{c_done}/{c_total}" if c_total else str(c_done)
             player_str = f"{n_players}P · " if n_players else ""
+            perf_str = _speed_eta(started_at, c_done, c_total)
 
-            speed_str = eta_str = ""
-            if started_at and c_done:
-                elapsed = _time.time() - started_at
-                if elapsed > 0:
-                    cph = c_done / elapsed * 3600
-                    speed_str = f" · {cph:.0f} c/h"
-                    if c_total and c_total > c_done:
-                        eta_sec = (c_total - c_done) / (c_done / elapsed)
-                        eta_str = f" · ETA {int(eta_sec // 3600)}h{int((eta_sec % 3600) // 60):02d}m"
+            badge_color = _SLOT_BADGE[slot % len(_SLOT_BADGE)]
+            badge_cls = f"badge bg-{badge_color} me-1" + (
+                " text-dark" if badge_color == "warning" else "")
 
-            status_parts.append(
-                f"T{slot} [{t_profile}]: {grp_str}  {player_str}[{combo_str}]{speed_str}{eta_str}"
-            )
+            status_children.append(html.Div([
+                html.Span(f"T{slot}", className=badge_cls),
+                html.Span(f"[{t_profile}]  {grp_str}", className="fw-semibold"),
+                html.Div(
+                    f"{player_str}{combo_str}" + (f"  {perf_str}" if perf_str else ""),
+                    className="text-muted ps-2",
+                ),
+            ], className="mb-1 lh-sm"))
 
-        mb_total   = ws.get("mb_downloaded", 0.0)
-        done_total = ws.get("groups_done", 0)
-        max_w      = ws.get("max_workers", len(threads))
-        status_parts.append(f"Gesamt: {done_total} Gruppen ✓ · {mb_total:.1f} MB · {max_w}× parallel")
+        status_children.append(
+            html.Div(f"{done_total} Gruppen ✓", className="text-muted mt-1 border-top pt-1")
+        )
 
     elif current_group:
-        # Single-Thread-Modus (bisheriges Verhalten)
+        # Single-Thread-Modus
         profile_name = ws.get("current_profile", "?")
-        c_done = ws.get("combos_done", 0)
-        c_total = ws.get("combos_total")
+        c_done    = ws.get("combos_done", 0)
+        c_total   = ws.get("combos_total")
         n_players = ws.get("player_count")
         started_at = ws.get("group_started_at")
-        mb = ws.get("mb_downloaded", 0.0)
 
-        combo_str = f"{c_done}/{c_total}" if c_total else str(c_done)
-        player_str = f"{n_players} Spieler · " if n_players else ""
-
-        speed_str = ""
-        eta_str = ""
-        if started_at and c_done:
-            elapsed = _time.time() - started_at
-            if elapsed > 0:
-                cph = c_done / elapsed * 3600
-                speed_str = f" · {cph:.0f} c/h"
-                if c_total and c_total > c_done:
-                    eta_sec = (c_total - c_done) / (c_done / elapsed)
-                    eta_h = int(eta_sec // 3600)
-                    eta_m = int((eta_sec % 3600) // 60)
-                    eta_str = f" · ETA {eta_h}h{eta_m:02d}m"
-
-        mb_str = f" · {mb:.1f} MB" if mb else ""
-        year = ws.get("current_year", "")
-        # Label aufsplitten: "POL/2026/2361–2739" → "POL · ELO 2361–2739"
         parts = current_group.split("/")
-        fed = parts[0] if parts else current_group
-        elo = parts[2] if len(parts) > 2 else ""
-        group_str = f"{fed} · ELO {elo}" if elo else current_group
-        year_str = f"Jahr {year} · " if year else ""
-        status_parts.append(f"{year_str}{group_str} [{profile_name}]")
-        status_parts.append(f"{player_str}{combo_str} combos{speed_str}{eta_str}{mb_str}")
+        fed  = parts[0] if parts else current_group
+        year = ws.get("current_year", "")
+        elo  = parts[2] if len(parts) > 2 else ""
+        grp_str = f"{fed}/{year} · {elo}" if elo else current_group
+
+        combo_str  = f"{c_done}/{c_total}" if c_total else str(c_done)
+        player_str = f"{n_players}P · " if n_players else ""
+        perf_str   = _speed_eta(started_at, c_done, c_total)
+
+        status_children += [
+            html.Div(html.Span(f"[{profile_name}]  {grp_str}", className="fw-semibold"),
+                     className="mb-1 lh-sm"),
+            html.Div(
+                f"{player_str}{combo_str}" + (f"  {perf_str}" if perf_str else ""),
+                className="text-muted",
+            ),
+            html.Div(f"{done_total} Gruppen ✓", className="text-muted mt-1 border-top pt-1"),
+        ]
+
+    status_widget = html.Div(status_children, className="small")
 
     return (fig,
             f"{s['total']:,}", f"{s['done']:,}", f"{s['pending']:,}",
             f"{s['running']:,}", f"{s['failed']:,}", f"{s['skipped']:,}",
-            " | ".join(status_parts))
+            status_widget)
 
 
 @app.callback(

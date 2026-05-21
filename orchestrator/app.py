@@ -875,7 +875,8 @@ def refresh_heatmap(_, federation):
     ]
 
     if threads:
-        # Parallel-Modus: ein Block pro Thread
+        # Parallel-Modus: alle Threads nebeneinander in einem Flex-Container
+        thread_blocks = []
         for t in sorted(threads, key=lambda x: x.get("slot", 0)):
             slot       = t.get("slot", 0)
             t_profile  = t.get("profile", "?")
@@ -891,25 +892,35 @@ def refresh_heatmap(_, federation):
             elo  = parts[2] if len(parts) > 2 else ""
             grp_str = f"{fed}/{year} · {elo}" if elo else grp
 
-            combo_str = f"{c_done}/{c_total}" if c_total else str(c_done)
+            combo_str  = f"{c_done}/{c_total}" if c_total else str(c_done)
             player_str = f"{n_players}P · " if n_players else ""
-            perf_str = _speed_eta(started_at, c_done, c_total)
+            perf_str   = _speed_eta(started_at, c_done, c_total)
 
             badge_color = _SLOT_BADGE[slot % len(_SLOT_BADGE)]
             badge_cls = f"badge bg-{badge_color} me-1" + (
                 " text-dark" if badge_color == "warning" else "")
 
-            status_children.append(html.Div([
-                html.Span(f"T{slot}", className=badge_cls),
-                html.Span(f"[{t_profile}]  {grp_str}", className="fw-semibold"),
+            thread_blocks.append(html.Div([
+                html.Div([
+                    html.Span(f"T{slot}", className=badge_cls),
+                    html.Span(f"{t_profile}", className="fw-semibold me-1"),
+                    html.Span(grp_str, className="text-muted"),
+                ], className="lh-sm"),
                 html.Div(
                     f"{player_str}{combo_str}" + (f"  {perf_str}" if perf_str else ""),
-                    className="text-muted ps-2",
+                    className="text-muted lh-sm",
                 ),
-            ], className="mb-1 lh-sm"))
+            ], style={
+                "borderLeft": f"3px solid var(--bs-{badge_color})",
+                "paddingLeft": "8px",
+                "marginRight": "20px",
+            }))
 
         status_children.append(
-            html.Div(f"{done_total} Gruppen ✓", className="text-muted mt-1 border-top pt-1")
+            html.Div(thread_blocks, className="d-flex flex-wrap align-items-start mt-1")
+        )
+        status_children.append(
+            html.Div(f"{done_total} Gruppen ✓", className="text-muted mt-1")
         )
 
     elif current_group:

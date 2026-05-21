@@ -35,6 +35,7 @@ services:
       PROXYJET_PASSWORD: ${PROXYJET_PASSWORD}
       PROXYJET_HOST: ${PROXYJET_HOST:-proxy-jet.io}
       PROXYJET_PORT: ${PROXYJET_PORT:-1010}
+      PROXYJET_DC_USERNAME: ${PROXYJET_DC_USERNAME:-}
     volumes:
       - orchestrator_data:/data
       - ../config.yaml:/app/config.yaml:ro
@@ -71,6 +72,7 @@ services:
       PROXYJET_PASSWORD: ${PROXYJET_PASSWORD}
       PROXYJET_HOST: ${PROXYJET_HOST:-proxy-jet.io}
       PROXYJET_PORT: ${PROXYJET_PORT:-1010}
+      PROXYJET_DC_USERNAME: ${PROXYJET_DC_USERNAME:-}
       WORKER_DEVICE: ${WORKER_DEVICE:-}
     volumes:
       - orchestrator_data:/data

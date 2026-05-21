@@ -11,6 +11,9 @@ concurrency:
     - normal            # T1
     - semi_conservative # T2
     - semi_aggressive   # T3
+  datacenter:
+    enabled: false      # DC-Thread ein/aus (Toggle im Dashboard, wirksam nach Neustart)
+    profile: normal     # Profil für den DC-Thread
 
 # Fuzzy-Profilauswahl: Gewichtung für zufällige Profilwahl pro Gruppe
 # Worker wählt bei jedem Gruppen-Start zufällig (gewichtet) — kein erkennbares Muster

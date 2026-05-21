@@ -15,9 +15,9 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 class ProxyJetManager:
-    def __init__(self):
-        self._user = os.getenv("PROXYJET_USERNAME", "")
-        self._pw = os.getenv("PROXYJET_PASSWORD", "")
+    def __init__(self, username_env: str = "PROXYJET_USERNAME"):
+        self._user = os.getenv(username_env, "")
+        self._pw   = os.getenv("PROXYJET_PASSWORD", "")
         self._host = os.getenv("PROXYJET_HOST", "proxy-jet.io")
         self._port = os.getenv("PROXYJET_PORT", "1010")
         self._cooldown_until: float = 0.0

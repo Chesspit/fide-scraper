@@ -82,6 +82,18 @@ def _save_max_workers(n: int) -> None:
         pass
 
 
+def _save_datacenter_enabled(enabled: bool) -> None:
+    """Persist concurrency.datacenter.enabled to profiles.yaml."""
+    try:
+        with open(PROFILES_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        data.setdefault("concurrency", {}).setdefault("datacenter", {})["enabled"] = enabled
+        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+    except Exception:
+        pass
+
+
 # Fuzzy-Label aus aktuellen Gewichten bauen (wird bei App-Start einmalig gelesen)
 def _fuzzy_label() -> str:
     weights_cfg = pm._data.get("fuzzy_weights", {})
@@ -221,7 +233,7 @@ def query_queue() -> list[dict]:
     # current_group im State hat Format "FED/YEAR/ELOMIN–ELOMAX"
     threads = read_worker_state().get("threads", [])
     thread_map = {
-        t.get("current_group", ""): f"T{t.get('slot', '?')}"
+        t.get("current_group", ""): ("DC" if t.get("slot") == 99 else f"T{t.get('slot', '?')}")
         for t in threads
         if t.get("current_group")
     }
@@ -602,6 +614,14 @@ tab_heatmap = dbc.Container(fluid=True, children=[
             ),
         ], width=1),
         dbc.Col([
+            dbc.Label("DC-Thread", className="small text-muted mb-1"),
+            dbc.Switch(
+                id="sw-dc-thread",
+                value=_get_concurrency_cfg().get("datacenter", {}).get("enabled", False),
+                className="mt-1",
+            ),
+        ], width=1),
+        dbc.Col([
             dbc.Label("Max Gruppen", className="small text-muted mb-1"),
             dbc.Input(
                 id="input-max-groups", type="number", min=1, step=1,
@@ -904,14 +924,19 @@ def refresh_heatmap(_, federation):
             perf_str   = _speed_eta(started_at, c_done, c_total)
             abbr       = _PROFILE_ABBR.get(t_profile, t_profile[:4].upper())
 
-            badge_color = _SLOT_BADGE[slot % len(_SLOT_BADGE)]
-            badge_cls = f"badge bg-{badge_color} me-1" + (
-                " text-dark" if badge_color == "warning" else "")
+            if slot == 99:  # DC-Thread
+                badge_cls  = "badge bg-secondary me-1"
+                slot_label = "DC"
+            else:
+                badge_color = _SLOT_BADGE[slot % len(_SLOT_BADGE)]
+                badge_cls   = f"badge bg-{badge_color} me-1" + (
+                    " text-dark" if badge_color == "warning" else "")
+                slot_label  = f"T{slot}"
 
             grp_str = f"{fed}/{year} · {elo}" if elo else grp
             lines = [
                 html.Div([
-                    html.Span(f"T{slot}", className=badge_cls),
+                    html.Span(slot_label, className=badge_cls),
                     html.Span(f"{abbr}  {grp_str}", className="fw-semibold"),
                 ], className="lh-sm"),
                 html.Div(
@@ -990,6 +1015,18 @@ def set_max_workers(value):
     if value is not None:
         _save_max_workers(int(value))
     return value
+
+
+@app.callback(
+    Output("sw-dc-thread", "value"),
+    Input("sw-dc-thread", "value"),
+    prevent_initial_call=True,
+)
+def toggle_dc_thread(enabled):
+    """Persist datacenter.enabled to profiles.yaml. Wirksam nach Worker-Neustart."""
+    if enabled is not None:
+        _save_datacenter_enabled(bool(enabled))
+    return enabled
 
 
 @app.callback(

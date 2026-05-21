@@ -51,6 +51,7 @@ _PAUSE_POLL_INTERVAL = 5      # seconds between pause-state polls
 _EMPTY_QUEUE_SLEEP = 120      # seconds to wait when queue is empty (single-thread)
 _THREAD_EMPTY_SLEEP = 30      # seconds to wait when queue is empty (per thread)
 _CIRCUIT_BREAKER_THRESHOLD = 15  # consecutive double-failures before aborting group
+_DC_THREAD_SLOT = 99          # Reservierter Slot-Index für den Datacenter-Thread
 
 # Lock protecting all read-modify-write operations on worker_state.json
 _state_lock = threading.Lock()
@@ -559,12 +560,14 @@ def run(
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    cfg   = _load_concurrency_config()
-    max_w = cfg.get("max_workers", 1)
+    cfg      = _load_concurrency_config()
+    max_w    = cfg.get("max_workers", 1)
+    dc_cfg   = cfg.get("datacenter", {})
+    dc_enabled = dc_cfg.get("enabled", False)
 
-    if max_w > 1:
+    if max_w > 1 or dc_enabled:
         _run_parallel_loop(max_w, cfg.get("worker_profiles", []),
-                           profile_name, max_groups, max_hours)
+                           dc_cfg, profile_name, max_groups, max_hours)
     else:
         _run_single_loop(profile_name, max_groups, max_hours)
 
@@ -572,11 +575,12 @@ def run(
 def _run_parallel_loop(
     max_w: int,
     worker_profiles_cfg: list[str],
+    dc_cfg: dict,
     profile_override: str | None,
     max_groups: int | None,
     max_hours: float | None,
 ) -> None:
-    """Parallel mode: spawn max_w threads, each processing its own groups."""
+    """Parallel mode: spawn max_w residential threads + optional datacenter thread."""
     proxy_manager = ProxyJetManager()
     device = os.getenv("WORKER_DEVICE")
 
@@ -593,10 +597,25 @@ def _run_parallel_loop(
         logger.info("Startup: %d unterbrochene running-Gruppen → pending zurückgesetzt", reset_count)
     qm_main.close()
 
+    # Datacenter-Thread konfigurieren
+    dc_enabled     = dc_cfg.get("enabled", False)
+    dc_profile     = dc_cfg.get("profile", "normal")
+    dc_proxy       = None
+    if dc_enabled:
+        dc_proxy = ProxyJetManager(username_env="PROXYJET_DC_USERNAME")
+        if not dc_proxy._user:
+            logger.warning("DC-Thread aktiviert, aber PROXYJET_DC_USERNAME fehlt — DC deaktiviert")
+            dc_enabled = False
+
+    total_threads = max_w + (1 if dc_enabled else 0)
+
     if device:
         logger.info("Gerät-Filter: '%s'", device)
-    logger.info("Parallel-Modus: %d Threads — Profile: %s", max_w,
-                ", ".join(f"T{i}={profiles_list[i % len(profiles_list)]}" for i in range(max_w)))
+    logger.info("Parallel-Modus: %d Threads (%d residential%s) — Profile: %s",
+                total_threads, max_w,
+                " + DC" if dc_enabled else "",
+                ", ".join(f"T{i}={profiles_list[i % len(profiles_list)]}" for i in range(max_w))
+                + (f", DC={dc_profile}" if dc_enabled else ""))
     if max_groups:
         logger.info("Limit: %d Gruppen (gesamt über alle Threads)", max_groups)
     if max_hours:
@@ -615,7 +634,7 @@ def _run_parallel_loop(
 
     stop_event = threading.Event()
 
-    with ThreadPoolExecutor(max_workers=max_w, thread_name_prefix="scraper") as executor:
+    with ThreadPoolExecutor(max_workers=total_threads, thread_name_prefix="scraper") as executor:
         futures = [
             executor.submit(
                 run_slot,
@@ -627,6 +646,15 @@ def _run_parallel_loop(
             )
             for slot in range(max_w)
         ]
+        if dc_enabled:
+            futures.append(executor.submit(
+                run_slot,
+                _DC_THREAD_SLOT,
+                dc_profile,
+                device,
+                dc_proxy,
+                stop_event,
+            ))
         for fut in futures:
             try:
                 fut.result()

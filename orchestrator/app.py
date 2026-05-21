@@ -595,13 +595,13 @@ tab_heatmap = dbc.Container(fluid=True, children=[
             ),
         ], width=2),
         dbc.Col([
-            dbc.Label("Threads", className="small text-muted mb-1",
-                      title="Wirksam nach Worker-Neustart"),
+            dbc.Label("Threads", className="small text-muted mb-1"),
             dcc.Dropdown(
                 id="dd-workers",
                 options=[{"label": f"{n}×", "value": n} for n in (1, 2, 3, 4)],
                 value=_get_concurrency_cfg().get("max_workers", 1),
                 clearable=False,
+                title="Wirksam nach Worker-Neustart",
             ),
         ], width=1),
         dbc.Col([

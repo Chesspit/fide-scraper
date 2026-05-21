@@ -1,6 +1,6 @@
 # FIDE Scraper — Projektdokumentation
 
-Stand: 18. Mai 2026
+Stand: 21. Mai 2026
 
 ---
 
@@ -124,7 +124,7 @@ Feldern: `elo_min`, `elo_max`, `federations`, `sampling`, `priority`,
 |-----:|--------:|--------:|--------|--------|
 | 1 | 5 | 1.587 | Kern-Analysegruppen | partial |
 | 2 | 1 | 170 | male_2200 | ⛔ skipped (gestrichen 2026-05-18) |
-| 3 | 35 | ~3.600 | global_02–28b (weltweit ≥2300) | 33 complete, 20a läuft, 20b–28b pending |
+| 3 | 35 | ~3.900 | global_02–28b (weltweit ≥2300) | **41 complete** (02–23b), 24a läuft, 24b–28b pending |
 | 4 | 8 | 1.163 | dach_01–08 (SUI+AUT+GER ≥2200) | pending |
 | 5 | 40 | 5.988 | sui_01–20 + aut_01–20 (1400–2199) | pending |
 | 6 | 86 | 12.948 | ger_01–86 (≥2000 priorisiert, <2000 deprioritisiert) | pending |
@@ -255,13 +255,13 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 
 ---
 
-## 5. Aktueller Datensatz-Stand (2026-05-18)
+## 5. Aktueller Datensatz-Stand (2026-05-21)
 
 | Kennzahl | Wert |
 |---|---|
-| **Gesamt-Partien** | **~2.440.000** |
+| **Gesamt-Partien** | **2.783.269** |
 | **Gegner aufgelöst** | **~97,5 %** |
-| **Spieler mit Daten** | **14.043** |
+| **Spieler mit Daten** | **15.208** |
 | **Früheste Periode mit Daten** | **2008-04** |
 | **Neueste Periode** | **2026-04** |
 
@@ -275,9 +275,9 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 | female_2200 | 321 | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
 | swiss_2026 | 349 | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
 | male_2200 | 170 | — | ⛔ skipped (gestrichen 2026-05-18) |
-| global_02–19b | 57–147 | ELO 2351–2603 | ✅ complete (33 Gruppen, 2012-08 – 2026-04) |
-| global_20a | 72 | ELO 2345–2347 | 🔄 läuft (seit 2026-05-18) |
-| global_20b–28b | — | ELO 2300–2350 | ⬜ pending (17 Gruppen) |
+| global_02–23b | 56–147 | ELO 2328–2603 | ✅ complete (41 Gruppen, 2012-08 – 2026-04) |
+| global_24a | 90 | ELO 2325–2327 | 🔄 läuft (seit 2026-05-21) |
+| global_24b–28b | — | ELO 2300–2324 | ⬜ pending (9 Gruppen) |
 
 > **FIDE-Perioden:** `scraper/main.py` überspringt automatisch strukturell leere Monate
 > (is_valid_fide_period): 2008 Apr/Jul/Okt, 2009 Jan/Apr/Jul/Sep/Nov,
@@ -421,7 +421,7 @@ python3 -m scripts.quality_check --report-only
 
 ---
 
-## 7. Scraping Orchestrator (deployed 2026-05-09, verbessert 2026-05-11)
+## 7. Scraping Orchestrator (deployed 2026-05-09, Parallel-Modus 2026-05-21)
 
 Ein eigenständiges Tool zur Verwaltung des globalen Scrapings via ProxyJet-Proxy.
 
@@ -429,71 +429,80 @@ Ein eigenständiges Tool zur Verwaltung des globalen Scrapings via ProxyJet-Prox
 
 ```
 orchestrator/
-├── app.py              ← Dash-Dashboard (4 Tabs: Übersicht / Heatmap / Queue / Abgeschlossen)
-├── worker.py           ← Worker-Schleife (Queue → ProxyJet → PostgreSQL)
+├── app.py              ← Dash-Dashboard (3 Tabs: Heatmap / Queue / Abgeschlossen)
+├── worker.py           ← Worker: sequentiell (max_workers=1) oder parallel (2–4 Threads)
 ├── queue_manager.py    ← SQLite-Queue, Fuzzy-Scheduling, Optimistic Locking
-├── proxy_manager.py    ← ProxyJet Rotating Residential Proxy
+├── proxy_manager.py    ← ProxyJet Rotating Residential Proxy (thread-safe)
 ├── profile_manager.py  ← Scrape-Profile + Fuzzy-Auswahl
 ├── generate_groups.py  ← 24.588 Gruppen (Föd. × Jahr × ELO-Band) generieren
 ├── setup_db.py         ← SQLite-Schema
-├── profiles.yaml       ← conservative / normal / aggressive + fuzzy_weights (Volume-gemountet)
+├── profiles.yaml       ← Profile + fuzzy_weights + [concurrency] (schreibbar via Dashboard)
 ├── assets/custom.css   ← Dash CSS-Fixes
 ├── Dockerfile          ← Python 3.12 slim
-├── docker-compose.yml  ← dashboard (restart: unless-stopped) + worker (restart: unless-stopped)
+├── docker-compose.yml  ← dashboard + worker (restart: unless-stopped)
 └── requirements.txt
 ```
 
-### 7.2 Features
+### 7.2 Parallel-Modus (ab 2026-05-21)
 
-| Feature | Details |
-|---|---|
-| 24.588 Gruppen | Föd. × Jahr (2009–2026) × ELO-Band |
-| Fuzzy-Profil | **Aktuell: 0% conservative / 100% normal / 0% aggressive** (VPS-IP geblockt, kein direktes FIDE) |
-| Circuit Breaker | Nach 15 Doppel-Timeouts (Proxy + direkt) → Gruppe als `failed`, Worker läuft weiter |
-| Worker always-on | `restart: unless-stopped`; `stopped`-Befehl → Worker pollt, Container exitiert nicht |
-| Dashboard lokal | `localhost:8051` via SSH-Tunnel; VPS-SQLite-DB in Docker-Volume (persistent) |
-| Profil setzen | Queue-Tab: Zeile per Radio-Button wählen → Dropdown oben → "Profil setzen" |
-| Heatmap | Spaltenreihenfolge: 2026 → 2009 (neueste links) |
+Jeder Thread ist ein unabhängiger Mini-Worker mit eigener PG- und SQLite-Verbindung.
+Konfiguration in `profiles.yaml [concurrency]`:
+
+```yaml
+concurrency:
+  max_workers: 2          # 1=sequentiell, 2–4=parallel (max. 4)
+  worker_profiles:
+    - semi_aggressive     # T0
+    - normal              # T1
+    - semi_conservative   # T2
+    - semi_aggressive     # T3
+```
+
+**Umschalten ohne SSH:** Dashboard → Threads-Dropdown (1×–4×) → 🔄 Neustart
+- Worker schließt aktuelle Gruppen fertig, exitiert dann (sys.exit 0)
+- Docker startet ihn automatisch neu mit neuer Konfiguration
+
+**ProxyJet:** Eine einzige rotating-residential Konfiguration reicht für alle Threads.
+Jeder parallele Request bekommt automatisch eine andere IP aus dem Pool.
 
 ### 7.3 Scraping-Profile
 
 | Profil | Proxy | Wartezeit | Timeout | Einsatz |
 |---|---|---|---|---|
-| `conservative` | immer | 8s (±50%) | 30s | Risikoreiche IPs, stabiler VPN |
-| `normal` | aktiv | 3s (±40%) | 20s | **Standard auf VPS** |
-| `aggressive` | nie | 1s (±30%) | 10s | **Nur lokal** (Mac Mini, kein IP-Block) |
+| `semi_aggressive` | aktiv | 2s (±35%) | 15s | T0, T3 (Standard VPS) |
+| `normal` | aktiv | 3s (±40%) | 20s | T1 |
+| `semi_conservative` | aktiv | 5,5s (±45%) | 25s | T2 (vorsichtig) |
+| `conservative` | aktiv | 8s (±50%) | 30s | Referenz (inaktiv) |
 
-> **Wichtig:** VPS-IP ist von FIDE dauerhaft geblockt. Daher `aggressive: 0` in
-> `profiles.yaml` — alle VPS-Gruppen laufen mit `normal` (ProxyJet residential).
+Fuzzy-Auswahl für Gruppen ohne explizites Profil: 60% semi_aggressive / 40% normal.
 
-### 7.4 Dashboard-Zugang
+> **VPS-IP geblockt:** FIDE sperrt die VPS-IP dauerhaft. Alle VPS-Requests laufen
+> über ProxyJet Residential-Proxy. Mac Mini scrapt direkt (kein Proxy nötig).
 
-```bash
-# Tunnel starten (DB + Dashboard):
-bash scripts/tunnel.sh
-# → DB:        localhost:5434
-# → Dashboard: http://localhost:8051
+### 7.4 Dashboard
+
+```
+https://scelo.chesspit.net   (BasicAuth: peter / persönliches PW)
 ```
 
-### 7.5 Stand 2026-05-11
-
-| Gruppe | Gruppen done | Pending | Failed | Skipped |
-|---|---|---|---|---|
-| VPS-Orchestrator | 17 | 23.454 | 0 | 1.116 (GER <2000) |
-
-Alle 17 erledigten Gruppen: SUI 2026 (verschiedene ELO-Bänder), `normal`-Profil.
-GER/2026/2340–2762 wurde mit `aggressive` (0 Partien) versehentlich als done markiert
-→ auf `pending` zurückgesetzt (2026-05-11).
-
-### 7.6 Worker-Verbesserungen 2026-05-11
-
-| Änderung | Effekt |
+| Tab | Inhalt |
 |---|---|
-| `stopped` → poll statt exit | Container bleibt oben; kein Docker-Restart-Loop |
-| Startup preserves command | Reboot respektiert letzten Befehl (run/stopped) |
-| Circuit Breaker (15 Timeouts) | Gruppe wird failed statt endlos hängen |
-| BlockedError → gruppe failed | Worker stoppt nicht mehr bei 403 |
-| 429 return tuple-fix | Kein unpack-Crash bei HTTP 429 |
+| **Heatmap** | Föderations-Grid nach Status; Worker-Steuerung (Start/Pause/Stop/🔄 Neustart); Threads-Dropdown; Status-Anzeige pro Thread |
+| **Queue** | Pending/Running/Failed-Gruppen; Priorität + Gerät editierbar; Thread-Spalte (zeigt T0/T1 für laufende Gruppen) |
+| **Abgeschlossen** | Erledigte Gruppen mit Statistiken (Partien, Dauer, Rate/h) |
+
+### 7.5 Features
+
+| Feature | Details |
+|---|---|
+| 24.588 Gruppen | Föd. × Jahr (2009–2026) × ELO-Band in SQLite |
+| Parallel-Modus | 2–4 Threads, jeder mit eigenem Profil und eigener Queue-Verbindung |
+| Threads-Dropdown | 1×/2×/3×/4× — schreibt sofort in profiles.yaml, wirksam nach Neustart |
+| 🔄 Neustart-Button | Sauberer Prozess-Exit → Docker-Neustart mit neuer Konfiguration |
+| Pre-Filter | ~55% skip-Rate via TXT-Snapshot (num_games=0 → kein FIDE-Request) |
+| Circuit Breaker | Nach 15 Doppel-Timeouts → Gruppe `failed`, Worker läuft weiter |
+| Thread-Spalte Queue | Zeigt aktiven Thread-Slot (T0/T1) für laufende Gruppen |
+| Status-Anzeige | Pro Thread: farbiger Badge + Gruppe + Fortschritt + Speed + ETA |
 
 ---
 
@@ -527,8 +536,9 @@ Enthält zusätzlich QC-Zellen: Vergleich `Σ rating_change_weighted` mit tatsä
 
 | Aufgabe | Priorität | Status |
 |---|---|---|
-| global_20a–28b via Mac Mini (ELO 2300–2347) | Hoch | 🔄 20a läuft, 20b–28b pending |
-| April-Nachscrape (38 Spieler, global_09b/10a/17b) | Mittel | ⬜ nach global_20a |
+| global_24a–28b via Mac Mini (ELO 2300–2327) | Hoch | 🔄 24a läuft, 24b–28b pending |
+| VPS auf 3 Threads hochschalten | Hoch | ⏰ Sonntag 2026-05-24 prüfen (Routine gesetzt) |
+| April-Nachscrape (38 Spieler, global_09b/10a/17b) | Mittel | ⬜ nach global-Gruppen |
 | dach_01–08 seeden + starten | Mittel | ⬜ nach global-Gruppen |
 | Kern-Gruppen 2008 nachholen | Mittel | ⬜ 3 Quartalsperioden fehlen |
 | Notebooks 01–09 ausführen | Mittel | ⬜ Daten bereit |

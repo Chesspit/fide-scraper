@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-19 Abend (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-05-21 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -8,9 +8,9 @@ Stand: 2026-05-19 Abend (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **2.590.233** |
-| Spieler mit ok-Daten | **14.420** |
-| Global-Gruppen complete | **37** (global_02 – global_21b) |
+| Partien gesamt | **2.783.269** |
+| Spieler mit ok-Daten | **15.208** |
+| Global-Gruppen complete | **41** (global_02 – global_23b) |
 
 ---
 
@@ -29,10 +29,18 @@ Stand: 2026-05-19 Abend (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ## Global-Gruppen (Mac Mini Backfill) — abgeschlossen
 
-| Gruppe | Spieler | ELO-Range | Status |
-|--------|--------:|-----------|--------|
-| global_02–11b | 60–147 | 2412–2603 | ✅ complete |
-| global_12a–19b | 57–95 | 2351–2411 | ✅ complete |
+| Gruppen | ELO-Range | Spieler | Status |
+|---------|-----------|--------:|--------|
+| global_02–11b (12 Gruppen) | 2412–2603 | 60–147 | ✅ complete |
+| global_12a–19b (16 Gruppen) | 2351–2411 | 57–95 | ✅ complete |
+| global_20a | 2345–2347 | 72 | ✅ complete (2026-05-18) |
+| global_20b | 2348–2350 | 72 | ✅ complete (2026-05-18) |
+| global_21a | 2342–2344 | 78 | ✅ complete (2026-05-19) |
+| global_21b | 2339–2341 | 73 | ✅ complete (2026-05-19) |
+| global_22a | 2337–2338 | 56 | ✅ complete (2026-05-21) |
+| global_22b | 2334–2336 | 70 | ✅ complete (2026-05-21) |
+| global_23a | 2331–2333 | 71 | ✅ complete (2026-05-21) |
+| global_23b | 2328–2330 | 77 | ✅ complete (2026-05-21, ~5h) |
 
 ---
 
@@ -40,27 +48,46 @@ Stand: 2026-05-19 Abend (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Gruppe | Spieler | ELO-Range | Status |
 |--------|--------:|-----------|--------|
-| global_20a | 72 | 2345–2347 | ✅ complete (2026-05-18) |
-| global_20b | 72 | 2348–2350 | ✅ complete (2026-05-18) |
-| global_21a | 78 | 2342–2344 | ✅ complete (2026-05-19, 6h 54min) |
-| global_21b | 73 | 2339–2341 | ✅ complete (2026-05-19, 5h 02min) |
-| global_22a | 56 | 2337–2338 | ⬜ **NÄCHSTE** (geseeded, bereit zum Start) |
-| global_21b | — | 2339–2341 | ⬜ pending |
-| global_22a–28b | — | 2300–2338 | ⬜ pending (14 Gruppen, neu 2026-05-18) |
+| global_24a | 90 | 2325–2327 | 🔄 läuft (seit 13:33 Uhr, ~6h ETA) |
+| global_24b | — | 2322–2324 | ⬜ pending (noch nicht geseeded) |
+| global_25a – global_28b (8 Gruppen) | — | 2300–2321 | ⬜ pending |
 
-Nach global_28b ist ELO ≥ 2300 weltweit vollständig abgedeckt (~815 weitere Spieler).
+Nach global_28b ist ELO ≥ 2300 weltweit vollständig abgedeckt.
 
 ---
 
 ## Orchestrator (VPS) — föderationsbasiertes Scraping
 
-| Land | Status |
-|------|--------|
-| SUI, AUT, GER, alle anderen | 🔄 läuft (aktuell Mai–Apr 2026) |
+| | |
+|---|---|
+| Dashboard | **https://scelo.chesspit.net** (BasicAuth) |
+| Modus | **Parallel: 2 Threads** (T0=semi_aggressive, T1=normal) |
+| Aktuell | GER 2024/2025-Gruppen (~2000–2200 ELO) |
 
-- Dashboard: **https://scelo.chesspit.net** (BasicAuth: peter / persönliches PW)
-- **Profile: semi_aggressive 60% / normal 40%** (geändert 2026-05-18, semi_conservative auf 0%)
-- Worker läuft dauerhaft als Python-Prozess auf VPS (root)
+- Worker läuft als Docker-Container (restart: unless-stopped)
+- Thread-Profile: T0 semi_aggressive / T1 normal / T2 semi_conservative (bereit) / T3 semi_aggressive (bereit)
+- Sonntagserinnerung gesetzt: ggf. auf 3 Threads hochschalten (2026-05-24 09:00)
+
+---
+
+## Änderungen Session 2026-05-21
+
+| Was | Details |
+|-----|---------|
+| global_22a ✅ | 56 Spieler, ELO 2337–2338, bereits gescrapt (Status nachgezogen) |
+| global_22b ✅ | 70 Spieler, ELO 2334–2336, bereits gescrapt (Status nachgezogen) |
+| global_23a ✅ | 71 Spieler, ELO 2331–2333, bereits gescrapt (Status nachgezogen) |
+| global_23b ✅ | 77 Spieler, ELO 2328–2330, 4.981/4.982 erfolgreich, ~5h |
+| global_24a 🔄 | 90 Spieler geseeded, Backfill gestartet 13:33 Uhr |
+| **Parallel-Modus** | VPS-Worker läuft jetzt mit 2 Threads gleichzeitig |
+| Thread-Profile | T0=semi_aggressive, T1=normal, T2=semi_conservative, T3=semi_aggressive |
+| Threads-Dropdown | Dashboard: 1×–4× einstellbar, persistiert in profiles.yaml |
+| 🔄 Neustart-Button | Worker exitiert sauber, Docker startet mit neuer Config neu |
+| Thread-Spalte Queue | Ersetzt Profil-Spalte; zeigt T0/T1 für laufende Gruppen (blau) |
+| Status-Anzeige | Pro Thread ein Block mit Badge + Fortschritt (kein MB mehr) |
+| ProxyJet | threading.Lock → thread-sicher für parallele Requests |
+| docker-compose | profiles.yaml für Dashboard-Container schreibbar (war :ro) |
+| Push auf GitHub | Commits e69a844–3a36dae gepusht |
 
 ---
 
@@ -70,7 +97,7 @@ Nach global_28b ist ELO ≥ 2300 weltweit vollständig abgedeckt (~815 weitere S
 |-----|---------|
 | global_21a ✅ | 78 Spieler, ELO 2342–2344, 6h 54min, 75 Errors |
 | global_21b ✅ | 73 Spieler, ELO 2339–2341, 5h 02min, 0 Errors |
-| global_22a | 56 Spieler geseeded, bereit zum Start |
+| global_22a | 56 Spieler geseeded |
 | Pre-Filter | Implementiert + deployed (Mac Mini + VPS); ~55% skip-Rate |
 | num_games | 165 TXT-Snapshots importiert (2012-08 bis 2026-04) |
 | VPS Queue | 104 Gruppen (Prio ≤129) zufällig gemischt |
@@ -84,40 +111,14 @@ Nach global_28b ist ELO ≥ 2300 weltweit vollständig abgedeckt (~815 weitere S
 |-----|---------|
 | global_20a ✅ | 72 Spieler, ELO 2345–2347, 5h 51min, 0 Errors |
 | global_20b ✅ | 72 Spieler, ELO 2348–2350, 5h 54min, 1 Error |
-| global_21a | 78 Spieler geseeded, bereit zum Start |
-| male_2200 ⛔ | Gruppe aus Pipeline gestrichen, DB-Status auf `skipped` gesetzt |
-| global_21a–28b | 16 neue Gruppen angelegt (ELO 2300–2344, pending) |
-| female_2000 + female_1800 | In DB angelegt (1.068 + 2.884 Spielerinnen, pending) |
-| Profil-Gewichte | semi_conservative 0%, normal 40% (war 30%) |
-| VPS Queue | GER 2024/2025 in 9er-Blöcke mit SUI/AUT gemischt |
-| Dashboard | Queue-Seite auf LIMIT 500 begrenzt (war unbegrenzt → Browser-Absturz) |
+| global_21a | 78 Spieler geseeded |
+| male_2200 ⛔ | Gruppe aus Pipeline gestrichen |
+| global_21a–28b | 16 neue Gruppen angelegt (ELO 2300–2344) |
+| Profil-Gewichte | semi_conservative 0%, normal 40% |
 
 ---
 
-## Änderungen Session 2026-05-17
+## Ältere Änderungen
 
-| Was | Details |
-|-----|---------|
-| global_19a ✅ | 71 Spieler, ELO 2351–2353, 5h 55min, 0 Errors |
-| global_19b ✅ | 75 Spieler, ELO 2354–2356, 6h 24min, 0 Errors |
-| Dashboard Fix | Spieler-Steckbrief: Dropdown-Value wurde nach Auswahl gelöscht → `no_update` Fix |
-
----
-
-## Änderungen Session 2026-05-16
-
-| Was | Details |
-|-----|---------|
-| global_18a ✅ | 57 Spieler, ELO 2357–2359 — VPS hatte bereits alles, sofort complete |
-| global_18b ✅ | 75 Spieler, ELO 2360–2362, ~4h Laufzeit |
-
----
-
-## Änderungen Session 2026-05-14
-
-| Was | Details |
-|-----|---------|
-| global_15b ✅ | 65 Spieler, ELO 2380–2382, 5,9h, 0 Errors |
-| global_16a ✅ | 95 Spieler, ELO 2369–2372, 8,3h, 1 Error |
-| Profil-Gewichte VPS | 20/60/20 → 60/30/10 (semi_aggressive dominiert) |
-| Retry-After Header | worker.py liest jetzt FIDEs Retry-After aus 429-Response |
+→ Sessions 2026-05-13 bis 2026-05-17: global_14b – global_19b abgeschlossen,
+   Dashboard-Verbesserungen, Retry-After-Fix, VPS-Profil-Umstellung.

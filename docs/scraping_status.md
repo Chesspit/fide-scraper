@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-21 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-05-21 Abend (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -8,7 +8,7 @@ Stand: 2026-05-21 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **2.783.269** |
+| Partien gesamt | **2.829.049** |
 | Spieler mit ok-Daten | **15.208** |
 | Global-Gruppen complete | **41** (global_02 – global_23b) |
 
@@ -48,7 +48,7 @@ Stand: 2026-05-21 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Gruppe | Spieler | ELO-Range | Status |
 |--------|--------:|-----------|--------|
-| global_24a | 90 | 2325–2327 | 🔄 läuft (seit 13:33 Uhr, ~6h ETA) |
+| global_24a | 90 | 2325–2327 | 🔄 läuft (fertig ~20:13 Uhr) |
 | global_24b | — | 2322–2324 | ⬜ pending (noch nicht geseeded) |
 | global_25a – global_28b (8 Gruppen) | — | 2300–2321 | ⬜ pending |
 
@@ -61,12 +61,13 @@ Nach global_28b ist ELO ≥ 2300 weltweit vollständig abgedeckt.
 | | |
 |---|---|
 | Dashboard | **https://scelo.chesspit.net** (BasicAuth) |
-| Modus | **Parallel: 2 Threads** (T0=semi_aggressive, T1=normal) |
-| Aktuell | GER 2024/2025-Gruppen (~2000–2200 ELO) |
+| Modus | **Parallel: 2 Threads + DC-Thread pending** |
+| Aktuell | AUT/GER 2024-Gruppen (~1700–2200 ELO) |
 
 - Worker läuft als Docker-Container (restart: unless-stopped)
-- Thread-Profile: T0 semi_aggressive / T1 normal / T2 semi_conservative (bereit) / T3 semi_aggressive (bereit)
-- Sonntagserinnerung gesetzt: ggf. auf 3 Threads hochschalten (2026-05-24 09:00)
+- Thread-Profile: T0=semi_aggressive / T1=normal / T2=semi_conservative (bereit) / T3=semi_aggressive (bereit)
+- **DC-Thread:** enabled=true, semi_conservative — startet nach VPS-Neustart (~20:45 Uhr)
+- Sonntagserinnerung: ggf. auf 3 Threads hochschalten (2026-05-24 09:00)
 
 ---
 
@@ -78,16 +79,18 @@ Nach global_28b ist ELO ≥ 2300 weltweit vollständig abgedeckt.
 | global_22b ✅ | 70 Spieler, ELO 2334–2336, bereits gescrapt (Status nachgezogen) |
 | global_23a ✅ | 71 Spieler, ELO 2331–2333, bereits gescrapt (Status nachgezogen) |
 | global_23b ✅ | 77 Spieler, ELO 2328–2330, 4.981/4.982 erfolgreich, ~5h |
-| global_24a 🔄 | 90 Spieler geseeded, Backfill gestartet 13:33 Uhr |
-| **Parallel-Modus** | VPS-Worker läuft jetzt mit 2 Threads gleichzeitig |
-| Thread-Profile | T0=semi_aggressive, T1=normal, T2=semi_conservative, T3=semi_aggressive |
+| global_24a 🔄 | 90 Spieler geseeded, Backfill gestartet 13:33 Uhr, fertig ~20:13 Uhr |
+| **Parallel-Modus** | VPS-Worker läuft mit 2 Threads (T0=semi_aggressive, T1=normal) |
+| **DC-Thread** | ProxyJet Datacenter (Slot 99, semi_conservative) — Toggle im Dashboard |
 | Threads-Dropdown | Dashboard: 1×–4× einstellbar, persistiert in profiles.yaml |
-| 🔄 Neustart-Button | Worker exitiert sauber, Docker startet mit neuer Config neu |
-| Thread-Spalte Queue | Ersetzt Profil-Spalte; zeigt T0/T1 für laufende Gruppen (blau) |
-| Status-Anzeige | Pro Thread ein Block mit Badge + Fortschritt (kein MB mehr) |
+| DC-Toggle | Ein/Aus-Schalter im Dashboard, wirksam nach Neustart |
+| 🔄 Neustart-Button | Worker exitiert sauber → Docker-Neustart mit neuer Config |
+| Thread-Spalte Queue | Zeigt T0/T1/DC für laufende Gruppen (farbig markiert) |
+| Thread-Spalte Abgeschlossen | Zeigt welcher Thread die Gruppe gescrapt hat |
+| Status-Anzeige | Threads nebeneinander (d-flex), Badge + Profil-Kürzel + Fortschritt |
+| Worker-Status Position | Queue-Tab Kopfzeile (rechts von "500 Gruppen"-Badge) |
 | ProxyJet | threading.Lock → thread-sicher für parallele Requests |
-| docker-compose | profiles.yaml für Dashboard-Container schreibbar (war :ro) |
-| Push auf GitHub | Commits e69a844–3a36dae gepusht |
+| scrape_runs.thread_slot | Neue Spalte: speichert Thread-Slot pro Scraping-Run |
 
 ---
 

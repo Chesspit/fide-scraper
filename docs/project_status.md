@@ -1,6 +1,6 @@
 # FIDE Scraper — Projektdokumentation
 
-Stand: 21. Mai 2026
+Stand: 21. Mai 2026 (Abend)
 
 ---
 
@@ -259,7 +259,7 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 
 | Kennzahl | Wert |
 |---|---|
-| **Gesamt-Partien** | **2.783.269** |
+| **Gesamt-Partien** | **2.829.049** |
 | **Gegner aufgelöst** | **~97,5 %** |
 | **Spieler mit Daten** | **15.208** |
 | **Früheste Periode mit Daten** | **2008-04** |
@@ -421,7 +421,7 @@ python3 -m scripts.quality_check --report-only
 
 ---
 
-## 7. Scraping Orchestrator (deployed 2026-05-09, Parallel-Modus 2026-05-21)
+## 7. Scraping Orchestrator (deployed 2026-05-09, Parallel-Modus + DC-Thread 2026-05-21)
 
 Ein eigenständiges Tool zur Verwaltung des globalen Scrapings via ProxyJet-Proxy.
 
@@ -456,6 +456,9 @@ concurrency:
     - normal              # T1
     - semi_conservative   # T2
     - semi_aggressive     # T3
+  datacenter:
+    enabled: false        # DC-Thread ein/aus (Toggle im Dashboard)
+    profile: semi_conservative
 ```
 
 **Umschalten ohne SSH:** Dashboard → Threads-Dropdown (1×–4×) → 🔄 Neustart
@@ -465,13 +468,29 @@ concurrency:
 **ProxyJet:** Eine einzige rotating-residential Konfiguration reicht für alle Threads.
 Jeder parallele Request bekommt automatisch eine andere IP aus dem Pool.
 
+### 7.2b Datacenter-Thread (ab 2026-05-21)
+
+Optionaler zusätzlicher Thread via ProxyJet **Datacenter**-Proxy (günstiger als Residential).
+Läuft als **Slot 99** unabhängig von den 1×–4× Residential-Threads.
+
+| | Residential | Datacenter |
+|---|---|---|
+| Endpoint | eu.proxy-jet.io:1010 | eu.proxy-jet.io:1010 |
+| Username | `…-resi-DE` | `…-dc-DE` |
+| Kosten | höher | günstiger |
+| Env-Variable | `PROXYJET_USERNAME` | `PROXYJET_DC_USERNAME` |
+
+**Steuerung:** Dashboard Heatmap-Tab → **DC-Thread**-Toggle → 🔄 Neustart
+
+Im Dashboard erscheint der DC-Thread als grauer **DC**-Badge in der Status-Anzeige (Queue-Tab) neben den farbigen T0/T1-Badges. Die Abgeschlossen-Tabelle zeigt ebenfalls `DC` in der Thread-Spalte.
+
 ### 7.3 Scraping-Profile
 
 | Profil | Proxy | Wartezeit | Timeout | Einsatz |
 |---|---|---|---|---|
-| `semi_aggressive` | aktiv | 2s (±35%) | 15s | T0, T3 (Standard VPS) |
+| `semi_aggressive` | aktiv | 2s (±35%) | 15s | T0, T3 |
 | `normal` | aktiv | 3s (±40%) | 20s | T1 |
-| `semi_conservative` | aktiv | 5,5s (±45%) | 25s | T2 (vorsichtig) |
+| `semi_conservative` | aktiv | 5,5s (±45%) | 25s | T2, DC-Thread |
 | `conservative` | aktiv | 8s (±50%) | 30s | Referenz (inaktiv) |
 
 Fuzzy-Auswahl für Gruppen ohne explizites Profil: 60% semi_aggressive / 40% normal.
@@ -487,22 +506,24 @@ https://scelo.chesspit.net   (BasicAuth: peter / persönliches PW)
 
 | Tab | Inhalt |
 |---|---|
-| **Heatmap** | Föderations-Grid nach Status; Worker-Steuerung (Start/Pause/Stop/🔄 Neustart); Threads-Dropdown; Status-Anzeige pro Thread |
-| **Queue** | Pending/Running/Failed-Gruppen; Priorität + Gerät editierbar; Thread-Spalte (zeigt T0/T1 für laufende Gruppen) |
-| **Abgeschlossen** | Erledigte Gruppen mit Statistiken (Partien, Dauer, Rate/h) |
+| **Heatmap** | Föderations-Grid; Worker-Steuerung (Start/Pause/Stop/🔄 Neustart); Threads-Dropdown (1×–4×); DC-Thread-Toggle |
+| **Queue** | Pending/Running/Failed-Gruppen; Priorität + Gerät editierbar; Thread-Spalte; Worker-Status-Anzeige in Kopfzeile |
+| **Abgeschlossen** | Erledigte Gruppen mit Statistiken + Thread-Spalte (T0/T1/DC) |
 
 ### 7.5 Features
 
 | Feature | Details |
 |---|---|
 | 24.588 Gruppen | Föd. × Jahr (2009–2026) × ELO-Band in SQLite |
-| Parallel-Modus | 2–4 Threads, jeder mit eigenem Profil und eigener Queue-Verbindung |
+| Parallel-Modus | 2–4 Residential-Threads, jeder mit eigenem Profil und eigener Queue-Verbindung |
+| DC-Thread | Optionaler Slot-99-Thread via Datacenter-Proxy (günstiger, semi_conservative) |
 | Threads-Dropdown | 1×/2×/3×/4× — schreibt sofort in profiles.yaml, wirksam nach Neustart |
+| DC-Toggle | Ein/Aus-Schalter im Dashboard — wirksam nach Neustart |
 | 🔄 Neustart-Button | Sauberer Prozess-Exit → Docker-Neustart mit neuer Konfiguration |
 | Pre-Filter | ~55% skip-Rate via TXT-Snapshot (num_games=0 → kein FIDE-Request) |
 | Circuit Breaker | Nach 15 Doppel-Timeouts → Gruppe `failed`, Worker läuft weiter |
-| Thread-Spalte Queue | Zeigt aktiven Thread-Slot (T0/T1) für laufende Gruppen |
-| Status-Anzeige | Pro Thread: farbiger Badge + Gruppe + Fortschritt + Speed + ETA |
+| Thread-Spalte Queue/Abgeschlossen | T0/T1/DC für laufende und abgeschlossene Gruppen |
+| Status-Anzeige | Pro Thread nebeneinander: Badge + Profil + Gruppe + Fortschritt + Speed + ETA |
 
 ---
 
@@ -536,8 +557,9 @@ Enthält zusätzlich QC-Zellen: Vergleich `Σ rating_change_weighted` mit tatsä
 
 | Aufgabe | Priorität | Status |
 |---|---|---|
-| global_24a–28b via Mac Mini (ELO 2300–2327) | Hoch | 🔄 24a läuft, 24b–28b pending |
-| VPS auf 3 Threads hochschalten | Hoch | ⏰ Sonntag 2026-05-24 prüfen (Routine gesetzt) |
+| global_24a–28b via Mac Mini (ELO 2300–2327) | Hoch | 🔄 24a fertig ~20:13h, 24b morgen früh |
+| DC-Thread Erstlauf beobachten | Hoch | ⏰ heute Abend ~20:45h (VPS-Neustart) |
+| VPS auf 3 Threads hochschalten | Mittel | ⏰ Sonntag 2026-05-24 prüfen (Routine gesetzt) |
 | April-Nachscrape (38 Spieler, global_09b/10a/17b) | Mittel | ⬜ nach global-Gruppen |
 | dach_01–08 seeden + starten | Mittel | ⬜ nach global-Gruppen |
 | Kern-Gruppen 2008 nachholen | Mittel | ⬜ 3 Quartalsperioden fehlen |

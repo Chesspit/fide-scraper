@@ -143,16 +143,42 @@ def _get_dc_thread_status() -> list[dict]:
 
 
 def _save_worker_profile_for_slot(slot: int, profile_name: str) -> None:
-    """Persist worker_profiles[slot] in profiles.yaml. Wirksam nach Worker-Neustart."""
+    """Persist worker_slots[slot].profile in profiles.yaml."""
     try:
         with open(PROFILES_PATH, encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        profiles = data.setdefault("concurrency", {}).setdefault(
-            "worker_profiles", ["normal", "normal", "normal", "normal"])
-        while len(profiles) <= slot:
-            profiles.append("normal")
-        profiles[slot] = profile_name
-        data["concurrency"]["worker_profiles"] = profiles
+        slots = data.setdefault("concurrency", {}).setdefault("worker_slots", [
+            {"slot": i, "enabled": i < 2, "profile": "normal"} for i in range(4)
+        ])
+        for s in slots:
+            if s.get("slot") == slot:
+                s["profile"] = profile_name
+                break
+        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+    except Exception:
+        pass
+
+
+def _save_residential_slot_enabled(slot: int, enabled: bool) -> None:
+    """Persist worker_slots[slot].enabled in profiles.yaml."""
+    try:
+        with open(PROFILES_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        cfg = data.setdefault("concurrency", {})
+        # Migration: worker_slots aus max_workers ableiten falls noch nicht vorhanden
+        if "worker_slots" not in cfg:
+            max_w    = cfg.get("max_workers", 1)
+            profiles = cfg.get("worker_profiles", ["normal"] * 4)
+            cfg["worker_slots"] = [
+                {"slot": i, "enabled": i < max_w,
+                 "profile": profiles[i] if i < len(profiles) else "normal"}
+                for i in range(4)
+            ]
+        for s in cfg["worker_slots"]:
+            if s.get("slot") == slot:
+                s["enabled"] = enabled
+                break
         with open(PROFILES_PATH, "w", encoding="utf-8") as f:
             yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
     except Exception:
@@ -160,22 +186,31 @@ def _save_worker_profile_for_slot(slot: int, profile_name: str) -> None:
 
 
 def _get_residential_thread_status() -> list[dict]:
-    """Gibt für jeden Residential-Slot (T0–T3): label, profil, aktiv, laufende Gruppe."""
-    cfg         = _get_concurrency_cfg()
-    max_workers = cfg.get("max_workers", 1)
-    profiles    = cfg.get("worker_profiles", ["normal"] * 4)
-    ws_threads  = {t.get("slot"): t for t in read_worker_state().get("threads", [])}
+    """Gibt für jeden Residential-Slot (T0–T3): label, profil, enabled, laufende Gruppe."""
+    cfg        = _get_concurrency_cfg()
+    ws_threads = {t.get("slot"): t for t in read_worker_state().get("threads", [])}
     _SLOT_BADGE = ["primary", "success", "warning", "info"]
 
+    # worker_slots (neu) oder Fallback auf max_workers
+    slots_cfg = cfg.get("worker_slots")
+    if not slots_cfg:
+        max_w    = cfg.get("max_workers", 1)
+        profiles = cfg.get("worker_profiles", ["normal"] * 4)
+        slots_cfg = [
+            {"slot": i, "enabled": i < max_w,
+             "profile": profiles[i] if i < len(profiles) else "normal"}
+            for i in range(4)
+        ]
+
     result = []
-    for slot in range(4):
+    for s in sorted(slots_cfg, key=lambda x: x.get("slot", 0)):
+        slot    = s.get("slot", 0)
         ws      = ws_threads.get(slot, {})
-        profile = profiles[slot] if slot < len(profiles) else "normal"
         result.append({
             "slot":          slot,
             "label":         f"T{slot}",
-            "profile":       profile,
-            "is_active":     slot < max_workers,
+            "profile":       s.get("profile", "normal"),
+            "enabled":       s.get("enabled", False),
             "badge_color":   _SLOT_BADGE[slot % len(_SLOT_BADGE)],
             "current_group": ws.get("current_group", ""),
             "combos_done":   ws.get("combos_done", 0),
@@ -755,35 +790,8 @@ tab_heatmap = dbc.Container(fluid=True, children=[
         dbc.Col(metric_card("Skipped", "stat-skipped", STATUS_COLOR["skipped"]), width=2),
     ], className="mb-3 g-2 mt-3"),
 
-    # Worker-Controls Toolbar
+    # Globale Worker-Controls (kompakt)
     dbc.Row([
-        dbc.Col([
-            dbc.Label("Scrape-Profil", className="small text-muted mb-1"),
-            dcc.Dropdown(
-                id="dd-profile",
-                options=[{"label": p, "value": p} for p in pm.available()],
-                value=pm.get_active()["name"], clearable=False,
-            ),
-        ], width=2),
-        dbc.Col([
-            dbc.Label("Threads", className="small text-muted mb-1"),
-            dcc.Dropdown(
-                id="dd-workers",
-                options=[{"label": f"{n}×", "value": n} for n in (1, 2, 3, 4)],
-                value=_get_concurrency_cfg().get("max_workers", 1),
-                clearable=False,
-            ),
-        ], width=1),
-        dbc.Col([
-            dbc.Label("DC-DE", className="small text-muted mb-1"),
-            dbc.Switch(
-                id="sw-dc-de",
-                value=next((t.get("enabled", False) for t in
-                            _get_concurrency_cfg().get("datacenter_threads", [])
-                            if t.get("id") == "dc_de"), False),
-                className="mt-1",
-            ),
-        ], width=1),
         dbc.Col([
             dbc.Label("Max Gruppen", className="small text-muted mb-1"),
             dbc.Input(
@@ -791,7 +799,7 @@ tab_heatmap = dbc.Container(fluid=True, children=[
                 placeholder="∞", size="sm",
                 style={"width": "90px"},
             ),
-        ], width=1),
+        ], width=2),
         dbc.Col([
             dbc.Label("Max Stunden", className="small text-muted mb-1"),
             dbc.Input(
@@ -799,22 +807,17 @@ tab_heatmap = dbc.Container(fluid=True, children=[
                 placeholder="∞", size="sm",
                 style={"width": "90px"},
             ),
-        ], width=1),
+        ], width=2),
         dbc.Col([
             dbc.Label("Worker", className="small text-muted mb-1"),
             html.Div([
                 dbc.Button("▶ Start",    id="btn-start",   color="success", size="sm", className="me-1"),
-                dbc.Button("⏸ Pause",    id="btn-pause",   color="warning", size="sm", className="me-1"),
                 dbc.Button("⏹ Stop",     id="btn-stop",    color="danger",  size="sm", className="me-1"),
                 dbc.Button("🔄 Neustart", id="btn-restart", color="info",    size="sm",
-                           title="Aktuelle Gruppe abschließen, dann Worker neu starten (lädt neue Konfiguration)"),
+                           title="Profile & Toggle-Änderungen laden (wirksam nach Neustart)"),
             ]),
         ], width=4),
-    ], className="mb-2 align-items-end g-2"),
-
-    # Worker-Status (inline unter der Toolbar)
-    html.Div(id="worker-status-control",
-             className="small p-2 mb-3 bg-light rounded border"),
+    ], className="mb-3 align-items-end g-2"),
 
     # Thread-Panels: Residential + Datacenter nebeneinander
     dcc.Interval(id="interval-dc-status", interval=30_000, n_intervals=0),
@@ -898,16 +901,12 @@ AFFINITY_OPTIONS = [
 tab_queue = dbc.Container(fluid=True, children=[
     dcc.Interval(id="interval-queue", interval=15_000, n_intervals=0),
 
-    # ── Kopfzeile: Titel · Badge · Worker-Status ─────────────────────────
+    # ── Kopfzeile: Titel · Badge ─────────────────────────────────────────
     dbc.Row([
         dbc.Col(html.H5("Scraping-Queue", className="text-secondary fw-bold my-3"), width="auto"),
         dbc.Col(
             dbc.Badge(id="queue-count", color="primary", className="ms-2 align-self-center"),
             width="auto",
-        ),
-        dbc.Col(
-            html.Div(id="worker-status", className="small ms-4"),
-            width=True,
         ),
     ], align="center", className="mb-1"),
 
@@ -1212,64 +1211,24 @@ def refresh_land_grid(_, federation, active_tab):
 
 
 @app.callback(
-    Output("stat-total",          "children"),
-    Output("stat-done",           "children"),
-    Output("stat-pending",        "children"),
-    Output("stat-running",        "children"),
-    Output("stat-failed",         "children"),
-    Output("stat-skipped",        "children"),
-    Output("worker-status",       "children"),   # Queue-Tab-Header
-    Output("worker-status-control","children"),  # Steuerungs-Tab inline
+    Output("stat-total",    "children"),
+    Output("stat-done",     "children"),
+    Output("stat-pending",  "children"),
+    Output("stat-running",  "children"),
+    Output("stat-failed",   "children"),
+    Output("stat-skipped",  "children"),
     Input("interval-control", "n_intervals"),
     Input("main-tabs", "active_tab"),
 )
 def refresh_control_stats(_, active_tab):
-    """Aktualisiert Metric-Cards + Worker-Status (Tab Steuerung + Queue-Header)."""
-    if active_tab not in ("tab-heatmap", "tab-queue"):
-        return [dash.no_update] * 8
-    s  = query_global_stats()
-    ws = read_worker_state()
-    status_widget = _build_worker_status_widget(ws)
+    """Aktualisiert Metric-Cards (Tab Steuerung)."""
+    if active_tab != "tab-heatmap":
+        return [dash.no_update] * 6
+    s = query_global_stats()
     return (
         f"{s['total']:,}", f"{s['done']:,}", f"{s['pending']:,}",
         f"{s['running']:,}", f"{s['failed']:,}", f"{s['skipped']:,}",
-        status_widget, status_widget,
     )
-
-
-@app.callback(
-    Output("dd-profile", "value"),
-    Input("dd-profile", "value"),
-    prevent_initial_call=True,
-)
-def switch_profile(name):
-    if name:
-        pm.set_active(name)
-    return name
-
-
-@app.callback(
-    Output("dd-workers", "value"),
-    Input("dd-workers", "value"),
-    prevent_initial_call=True,
-)
-def set_max_workers(value):
-    """Persist max_workers to profiles.yaml. Wirksam nach Worker-Neustart."""
-    if value is not None:
-        _save_max_workers(int(value))
-    return value
-
-
-@app.callback(
-    Output("sw-dc-de", "value"),
-    Input("sw-dc-de", "value"),
-    prevent_initial_call=True,
-)
-def toggle_dc_de(enabled):
-    """Persist DC-DE enabled-Flag in profiles.yaml. Wirksam nach Worker-Neustart."""
-    if enabled is not None:
-        _save_dc_thread_enabled("dc_de", bool(enabled))
-    return enabled
 
 
 @app.callback(
@@ -1356,29 +1315,21 @@ def toggle_dc_thread(values, ids):
     Input("main-tabs", "active_tab"),
 )
 def refresh_residential_threads_panel(_, active_tab):
-    """Zeigt T0–T3 mit Profil-Dropdown, Aktiv-Status und laufender Gruppe."""
+    """Zeigt T0–T3 mit Toggle, Profil-Dropdown und laufender Gruppe."""
     import time as _time
 
     if active_tab != "tab-heatmap":
         return dash.no_update
 
-    threads  = _get_residential_thread_status()
-    max_workers = _get_concurrency_cfg().get("max_workers", 1)
+    threads      = _get_residential_thread_status()
     profile_opts = [{"label": p, "value": p} for p in
                     ["semi_aggressive", "normal", "semi_conservative",
                      "aggressive", "conservative"]]
-    _PROFILE_ABBR = {
-        "semi_aggressive":  "semi-aggr.",
-        "normal":           "normal",
-        "semi_conservative":"semi-conv.",
-        "aggressive":       "aggr.",
-        "conservative":     "conserv.",
-    }
 
     cards = []
     for t in threads:
         slot        = t["slot"]
-        is_active   = t["is_active"]
+        is_enabled  = t["enabled"]
         badge_color = t["badge_color"]
         profile     = t["profile"]
         grp         = t["current_group"]
@@ -1386,44 +1337,46 @@ def refresh_residential_threads_panel(_, active_tab):
 
         # Laufende Gruppe + Fortschritt
         if is_running:
-            c_done  = t["combos_done"]
-            c_total = t["combos_total"]
-            started = t["started_at"]
+            c_done    = t["combos_done"]
+            c_total   = t["combos_total"]
+            started   = t["started_at"]
             combo_str = f"{c_done}/{c_total}" if c_total else str(c_done)
             if started and c_done:
-                elapsed = _time.time() - started
-                cph = c_done / elapsed * 3600 if elapsed > 0 else 0
+                elapsed   = _time.time() - started
+                cph       = c_done / elapsed * 3600 if elapsed > 0 else 0
                 speed_str = f"  {cph:.0f} c/h"
             else:
                 speed_str = ""
-            parts   = grp.split("/")
+            parts    = grp.split("/")
             grp_disp = f"{parts[0]}/{parts[1]} · {parts[2]}" if len(parts) > 2 else grp
             status_el = html.Div([
                 html.Div(grp_disp, className="fw-semibold", style={"fontSize": "0.78rem"}),
                 html.Div(combo_str + speed_str, className="text-muted",
                          style={"fontSize": "0.75rem"}),
             ])
-        elif is_active:
+        elif is_enabled:
             status_el = html.Div("bereit", className="text-info",
                                  style={"fontSize": "0.78rem"})
         else:
             status_el = html.Div("inaktiv", className="text-muted",
                                  style={"fontSize": "0.78rem"})
 
-        border_color = f"var(--bs-{badge_color})" if is_active else "#9E9E9E"
+        border_color = f"var(--bs-{badge_color})" if is_enabled else "#9E9E9E"
 
         card = dbc.Card([
             dbc.CardBody([
-                # Slot-Badge + Aktiv-Indikator
+                # Slot-Badge + Toggle (analog zu DC-Karten)
                 html.Div([
                     html.Span(
                         t["label"],
                         className=f"badge bg-{badge_color} me-2"
                                   + (" text-dark" if badge_color == "warning" else ""),
                     ),
-                    html.Span(
-                        "🟢" if (is_active and is_running) else ("🔵" if is_active else "⚫"),
-                        style={"fontSize": "0.8rem"},
+                    dbc.Switch(
+                        id={"type": "residential-toggle", "slot": slot},
+                        value=is_enabled,
+                        className="d-inline-block align-middle",
+                        style={"transform": "scale(0.8)"},
                     ),
                 ], className="d-flex align-items-center mb-1"),
                 # Profil-Dropdown
@@ -1464,32 +1417,45 @@ def save_residential_profile(values, ids):
 
 
 @app.callback(
+    Output({"type": "residential-toggle", "slot": dash.ALL}, "value"),
+    Input({"type": "residential-toggle", "slot": dash.ALL}, "value"),
+    State({"type": "residential-toggle", "slot": dash.ALL}, "id"),
+    prevent_initial_call=True,
+)
+def toggle_residential_slot(values, ids):
+    """Persist enabled-Flag eines Residential-Slots in profiles.yaml."""
+    triggered = callback_context.triggered_id
+    if triggered and isinstance(triggered, dict):
+        slot = triggered.get("slot")
+        for val, id_dict in zip(values, ids):
+            if id_dict.get("slot") == slot:
+                _save_residential_slot_enabled(slot, bool(val))
+                break
+    return values
+
+
+@app.callback(
     Output("worker-cmd-out", "children"),
     Input("btn-start",   "n_clicks"),
-    Input("btn-pause",   "n_clicks"),
     Input("btn-stop",    "n_clicks"),
     Input("btn-restart", "n_clicks"),
     State("input-max-groups", "value"),
     State("input-max-hours",  "value"),
     prevent_initial_call=True,
 )
-def handle_worker_buttons(start, pause, stop, restart, max_groups, max_hours):
+def handle_worker_buttons(start, stop, restart, max_groups, max_hours):
     triggered = callback_context.triggered_id
     if triggered == "btn-start":
         state = read_worker_state()
-        state["command"]    = "run"
-        state["max_groups"] = int(max_groups) if max_groups else None
-        state["max_hours"]  = float(max_hours) if max_hours else None
-        state["started_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        state["command"]     = "run"
+        state["max_groups"]  = int(max_groups) if max_groups else None
+        state["max_hours"]   = float(max_hours) if max_hours else None
+        state["started_at"]  = time.strftime("%Y-%m-%dT%H:%M:%S")
         state["groups_done"] = 0
         WORKER_STATE_PATH.write_text(json.dumps(state, indent=2))
-    elif triggered == "btn-pause":
-        write_worker_state("pause")
     elif triggered == "btn-stop":
         write_worker_state("stopped")
     elif triggered == "btn-restart":
-        # Aktuelle Gruppe(n) fertig scrapen, dann Worker-Prozess beenden.
-        # Docker restart: unless-stopped startet ihn mit neuer Config (profiles.yaml) neu.
         write_worker_state("restart")
     return ""
 

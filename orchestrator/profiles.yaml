@@ -5,12 +5,27 @@ active_profile: normal
 # worker_profiles: Profil je Thread-Slot (Index 0, 1, 2, 3).
 # Erster Test: max_workers=2; auf 4 hochsetzen sobald stabil.
 concurrency:
+  # worker_slots: unabhängiges enabled-Flag + Profil pro Slot (ersetzt max_workers)
+  worker_slots:
+    - slot: 0
+      enabled: true
+      profile: semi_aggressive
+    - slot: 1
+      enabled: true
+      profile: normal
+    - slot: 2
+      enabled: false
+      profile: semi_conservative
+    - slot: 3
+      enabled: false
+      profile: semi_aggressive
+  # max_workers + worker_profiles: Backward-Compat (wird beim Start migriert)
   max_workers: 2
   worker_profiles:
-    - semi_aggressive   # T0
-    - normal            # T1
-    - semi_conservative # T2
-    - semi_aggressive   # T3
+    - semi_aggressive
+    - normal
+    - semi_conservative
+    - semi_aggressive
   # Datacenter-Threads: je 1 pro Land, mit eigenem ProxyJet-Host + Credentials
   # enabled: false → Thread wird nicht gestartet (bis Proxy bestellt + .env eingetragen)
   # timezone + active_hours: Thread läuft nur innerhalb 7–23 Uhr Ortszeit

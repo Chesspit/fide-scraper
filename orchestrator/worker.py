@@ -590,10 +590,24 @@ def run(
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    cfg   = _load_concurrency_config()
-    max_w = cfg.get("max_workers", 1)
+    cfg = _load_concurrency_config()
 
-    # Neues Format: datacenter_threads (Liste)
+    # Residential-Slots: worker_slots (neu) hat Priorität über max_workers
+    worker_slots = cfg.get("worker_slots", [])
+    if worker_slots:
+        active_slots = [s for s in worker_slots if s.get("enabled", False)]
+    else:
+        # Backward-Compat: aus max_workers + worker_profiles ableiten
+        max_w    = cfg.get("max_workers", 1)
+        profiles = cfg.get("worker_profiles", ["normal"] * 4)
+        active_slots = [
+            {"slot": i, "enabled": True,
+             "profile": profiles[i] if i < len(profiles) else "normal"}
+            for i in range(max_w)
+        ]
+    max_w = len(active_slots)  # Anzahl aktiver Residential-Threads
+
+    # Datacenter-Threads
     dc_thread_cfgs = [t for t in cfg.get("datacenter_threads", []) if t.get("enabled", False)]
 
     # Backward-Kompatibilität: altes datacenter-Block (single DC)
@@ -610,30 +624,23 @@ def run(
             "federations": [],
         }]
 
-    if max_w > 1 or dc_thread_cfgs:
-        _run_parallel_loop(max_w, cfg.get("worker_profiles", []),
-                           dc_thread_cfgs, profile_name, max_groups, max_hours)
+    if active_slots or dc_thread_cfgs:
+        _run_parallel_loop(active_slots, dc_thread_cfgs, profile_name, max_groups, max_hours)
     else:
         _run_single_loop(profile_name, max_groups, max_hours)
 
 
 def _run_parallel_loop(
-    max_w: int,
-    worker_profiles_cfg: list[str],
+    active_slots: list[dict],
     dc_thread_cfgs: list[dict],
     profile_override: str | None,
     max_groups: int | None,
     max_hours: float | None,
 ) -> None:
-    """Parallel mode: spawn max_w residential threads + enabled datacenter threads."""
+    """Parallel mode: spawn enabled residential slots + enabled datacenter threads."""
     proxy_manager = ProxyJetManager()
-    device = os.getenv("WORKER_DEVICE")
-
-    # Determine profile per slot; CLI --profile overrides slot-0
-    profiles_list = worker_profiles_cfg or (["normal"] * max_w)
-    if profile_override:
-        profiles_list = list(profiles_list)
-        profiles_list[0] = profile_override
+    device        = os.getenv("WORKER_DEVICE")
+    max_w         = len(active_slots)
 
     # Reset stale groups from previous run
     qm_main = QueueManager()
@@ -660,10 +667,10 @@ def _run_parallel_loop(
 
     if device:
         logger.info("Gerät-Filter: '%s'", device)
-    dc_info = " | ".join(f"{d['label']}={d['profile']}" for d, _ in active_dc)
-    logger.info("Parallel-Modus: %d Threads (%d residential + %d DC) — Residential: %s%s",
-                total_threads, max_w, len(active_dc),
-                ", ".join(f"T{i}={profiles_list[i % len(profiles_list)]}" for i in range(max_w)),
+    res_info = ", ".join(f"T{s['slot']}={s.get('profile','normal')}" for s in active_slots)
+    dc_info  = " | ".join(f"{d['label']}={d['profile']}" for d, _ in active_dc)
+    logger.info("Parallel-Modus: %d Threads (%d residential + %d DC) — %s%s",
+                total_threads, max_w, len(active_dc), res_info,
                 f" | DC: {dc_info}" if dc_info else "")
     if max_groups:
         logger.info("Limit: %d Gruppen (gesamt über alle Threads)", max_groups)
@@ -684,17 +691,14 @@ def _run_parallel_loop(
     stop_event = threading.Event()
 
     with ThreadPoolExecutor(max_workers=total_threads, thread_name_prefix="scraper") as executor:
-        futures = [
-            executor.submit(
-                run_slot,
-                slot,
-                profiles_list[slot % len(profiles_list)],
-                device,
-                proxy_manager,
-                stop_event,
-            )
-            for slot in range(max_w)
-        ]
+        futures = []
+        for slot_cfg in active_slots:
+            slot         = slot_cfg["slot"]
+            profile_name = profile_override if (slot == active_slots[0]["slot"] and profile_override) \
+                           else slot_cfg.get("profile", "normal")
+            futures.append(executor.submit(
+                run_slot, slot, profile_name, device, proxy_manager, stop_event,
+            ))
         for dc_cfg, dc_proxy in active_dc:
             futures.append(executor.submit(run_dc_slot, dc_cfg, dc_proxy, stop_event))
 

@@ -1641,8 +1641,20 @@ def handle_worker_buttons(start, stop, restart, max_groups, max_hours):
         msg = ("⏹ Stop-Befehl gesetzt — Threads beenden aktuelle Gruppe und stoppen", "warning")
     elif triggered == "btn-restart":
         write_worker_state("restart")
-        msg = ("🔄 Neustart-Befehl gesetzt — Threads beenden aktuelle Gruppe, "
-               "Worker startet neu mit neuer Konfiguration", "info")
+        # Aktuelle Konfiguration aus profiles.yaml lesen für Bestätigungstext
+        cfg          = _get_concurrency_cfg()
+        dc_mode      = cfg.get("dc_mode", "auto")
+        dc_hours     = cfg.get("dc_active_hours", [7, 23])
+        slots        = cfg.get("worker_slots", [])
+        active_res   = sum(1 for s in slots if s.get("enabled", False)) if slots else cfg.get("max_workers", 1)
+        dc_threads   = [t for t in cfg.get("datacenter_threads", []) if t.get("enabled", False)]
+        dc_labels    = ", ".join(t["label"] for t in dc_threads) or "–"
+        mode_str     = f"auto {dc_hours[0]}–{dc_hours[1]} Uhr" if dc_mode == "auto" else "individuell"
+        msg = (
+            f"🔄 Neustart gesetzt — wird neu starten mit: "
+            f"{active_res}× Residential | DC: {dc_labels} | Modus: {mode_str}",
+            "info"
+        )
     else:
         return ""
     return dbc.Alert(msg[0], color=msg[1], duration=8000,

@@ -260,21 +260,41 @@ def query_federations(continent: str) -> list[str]:
 
 
 def query_overview() -> list[dict]:
+    """Scraping-Fortschritt pro (federation, elo_bucket).
+
+    Breite Bänder (z.B. SUI 2138–2575) werden auf ALLE betroffenen 50-Punkte-
+    Buckets aufgeteilt, damit die Heatmap keine Lücken mit 'nicht eingeplant'
+    zeigt, obwohl der ELO-Bereich von einer breiten Gruppe abgedeckt wird.
+    """
     placeholders = ",".join("?" * len(OVERVIEW_FEDERATIONS))
     conn = get_conn()
+    # Rohdaten: eine Zeile pro scrape_group (nicht aggregiert nach Bucket)
     rows = conn.execute(
-        f"""SELECT federation,
-                   (elo_min / 50) * 50 AS elo_bucket,
-                   COUNT(*) AS total,
-                   SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done_count
+        f"""SELECT federation, elo_min, elo_max, status
             FROM scrape_groups
-            WHERE federation IN ({placeholders})
-            GROUP BY federation, elo_bucket
-            ORDER BY federation, elo_bucket DESC""",
+            WHERE federation IN ({placeholders})""",
         OVERVIEW_FEDERATIONS,
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+
+    # Jede Gruppe auf alle 50-Punkte-Buckets aufteilen die sie abdeckt
+    from collections import defaultdict
+    bucket_data: dict[tuple, dict] = defaultdict(lambda: {"total": 0, "done": 0})
+
+    for fed, elo_min, elo_max, status in rows:
+        lo_bucket = (elo_min // 50) * 50
+        hi_bucket = (elo_max // 50) * 50
+        for bucket in range(lo_bucket, hi_bucket + 50, 50):
+            key = (fed, bucket)
+            bucket_data[key]["total"] += 1
+            if status == "done":
+                bucket_data[key]["done"] += 1
+
+    return [
+        {"federation": fed, "elo_bucket": bkt,
+         "total": v["total"], "done_count": v["done"]}
+        for (fed, bkt), v in bucket_data.items()
+    ]
 
 
 def query_grid(federation: str) -> list[dict]:

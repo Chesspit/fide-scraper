@@ -704,7 +704,6 @@ tab_heatmap = dbc.Container(fluid=True, children=[
                             _get_concurrency_cfg().get("datacenter_threads", [])
                             if t.get("id") == "dc_de"), False),
                 className="mt-1",
-                title="DC-DE Thread (proxy-jet.io)",
             ),
         ], width=1),
         dbc.Col([

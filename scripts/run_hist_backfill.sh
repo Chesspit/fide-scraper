@@ -20,7 +20,7 @@ fi
 
 # Perioden je Gruppe
 case "$HIST_GROUP" in
-    hist_2012_h1) FROM_DATE="2012-01-01"; TO_DATE="2012-05-01" ;;
+    hist_2012_h1) FROM_DATE="2012-01-01"; TO_DATE="2012-07-01" ;;  # 4 Perioden: Jan, Mrz, Mai, Jul
     hist_2011_h2) FROM_DATE="2011-07-01"; TO_DATE="2011-11-01" ;;
     hist_2011_h1) FROM_DATE="2011-01-01"; TO_DATE="2011-05-01" ;;
     hist_2010_h2) FROM_DATE="2010-07-01"; TO_DATE="2010-11-01" ;;

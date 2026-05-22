@@ -94,6 +94,30 @@ def _save_datacenter_enabled(enabled: bool) -> None:
         pass
 
 
+def _save_dc_mode(mode: str) -> None:
+    """Persist dc_mode ('auto'|'individual') in profiles.yaml."""
+    try:
+        with open(PROFILES_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        data.setdefault("concurrency", {})["dc_mode"] = mode
+        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+    except Exception:
+        pass
+
+
+def _save_dc_active_hours(h_start: int, h_end: int) -> None:
+    """Persist dc_active_hours in profiles.yaml."""
+    try:
+        with open(PROFILES_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        data.setdefault("concurrency", {})["dc_active_hours"] = [int(h_start), int(h_end)]
+        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+    except Exception:
+        pass
+
+
 def _save_dc_thread_enabled(dc_id: str, enabled: bool) -> None:
     """Persist enabled-Flag für einen DC-Thread in profiles.yaml."""
     try:
@@ -892,12 +916,43 @@ tab_heatmap = dbc.Container(fluid=True, children=[
         dbc.Col(
             dbc.Card(
                 dbc.CardBody([
+                    # Kopfzeile: Titel + Modus-Toggle
                     html.Div([
                         html.Span("🖥 Datacenter Threads",
                                   className="fw-semibold me-3 small"),
-                        html.Span("(wirksam nach Neustart)",
-                                  className="text-muted small"),
-                    ], className="mb-2"),
+                        dbc.RadioItems(
+                            id="dc-mode-toggle",
+                            options=[
+                                {"label": "🤖 Automatisch", "value": "auto"},
+                                {"label": "🖐 Individuell", "value": "individual"},
+                            ],
+                            value=_get_concurrency_cfg().get("dc_mode", "auto"),
+                            inline=True,
+                            className="small d-inline-flex",
+                            inputClassName="me-1",
+                            labelClassName="me-3",
+                        ),
+                    ], className="mb-2 d-flex align-items-center flex-wrap gap-2"),
+                    # Zeitfenster (nur sichtbar im auto-Modus)
+                    html.Div([
+                        html.Span("Aktiv von", className="small text-muted me-1"),
+                        dbc.Input(
+                            id="dc-hours-start",
+                            type="number", min=0, max=23, step=1,
+                            value=_get_concurrency_cfg().get("dc_active_hours", [7, 23])[0],
+                            size="sm", style={"width": "60px", "display": "inline-block"},
+                        ),
+                        html.Span(" bis ", className="small text-muted mx-1"),
+                        dbc.Input(
+                            id="dc-hours-end",
+                            type="number", min=0, max=24, step=1,
+                            value=_get_concurrency_cfg().get("dc_active_hours", [7, 23])[1],
+                            size="sm", style={"width": "60px", "display": "inline-block"},
+                        ),
+                        html.Span(" Uhr (Ortszeit)", className="small text-muted ms-1"),
+                        html.Span(" · wirksam nach Neustart",
+                                  className="small text-muted ms-2"),
+                    ], id="dc-hours-row", className="mb-2"),
                     html.Div(id="dc-threads-panel",
                              className="d-flex flex-wrap gap-2"),
                 ], className="py-2 px-3"),
@@ -1304,11 +1359,47 @@ def refresh_control_stats(_, active_tab):
 
 
 @app.callback(
+    Output("dc-mode-toggle", "value"),
+    Input("dc-mode-toggle", "value"),
+    prevent_initial_call=True,
+)
+def save_dc_mode(mode):
+    if mode:
+        _save_dc_mode(mode)
+    return mode
+
+
+@app.callback(
+    Output("dc-hours-row", "style"),
+    Input("dc-mode-toggle", "value"),
+)
+def toggle_dc_hours_visibility(mode):
+    """Zeitfenster nur im auto-Modus anzeigen."""
+    if mode == "auto":
+        return {"marginBottom": "8px"}
+    return {"display": "none"}
+
+
+@app.callback(
+    Output("dc-hours-start", "value"),
+    Output("dc-hours-end",   "value"),
+    Input("dc-hours-start",  "value"),
+    Input("dc-hours-end",    "value"),
+    prevent_initial_call=True,
+)
+def save_dc_hours(h_start, h_end):
+    if h_start is not None and h_end is not None:
+        _save_dc_active_hours(int(h_start), int(h_end))
+    return h_start, h_end
+
+
+@app.callback(
     Output("dc-threads-panel", "children"),
     Input("interval-dc-status", "n_intervals"),
     Input("main-tabs", "active_tab"),
+    Input("dc-mode-toggle", "value"),
 )
-def refresh_dc_threads_panel(_, active_tab):
+def refresh_dc_threads_panel(_, active_tab, dc_mode):
     """Zeigt alle DC-Threads mit Status, Ortszeit und Toggle."""
     threads = _get_dc_thread_status()
     ws_threads = {t.get("slot"): t for t in read_worker_state().get("threads", [])}
@@ -1326,18 +1417,25 @@ def refresh_dc_threads_panel(_, active_tab):
         is_running  = bool(ws.get("current_group"))
         is_sleeping = str(ws.get("current_group", "")).startswith("💤")
 
+        is_auto = (dc_mode == "auto")
+
         if not has_creds:
             status_badge_el = dbc.Badge("kein Proxy", color="light", text_color="secondary")
         elif is_sleeping:
             status_badge_el = dbc.Badge("💤 schläft", color="secondary")
         elif is_running:
             status_badge_el = dbc.Badge("▶ aktiv", color="success")
-        elif is_enabled and is_active:
+        elif is_enabled and (is_active or not is_auto):
             status_badge_el = dbc.Badge("bereit", color="info")
-        elif is_enabled and not is_active:
+        elif is_enabled and is_auto and not is_active:
             status_badge_el = dbc.Badge("außerhalb", color="warning", text_color="dark")
         else:
             status_badge_el = dbc.Badge("aus", color="light", text_color="muted")
+
+        time_div = html.Div(
+            f"🕐 {local_time} ({t['timezone'].split('/')[-1]})",
+            className="text-muted small" + ("" if (is_active or not is_auto) else " text-warning"),
+        ) if is_auto else html.Div("🖐 individuell", className="text-muted small")
 
         card = dbc.Card([
             dbc.CardBody([
@@ -1351,8 +1449,7 @@ def refresh_dc_threads_panel(_, active_tab):
                         style={"transform": "scale(0.8)"},
                     ),
                 ], className="d-flex align-items-center mb-1"),
-                html.Div(f"🕐 {local_time} ({t['timezone'].split('/')[-1]})",
-                         className="text-muted" + " small" + ("" if is_active else " text-warning")),
+                time_div,
                 html.Div(status_badge_el, className="my-1"),
                 html.Div(feds, className="text-muted", style={"fontSize": "0.75rem"}),
             ], className="p-2"),

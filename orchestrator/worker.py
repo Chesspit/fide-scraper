@@ -607,8 +607,18 @@ def run(
         ]
     max_w = len(active_slots)  # Anzahl aktiver Residential-Threads
 
-    # Datacenter-Threads
-    dc_thread_cfgs = [t for t in cfg.get("datacenter_threads", []) if t.get("enabled", False)]
+    # DC-Modus + globale active_hours aus Config lesen
+    dc_mode         = cfg.get("dc_mode", "auto")            # "auto" | "individual"
+    dc_active_hours = cfg.get("dc_active_hours", [7, 23])   # gilt für alle DC-Threads im auto-Modus
+
+    # Datacenter-Threads: dc_mode + active_hours in jeden Thread-Config injizieren
+    dc_thread_cfgs_raw = [t for t in cfg.get("datacenter_threads", []) if t.get("enabled", False)]
+    dc_thread_cfgs = []
+    for t in dc_thread_cfgs_raw:
+        t_copy = dict(t)
+        t_copy["dc_mode"]      = dc_mode
+        t_copy["active_hours"] = dc_active_hours   # globales Fenster überschreibt per-Thread
+        dc_thread_cfgs.append(t_copy)
 
     # Backward-Kompatibilität: altes datacenter-Block (single DC)
     if not dc_thread_cfgs and cfg.get("datacenter", {}).get("enabled", False):
@@ -777,11 +787,12 @@ def run_dc_slot(
                 except Exception:
                     pass
 
-            # Timezone-Check: nur innerhalb active_hours aktiv
-            if not _dc_is_active(dc_cfg):
+            # Timezone-Check: nur im auto-Modus aktiv
+            dc_mode = dc_cfg.get("dc_mode", "auto")
+            if dc_mode == "auto" and not _dc_is_active(dc_cfg):
                 secs = _dc_seconds_until_active(dc_cfg)
                 h_start = dc_cfg.get("active_hours", [7, 23])[0]
-                logger.info("DC-Thread %s: außerhalb Aktivzeiten — schlafe %.0f s (bis %02d:00 Uhr %s)",
+                logger.info("DC-Thread %s [auto]: außerhalb Aktivzeiten — schlafe %.0f s (bis %02d:00 Uhr %s)",
                             label, secs, h_start, dc_cfg.get("timezone", ""))
                 _update_thread_slot(slot,
                     profile=profile_name,

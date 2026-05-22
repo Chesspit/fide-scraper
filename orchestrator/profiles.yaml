@@ -44,7 +44,7 @@ concurrency:
       enabled: false
       label: DC-UK
       slot: 101
-      host: gb.proxy-jet.io
+      host: eu.proxy-jet.io
       port: 1010
       username_env: PROXYJET_DC_UK_USERNAME
       password_env: PROXYJET_DC_UK_PASSWORD
@@ -56,7 +56,7 @@ concurrency:
       enabled: false
       label: DC-US
       slot: 102
-      host: us.proxy-jet.io
+      host: ca.proxy-jet.io
       port: 1010
       username_env: PROXYJET_DC_US_USERNAME
       password_env: PROXYJET_DC_US_PASSWORD
@@ -68,7 +68,7 @@ concurrency:
       enabled: false
       label: DC-HK
       slot: 103
-      host: hk.proxy-jet.io
+      host: in.proxy-jet.io
       port: 1010
       username_env: PROXYJET_DC_HK_USERNAME
       password_env: PROXYJET_DC_HK_PASSWORD

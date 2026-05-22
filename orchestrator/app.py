@@ -285,6 +285,8 @@ def query_overview() -> list[dict]:
         lo_bucket = (elo_min // 50) * 50
         hi_bucket = (elo_max // 50) * 50
         for bucket in range(lo_bucket, hi_bucket + 50, 50):
+            if bucket >= 2300:          # ≥ 2300 = Mac Mini → nicht in Übersicht
+                continue
             key = (fed, bucket)
             bucket_data[key]["total"] += 1
             if status == "done":

@@ -611,13 +611,20 @@ def run(
     dc_mode         = cfg.get("dc_mode", "auto")            # "auto" | "individual"
     dc_active_hours = cfg.get("dc_active_hours", [7, 23])   # gilt für alle DC-Threads im auto-Modus
 
-    # Datacenter-Threads: dc_mode + active_hours in jeden Thread-Config injizieren
-    dc_thread_cfgs_raw = [t for t in cfg.get("datacenter_threads", []) if t.get("enabled", False)]
+    # Datacenter-Threads auswählen je nach Modus:
+    #   auto:       ALLE Threads mit Credentials starten (Timezone entscheidet Aktivität)
+    #   individual: nur explizit enabled=true Threads starten (kein Timezone-Check)
+    all_dc = cfg.get("datacenter_threads", [])
+    if dc_mode == "auto":
+        dc_thread_cfgs_raw = all_dc   # alle — credentials-Check folgt in _run_parallel_loop
+    else:
+        dc_thread_cfgs_raw = [t for t in all_dc if t.get("enabled", False)]
+
     dc_thread_cfgs = []
     for t in dc_thread_cfgs_raw:
         t_copy = dict(t)
         t_copy["dc_mode"]      = dc_mode
-        t_copy["active_hours"] = dc_active_hours   # globales Fenster überschreibt per-Thread
+        t_copy["active_hours"] = dc_active_hours
         dc_thread_cfgs.append(t_copy)
 
     # Backward-Kompatibilität: altes datacenter-Block (single DC)

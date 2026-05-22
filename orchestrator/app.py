@@ -1437,24 +1437,35 @@ def refresh_dc_threads_panel(_, active_tab, dc_mode):
             className="text-muted small" + ("" if (is_active or not is_auto) else " text-warning"),
         ) if is_auto else html.Div("🖐 individuell", className="text-muted small")
 
+        # Im auto-Modus: Toggle deaktiviert (läuft automatisch wenn Credentials vorhanden)
+        # Im individual-Modus: Toggle aktiv
+        toggle_el = dbc.Switch(
+            id={"type": "dc-thread-toggle", "id": t["id"]},
+            value=is_enabled,
+            disabled=(not has_creds) or is_auto,  # im auto-Modus immer disabled
+            className="d-inline-block align-middle",
+            style={"transform": "scale(0.8)", "opacity": "0.4" if is_auto else "1"},
+        )
+
+        # Aktiv-Indikator: im auto-Modus nur durch Credentials + Timezone bestimmt
+        border_color = (
+            "#4CAF50" if (has_creds and (not is_auto or is_active))
+            else ("#FF9800" if (has_creds and is_auto and not is_active)
+            else "#9E9E9E")
+        )
+
         card = dbc.Card([
             dbc.CardBody([
                 html.Div([
                     html.Span(label, className="fw-bold me-2 small"),
-                    dbc.Switch(
-                        id={"type": "dc-thread-toggle", "id": t["id"]},
-                        value=is_enabled,
-                        disabled=not has_creds,
-                        className="d-inline-block align-middle",
-                        style={"transform": "scale(0.8)"},
-                    ),
+                    toggle_el,
                 ], className="d-flex align-items-center mb-1"),
                 time_div,
                 html.Div(status_badge_el, className="my-1"),
                 html.Div(feds, className="text-muted", style={"fontSize": "0.75rem"}),
             ], className="p-2"),
         ], style={"minWidth": "130px", "maxWidth": "150px",
-                  "borderLeft": f"3px solid {'#4CAF50' if is_enabled and has_creds else '#9E9E9E'}"})
+                  "borderLeft": f"3px solid {border_color}"})
         cards.append(card)
 
     return cards

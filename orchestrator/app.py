@@ -896,7 +896,7 @@ tab_heatmap = dbc.Container(fluid=True, children=[
 QUEUE_COLUMNS = [
     {"name": "Priorität",   "id": "priority",        "editable": True,  "type": "numeric"},
     {"name": "Gerät",       "id": "device",          "editable": True,  "presentation": "dropdown"},
-    {"name": "Thread",      "id": "thread_affinity", "editable": True,  "presentation": "dropdown"},
+    {"name": "Thread",      "id": "thread_affinity", "editable": False},
     {"name": "Föd.",        "id": "federation",      "editable": False},
     {"name": "Kontinent",   "id": "continent",       "editable": False},
     {"name": "Jahr",        "id": "year",            "editable": False, "type": "numeric"},
@@ -983,7 +983,6 @@ tab_queue = dbc.Container(fluid=True, children=[
         row_selectable="single",
         dropdown={
             "device":           {"options": DEVICE_OPTIONS,   "clearable": True},
-            "thread_affinity":  {"options": AFFINITY_OPTIONS, "clearable": True},
         },
         page_size=50,
         page_action="native",
@@ -1693,17 +1692,7 @@ def save_queue_edits(current_data, previous_data):
                 update_group_device(curr["id"], curr.get("device", "") or "")
             except (ValueError, TypeError, KeyError):
                 pass
-        if curr.get("thread_affinity") != prev.get("thread_affinity"):
-            try:
-                val = curr.get("thread_affinity", "") or ""
-                # Nicht speichern wenn es ein Live-Anzeige-Wert ist (▶ T1, ▶ DC-IN)
-                if not val.startswith("▶"):
-                    # Label → raw-Wert zurück (DC-IN → dc_in)
-                    _label_to_raw = {"DC-DE": "dc_de", "DC-IN": "dc_in", "DC-UK": "dc_uk",
-                                     "DC-US": "dc_us", "DC-HK": "dc_hk"}
-                    update_group_thread_affinity(curr["id"], _label_to_raw.get(val, val))
-            except (ValueError, TypeError, KeyError):
-                pass
+        # thread_affinity ist read-only in der Tabelle → kein Speichern nötig
     return ""
 
 

@@ -142,6 +142,50 @@ def _get_dc_thread_status() -> list[dict]:
     return result
 
 
+def _save_worker_profile_for_slot(slot: int, profile_name: str) -> None:
+    """Persist worker_profiles[slot] in profiles.yaml. Wirksam nach Worker-Neustart."""
+    try:
+        with open(PROFILES_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        profiles = data.setdefault("concurrency", {}).setdefault(
+            "worker_profiles", ["normal", "normal", "normal", "normal"])
+        while len(profiles) <= slot:
+            profiles.append("normal")
+        profiles[slot] = profile_name
+        data["concurrency"]["worker_profiles"] = profiles
+        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+    except Exception:
+        pass
+
+
+def _get_residential_thread_status() -> list[dict]:
+    """Gibt für jeden Residential-Slot (T0–T3): label, profil, aktiv, laufende Gruppe."""
+    cfg         = _get_concurrency_cfg()
+    max_workers = cfg.get("max_workers", 1)
+    profiles    = cfg.get("worker_profiles", ["normal"] * 4)
+    ws_threads  = {t.get("slot"): t for t in read_worker_state().get("threads", [])}
+    _SLOT_BADGE = ["primary", "success", "warning", "info"]
+
+    result = []
+    for slot in range(4):
+        ws      = ws_threads.get(slot, {})
+        profile = profiles[slot] if slot < len(profiles) else "normal"
+        result.append({
+            "slot":          slot,
+            "label":         f"T{slot}",
+            "profile":       profile,
+            "is_active":     slot < max_workers,
+            "badge_color":   _SLOT_BADGE[slot % len(_SLOT_BADGE)],
+            "current_group": ws.get("current_group", ""),
+            "combos_done":   ws.get("combos_done", 0),
+            "combos_total":  ws.get("combos_total"),
+            "player_count":  ws.get("player_count"),
+            "started_at":    ws.get("group_started_at"),
+        })
+    return result
+
+
 # Fuzzy-Label aus aktuellen Gewichten bauen (wird bei App-Start einmalig gelesen)
 def _fuzzy_label() -> str:
     weights_cfg = pm._data.get("fuzzy_weights", {})
@@ -772,21 +816,46 @@ tab_heatmap = dbc.Container(fluid=True, children=[
     html.Div(id="worker-status-control",
              className="small p-2 mb-3 bg-light rounded border"),
 
-    # DC-Threads Karte
+    # Thread-Panels: Residential + Datacenter nebeneinander
     dcc.Interval(id="interval-dc-status", interval=30_000, n_intervals=0),
-    dbc.Card(
-        dbc.CardBody([
-            html.Div([
-                html.Span("🖥 Datacenter-Threads",
-                          className="fw-semibold me-3 small"),
-                html.Span("(wirksam nach Neustart)",
-                          className="text-muted small"),
-            ], className="mb-2"),
-            html.Div(id="dc-threads-panel", className="d-flex flex-wrap gap-2"),
-        ], className="py-2 px-3"),
-        className="mb-3",
-        style={"borderLeft": "3px solid #9C27B0"},
-    ),
+    dbc.Row([
+        # Residential Threads
+        dbc.Col(
+            dbc.Card(
+                dbc.CardBody([
+                    html.Div([
+                        html.Span("🔄 Residential Threads",
+                                  className="fw-semibold me-3 small"),
+                        html.Span("(Profil wirksam nach Neustart)",
+                                  className="text-muted small"),
+                    ], className="mb-2"),
+                    html.Div(id="residential-threads-panel",
+                             className="d-flex flex-wrap gap-2"),
+                ], className="py-2 px-3"),
+                className="mb-3 h-100",
+                style={"borderLeft": "3px solid #1976D2"},
+            ),
+            width=6,
+        ),
+        # Datacenter Threads
+        dbc.Col(
+            dbc.Card(
+                dbc.CardBody([
+                    html.Div([
+                        html.Span("🖥 Datacenter Threads",
+                                  className="fw-semibold me-3 small"),
+                        html.Span("(wirksam nach Neustart)",
+                                  className="text-muted small"),
+                    ], className="mb-2"),
+                    html.Div(id="dc-threads-panel",
+                             className="d-flex flex-wrap gap-2"),
+                ], className="py-2 px-3"),
+                className="mb-3 h-100",
+                style={"borderLeft": "3px solid #9C27B0"},
+            ),
+            width=6,
+        ),
+    ], className="g-3"),
 
     # Dummy outputs
     html.Div(id="worker-cmd-out",  style={"display": "none"}),
@@ -1277,6 +1346,119 @@ def toggle_dc_thread(values, ids):
         for val, id_dict in zip(values, ids):
             if id_dict.get("id") == dc_id:
                 _save_dc_thread_enabled(dc_id, bool(val))
+                break
+    return values
+
+
+@app.callback(
+    Output("residential-threads-panel", "children"),
+    Input("interval-dc-status", "n_intervals"),
+    Input("main-tabs", "active_tab"),
+)
+def refresh_residential_threads_panel(_, active_tab):
+    """Zeigt T0–T3 mit Profil-Dropdown, Aktiv-Status und laufender Gruppe."""
+    import time as _time
+
+    if active_tab != "tab-heatmap":
+        return dash.no_update
+
+    threads  = _get_residential_thread_status()
+    max_workers = _get_concurrency_cfg().get("max_workers", 1)
+    profile_opts = [{"label": p, "value": p} for p in
+                    ["semi_aggressive", "normal", "semi_conservative",
+                     "aggressive", "conservative"]]
+    _PROFILE_ABBR = {
+        "semi_aggressive":  "semi-aggr.",
+        "normal":           "normal",
+        "semi_conservative":"semi-conv.",
+        "aggressive":       "aggr.",
+        "conservative":     "conserv.",
+    }
+
+    cards = []
+    for t in threads:
+        slot        = t["slot"]
+        is_active   = t["is_active"]
+        badge_color = t["badge_color"]
+        profile     = t["profile"]
+        grp         = t["current_group"]
+        is_running  = bool(grp)
+
+        # Laufende Gruppe + Fortschritt
+        if is_running:
+            c_done  = t["combos_done"]
+            c_total = t["combos_total"]
+            started = t["started_at"]
+            combo_str = f"{c_done}/{c_total}" if c_total else str(c_done)
+            if started and c_done:
+                elapsed = _time.time() - started
+                cph = c_done / elapsed * 3600 if elapsed > 0 else 0
+                speed_str = f"  {cph:.0f} c/h"
+            else:
+                speed_str = ""
+            parts   = grp.split("/")
+            grp_disp = f"{parts[0]}/{parts[1]} · {parts[2]}" if len(parts) > 2 else grp
+            status_el = html.Div([
+                html.Div(grp_disp, className="fw-semibold", style={"fontSize": "0.78rem"}),
+                html.Div(combo_str + speed_str, className="text-muted",
+                         style={"fontSize": "0.75rem"}),
+            ])
+        elif is_active:
+            status_el = html.Div("bereit", className="text-info",
+                                 style={"fontSize": "0.78rem"})
+        else:
+            status_el = html.Div("inaktiv", className="text-muted",
+                                 style={"fontSize": "0.78rem"})
+
+        border_color = f"var(--bs-{badge_color})" if is_active else "#9E9E9E"
+
+        card = dbc.Card([
+            dbc.CardBody([
+                # Slot-Badge + Aktiv-Indikator
+                html.Div([
+                    html.Span(
+                        t["label"],
+                        className=f"badge bg-{badge_color} me-2"
+                                  + (" text-dark" if badge_color == "warning" else ""),
+                    ),
+                    html.Span(
+                        "🟢" if (is_active and is_running) else ("🔵" if is_active else "⚫"),
+                        style={"fontSize": "0.8rem"},
+                    ),
+                ], className="d-flex align-items-center mb-1"),
+                # Profil-Dropdown
+                dcc.Dropdown(
+                    id={"type": "residential-profile-dd", "slot": slot},
+                    options=profile_opts,
+                    value=profile,
+                    clearable=False,
+                    style={"fontSize": "0.78rem", "minWidth": "130px"},
+                    className="mb-1",
+                ),
+                # Status / laufende Gruppe
+                status_el,
+            ], className="p-2"),
+        ], style={"minWidth": "150px", "maxWidth": "170px",
+                  "borderLeft": f"3px solid {border_color}"})
+        cards.append(card)
+
+    return cards
+
+
+@app.callback(
+    Output({"type": "residential-profile-dd", "slot": dash.ALL}, "value"),
+    Input({"type": "residential-profile-dd", "slot": dash.ALL}, "value"),
+    State({"type": "residential-profile-dd", "slot": dash.ALL}, "id"),
+    prevent_initial_call=True,
+)
+def save_residential_profile(values, ids):
+    """Persist Profil-Änderung eines Residential-Slots in profiles.yaml."""
+    triggered = callback_context.triggered_id
+    if triggered and isinstance(triggered, dict):
+        slot = triggered.get("slot")
+        for val, id_dict in zip(values, ids):
+            if id_dict.get("slot") == slot and val:
+                _save_worker_profile_for_slot(slot, val)
                 break
     return values
 

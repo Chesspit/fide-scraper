@@ -42,7 +42,7 @@ concurrency:
       timezone: Europe/Berlin
       active_hours: [7, 23]
       profile: semi_conservative
-      federations: [POL, UKR, LAT, LIT, LTU, EST, CZE, SVK]
+      federations: [POL, UKR, LAT, LIT, LTU, EST, CZE, SVK, FID]
     - id: dc_in
       enabled: false
       label: DC-IN

@@ -353,6 +353,8 @@ def query_queue(affinity_filter: str | None = None) -> list[dict]:
 
     if affinity_filter == "dc":
         where_extra = "AND thread_affinity IS NOT NULL"
+    elif affinity_filter in ("dc_de", "dc_in", "dc_uk", "dc_us", "dc_hk"):
+        where_extra = f"AND thread_affinity = '{affinity_filter}'"
     elif affinity_filter == "residential":
         where_extra = "AND thread_affinity IS NULL AND (device IS NULL OR device = '')"
     elif affinity_filter == "mac_mini":
@@ -933,21 +935,44 @@ tab_queue = dbc.Container(fluid=True, children=[
     ], align="center", className="mb-1"),
 
     # ── Kategorie-Filter ─────────────────────────────────────────────────
-    dbc.RadioItems(
-        id="queue-category-filter",
-        options=[
-            {"label": "Alle",        "value": "all"},
-            {"label": "🖥 Datacenter", "value": "dc"},
-            {"label": "🔄 Residential","value": "residential"},
-            {"label": "🍎 Mac Mini",   "value": "mac_mini"},
-            {"label": "🍓 Raspi",      "value": "raspi"},
-        ],
-        value="all",
-        inline=True,
-        className="mb-2 small",
-        inputClassName="me-1",
-        labelClassName="me-3",
-    ),
+    dbc.Row([
+        dbc.Col(
+            dbc.RadioItems(
+                id="queue-category-filter",
+                options=[
+                    {"label": "Alle",          "value": "all"},
+                    {"label": "🖥 Datacenter",  "value": "dc"},
+                    {"label": "🔄 Residential", "value": "residential"},
+                    {"label": "🍎 Mac Mini",    "value": "mac_mini"},
+                    {"label": "🍓 Raspi",       "value": "raspi"},
+                ],
+                value="all",
+                inline=True,
+                className="small",
+                inputClassName="me-1",
+                labelClassName="me-3",
+            ),
+            width="auto",
+        ),
+        dbc.Col(
+            dcc.Dropdown(
+                id="queue-dc-filter",
+                options=[
+                    {"label": "Alle DC-Threads", "value": "dc"},
+                    {"label": "DC-DE",  "value": "dc_de"},
+                    {"label": "DC-IN",  "value": "dc_in"},
+                    {"label": "DC-UK",  "value": "dc_uk"},
+                    {"label": "DC-US",  "value": "dc_us"},
+                    {"label": "DC-HK",  "value": "dc_hk"},
+                ],
+                value="dc",
+                clearable=False,
+                style={"width": "160px", "fontSize": "0.85rem", "display": "none"},
+            ),
+            width="auto",
+            className="align-self-center",
+        ),
+    ], className="mb-2 align-items-center g-2"),
 
     dash_table.DataTable(
         id="queue-table",
@@ -1600,19 +1625,42 @@ def apply_status_override(n, group_id, override_status, dd_status):
 # ===========================================================================
 
 @app.callback(
+    Output("queue-dc-filter", "style"),
+    Input("queue-category-filter", "value"),
+)
+def toggle_dc_sub_filter(category):
+    """DC-Sub-Dropdown nur anzeigen wenn 'Datacenter' aktiv."""
+    if category == "dc":
+        return {"width": "160px", "fontSize": "0.85rem", "display": "inline-block"}
+    return {"width": "160px", "fontSize": "0.85rem", "display": "none"}
+
+
+@app.callback(
     Output("queue-table", "data"),
     Output("queue-count", "children"),
     Input("interval-queue", "n_intervals"),
     Input("main-tabs", "active_tab"),
     Input("queue-category-filter", "value"),
+    Input("queue-dc-filter", "value"),
 )
-def refresh_queue(_, active_tab, category_filter):
+def refresh_queue(_, active_tab, category_filter, dc_sub_filter):
     if active_tab != "tab-queue":
         return dash.no_update, dash.no_update
-    f = None if (category_filter == "all" or not category_filter) else category_filter
+
+    # DC-Sub-Filter: spezifischen DC-Thread oder alle DC
+    if category_filter == "dc" and dc_sub_filter and dc_sub_filter != "dc":
+        f = dc_sub_filter  # z.B. 'dc_in' → filtert WHERE thread_affinity='dc_in'
+        cat_label = {"dc_de": "DC-DE", "dc_in": "DC-IN", "dc_uk": "DC-UK",
+                     "dc_us": "DC-US", "dc_hk": "DC-HK"}.get(f, f)
+    elif category_filter == "all" or not category_filter:
+        f = None
+        cat_label = "alle"
+    else:
+        f = category_filter
+        cat_label = {"dc": "Datacenter", "residential": "Residential",
+                     "mac_mini": "Mac Mini", "raspi": "Raspi"}.get(f, f)
+
     rows = query_queue(affinity_filter=f)
-    cat_label = {"dc": "Datacenter", "residential": "Residential",
-                 "mac_mini": "Mac Mini", "raspi": "Raspi"}.get(f, "alle")
     return rows, f"{len(rows):,} Gruppen ({cat_label})"
 
 

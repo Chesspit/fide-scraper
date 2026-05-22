@@ -649,11 +649,57 @@ tab_overview = dbc.Container(fluid=True, children=[
 # ---------------------------------------------------------------------------
 # Tab 1 — Heatmap layout
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Tab 1b — Übersicht Land (Federation×Jahr-Heatmap + Detail-Modal)
+# ---------------------------------------------------------------------------
+tab_land = dbc.Container(fluid=True, children=[
+
+    dcc.Interval(id="interval-land", interval=10_000, n_intervals=0),
+    dcc.Store(id="selected-group-id"),
+
+    # Kontinent / Föderation-Auswahl
+    dbc.Row([
+        dbc.Col([
+            dbc.Label("Kontinent", className="small text-muted mb-1"),
+            dcc.Dropdown(
+                id="dd-continent",
+                options=[{"label": c, "value": c} for c in continents],
+                value=default_continent, clearable=False,
+            ),
+        ], width=2),
+        dbc.Col([
+            dbc.Label("Föderation", className="small text-muted mb-1"),
+            dcc.Dropdown(id="dd-federation", clearable=False),
+        ], width=3),
+    ], className="mb-3 align-items-end g-2 mt-3"),
+
+    # Legend
+    html.Div([
+        legend_item(STATUS_COLOR["done"],    "Done"),
+        legend_item(STATUS_COLOR["running"], "Running"),
+        legend_item(STATUS_COLOR["failed"],  "Failed"),
+    ], className="mb-2"),
+
+    # Heatmap
+    dcc.Graph(id="grid", config={"displayModeBar": False}),
+
+    # Detail Modal
+    dbc.Modal([
+        dbc.ModalHeader(dbc.ModalTitle(id="modal-title")),
+        dbc.ModalBody(id="modal-body"),
+        dbc.ModalFooter(id="modal-footer"),
+    ], id="detail-modal", is_open=False, size="lg"),
+
+    html.Div(id="modal-apply-out", style={"display": "none"}),
+], className="py-2")
+
+# ---------------------------------------------------------------------------
+# Tab 2 — Steuerung (Worker-Controls, Metric-Cards, DC-Threads)
+# ---------------------------------------------------------------------------
 tab_heatmap = dbc.Container(fluid=True, children=[
 
     # Auto-refresh
-    dcc.Interval(id="interval", interval=10_000, n_intervals=0),
-    dcc.Store(id="selected-group-id"),
+    dcc.Interval(id="interval-control", interval=10_000, n_intervals=0),
 
     # Metric cards
     dbc.Row([
@@ -663,22 +709,10 @@ tab_heatmap = dbc.Container(fluid=True, children=[
         dbc.Col(metric_card("Running", "stat-running", STATUS_COLOR["running"]), width=2),
         dbc.Col(metric_card("Failed",  "stat-failed",  STATUS_COLOR["failed"]),  width=2),
         dbc.Col(metric_card("Skipped", "stat-skipped", STATUS_COLOR["skipped"]), width=2),
-    ], className="mb-3 g-2"),
+    ], className="mb-3 g-2 mt-3"),
 
-    # Controls
+    # Worker-Controls Toolbar
     dbc.Row([
-        dbc.Col([
-            dbc.Label("Kontinent", className="small text-muted mb-1"),
-            dcc.Dropdown(
-                id="dd-continent",
-                options=[{"label": c, "value": c} for c in continents],
-                value=default_continent, clearable=False,
-            ),
-        ], width=1),
-        dbc.Col([
-            dbc.Label("Föderation", className="small text-muted mb-1"),
-            dcc.Dropdown(id="dd-federation", clearable=False),
-        ], width=2),
         dbc.Col([
             dbc.Label("Scrape-Profil", className="small text-muted mb-1"),
             dcc.Dropdown(
@@ -731,8 +765,12 @@ tab_heatmap = dbc.Container(fluid=True, children=[
                 dbc.Button("🔄 Neustart", id="btn-restart", color="info",    size="sm",
                            title="Aktuelle Gruppe abschließen, dann Worker neu starten (lädt neue Konfiguration)"),
             ]),
-        ], width=3),
-    ], className="mb-3 align-items-end g-2"),
+        ], width=4),
+    ], className="mb-2 align-items-end g-2"),
+
+    # Worker-Status (inline unter der Toolbar)
+    html.Div(id="worker-status-control",
+             className="small p-2 mb-3 bg-light rounded border"),
 
     # DC-Threads Karte
     dcc.Interval(id="interval-dc-status", interval=30_000, n_intervals=0),
@@ -750,26 +788,8 @@ tab_heatmap = dbc.Container(fluid=True, children=[
         style={"borderLeft": "3px solid #9C27B0"},
     ),
 
-    # Legend
-    html.Div([
-        legend_item(STATUS_COLOR["done"],    "Done"),
-        legend_item(STATUS_COLOR["running"], "Running"),
-        legend_item(STATUS_COLOR["failed"],  "Failed"),
-    ], className="mb-2"),
-
-    # Heatmap
-    dcc.Graph(id="grid", config={"displayModeBar": False}),
-
-    # Detail Modal
-    dbc.Modal([
-        dbc.ModalHeader(dbc.ModalTitle(id="modal-title")),
-        dbc.ModalBody(id="modal-body"),
-        dbc.ModalFooter(id="modal-footer"),
-    ], id="detail-modal", is_open=False, size="lg"),
-
     # Dummy outputs
     html.Div(id="worker-cmd-out",  style={"display": "none"}),
-    html.Div(id="modal-apply-out", style={"display": "none"}),
 ])
 
 # ---------------------------------------------------------------------------
@@ -946,10 +966,11 @@ app.layout = dbc.Container(fluid=True, children=[
         className="my-3 text-secondary fw-bold",
     ))),
     dbc.Tabs([
-        dbc.Tab(tab_overview, label="🌍 Übersicht",   tab_id="tab-overview"),
-        dbc.Tab(tab_heatmap,  label="🗺️ Heatmap",    tab_id="tab-heatmap"),
-        dbc.Tab(tab_queue,    label="📋 Queue",       tab_id="tab-queue"),
-        dbc.Tab(tab_completed,label="✅ Abgeschlossen", tab_id="tab-completed"),
+        dbc.Tab(tab_overview, label="🌍 Übersicht",        tab_id="tab-overview"),
+        dbc.Tab(tab_land,     label="🗺️ Übersicht Land",   tab_id="tab-land"),
+        dbc.Tab(tab_heatmap,  label="⚙️ Steuerung",        tab_id="tab-heatmap"),
+        dbc.Tab(tab_queue,    label="📋 Queue",             tab_id="tab-queue"),
+        dbc.Tab(tab_completed,label="✅ Abgeschlossen",     tab_id="tab-completed"),
     ], id="main-tabs", active_tab="tab-overview"),
 ], style={"backgroundColor": "#F8F9FA", "minHeight": "100vh", "paddingBottom": "40px"})
 
@@ -971,36 +992,19 @@ def update_federation_dropdown(continent):
     return opts, default
 
 
-@app.callback(
-    Output("grid", "figure"),
-    Output("stat-total",   "children"),
-    Output("stat-done",    "children"),
-    Output("stat-pending", "children"),
-    Output("stat-running", "children"),
-    Output("stat-failed",  "children"),
-    Output("stat-skipped", "children"),
-    Output("worker-status", "children"),
-    Input("interval", "n_intervals"),
-    Input("dd-federation", "value"),
-)
-def refresh_heatmap(_, federation):
-    if not federation:
-        return dash.no_update, *["–"] * 6, "–"
-    fig = build_figure(federation)
-    s = query_global_stats()
-    ws = read_worker_state()
-    cmd = ws.get("command", "stopped")
-    done = ws.get("groups_done", 0)
-    max_g = ws.get("max_groups")
-    max_h = ws.get("max_hours")
-    limits = []
-    if max_g: limits.append(f"{done}/{max_g} Gruppen")
-    if max_h: limits.append(f"max {max_h}h")
-    limit_str = f" · {', '.join(limits)}" if limits else ""
-
+def _build_worker_status_widget(ws: dict) -> html.Div:
+    """Shared helper: baut das Worker-Status-Widget aus worker_state.json."""
     import time as _time
 
     _SLOT_BADGE = ["primary", "success", "warning", "info"]
+    _DC_SLOT_LABELS = {99: "DC-DE", 100: "DC-IN", 101: "DC-UK", 102: "DC-US", 103: "DC-HK"}
+    _PROFILE_ABBR = {
+        "semi_aggressive":  "semi-aggr.",
+        "aggressive":       "aggr.",
+        "normal":           "normal",
+        "semi_conservative":"semi-conv.",
+        "conservative":     "conserv.",
+    }
 
     def _speed_eta(started_at, c_done, c_total):
         if not started_at or not c_done:
@@ -1015,10 +1019,19 @@ def refresh_heatmap(_, federation):
             s += f" · ETA {int(eta_sec // 3600)}h{int((eta_sec % 3600) // 60):02d}m"
         return s
 
-    threads      = ws.get("threads", [])
+    cmd           = ws.get("command", "stopped")
+    done          = ws.get("groups_done", 0)
+    max_g         = ws.get("max_groups")
+    max_h         = ws.get("max_hours")
+    threads       = ws.get("threads", [])
     current_group = ws.get("current_group")
-    done_total   = ws.get("groups_done", 0)
-    max_w        = ws.get("max_workers", 1)
+    done_total    = ws.get("groups_done", 0)
+    max_w         = ws.get("max_workers", 1)
+
+    limits = []
+    if max_g: limits.append(f"{done}/{max_g} Gruppen")
+    if max_h: limits.append(f"max {max_h}h")
+    limit_str = f" · {', '.join(limits)}" if limits else ""
 
     status_children = [
         html.Div(
@@ -1027,16 +1040,7 @@ def refresh_heatmap(_, federation):
         )
     ]
 
-    _PROFILE_ABBR = {
-        "semi_aggressive":  "semi-aggr.",
-        "aggressive":       "aggr.",
-        "normal":           "normal",
-        "semi_conservative":"semi-conv.",
-        "conservative":     "conserv.",
-    }
-
     if threads:
-        # Parallel-Modus: alle Threads nebeneinander in einem Flex-Container
         thread_blocks = []
         for t in sorted(threads, key=lambda x: x.get("slot", 0)):
             slot       = t.get("slot", 0)
@@ -1056,14 +1060,12 @@ def refresh_heatmap(_, federation):
             player_str = f"{n_players}P · " if n_players else ""
             perf_str   = _speed_eta(started_at, c_done, c_total)
             abbr       = _PROFILE_ABBR.get(t_profile, t_profile[:4].upper())
-
-            _DC_SLOT_LABELS = {99: "DC-DE", 100: "DC-IN", 101: "DC-UK", 102: "DC-US", 103: "DC-HK"}
             is_sleeping = grp.startswith("💤")
 
             if slot in _DC_SLOT_LABELS:
-                dc_label   = _DC_SLOT_LABELS[slot]
-                badge_cls  = "badge bg-secondary me-1" + (" opacity-50" if is_sleeping else "")
-                slot_label = dc_label + (" 💤" if is_sleeping else "")
+                dc_label    = _DC_SLOT_LABELS[slot]
+                badge_cls   = "badge bg-secondary me-1" + (" opacity-50" if is_sleeping else "")
+                slot_label  = dc_label + (" 💤" if is_sleeping else "")
                 badge_color = "secondary"
             else:
                 badge_color = _SLOT_BADGE[slot % len(_SLOT_BADGE)]
@@ -1082,7 +1084,6 @@ def refresh_heatmap(_, federation):
                     className="text-muted lh-sm",
                 ),
             ]
-
             thread_blocks.append(html.Div(lines, style={
                 "borderLeft": f"3px solid var(--bs-{badge_color})",
                 "paddingLeft": "8px",
@@ -1097,7 +1098,6 @@ def refresh_heatmap(_, federation):
         )
 
     elif current_group:
-        # Single-Thread-Modus
         profile_name = ws.get("current_profile", "?")
         c_done    = ws.get("combos_done", 0)
         c_total   = ws.get("combos_total")
@@ -1124,12 +1124,48 @@ def refresh_heatmap(_, federation):
             html.Div(f"{done_total} Gruppen ✓", className="text-muted mt-1 border-top pt-1"),
         ]
 
-    status_widget = html.Div(status_children, className="small")
+    return html.Div(status_children, className="small")
 
-    return (fig,
-            f"{s['total']:,}", f"{s['done']:,}", f"{s['pending']:,}",
-            f"{s['running']:,}", f"{s['failed']:,}", f"{s['skipped']:,}",
-            status_widget)
+
+@app.callback(
+    Output("grid", "figure"),
+    Input("interval-land", "n_intervals"),
+    Input("dd-federation", "value"),
+    Input("main-tabs", "active_tab"),
+)
+def refresh_land_grid(_, federation, active_tab):
+    """Aktualisiert die Federation×Jahr-Heatmap (Tab Übersicht Land)."""
+    if active_tab != "tab-land":
+        return dash.no_update
+    if not federation:
+        return dash.no_update
+    return build_figure(federation)
+
+
+@app.callback(
+    Output("stat-total",          "children"),
+    Output("stat-done",           "children"),
+    Output("stat-pending",        "children"),
+    Output("stat-running",        "children"),
+    Output("stat-failed",         "children"),
+    Output("stat-skipped",        "children"),
+    Output("worker-status",       "children"),   # Queue-Tab-Header
+    Output("worker-status-control","children"),  # Steuerungs-Tab inline
+    Input("interval-control", "n_intervals"),
+    Input("main-tabs", "active_tab"),
+)
+def refresh_control_stats(_, active_tab):
+    """Aktualisiert Metric-Cards + Worker-Status (Tab Steuerung + Queue-Header)."""
+    if active_tab not in ("tab-heatmap", "tab-queue"):
+        return [dash.no_update] * 8
+    s  = query_global_stats()
+    ws = read_worker_state()
+    status_widget = _build_worker_status_widget(ws)
+    return (
+        f"{s['total']:,}", f"{s['done']:,}", f"{s['pending']:,}",
+        f"{s['running']:,}", f"{s['failed']:,}", f"{s['skipped']:,}",
+        status_widget, status_widget,
+    )
 
 
 @app.callback(

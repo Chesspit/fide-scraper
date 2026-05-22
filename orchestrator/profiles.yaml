@@ -42,7 +42,7 @@ concurrency:
       timezone: Europe/Berlin
       active_hours: [7, 23]
       profile: semi_conservative
-      federations: []
+      federations: [POL, UKR, LAT, LIT, LTU, EST, CZE, SVK]
     - id: dc_in
       enabled: false
       label: DC-IN
@@ -54,7 +54,7 @@ concurrency:
       timezone: Asia/Kolkata
       active_hours: [7, 23]
       profile: semi_conservative
-      federations: [IND, PAK, BAN, SRI, NEP]
+      federations: [IND, IRI]
     - id: dc_uk
       enabled: false
       label: DC-UK
@@ -66,7 +66,7 @@ concurrency:
       timezone: Europe/London
       active_hours: [7, 23]
       profile: semi_conservative
-      federations: [ENG, SCO, WLS, IRL, NIR, CYP, MLT, GIB]
+      federations: [ENG, SCO, WLS, IRL, NIR, DEN, NOR, SWE, FIN, ISL, NED, BEL, LUX]
     - id: dc_us
       enabled: false
       label: DC-US
@@ -78,7 +78,7 @@ concurrency:
       timezone: America/New_York
       active_hours: [7, 23]
       profile: semi_conservative
-      federations: [USA, CAN, MEX, PUR, CUB, DOM, JAM, TTO, BER, BAH]
+      federations: [USA, CAN, MEX]
     - id: dc_hk
       enabled: false
       label: DC-HK
@@ -90,7 +90,7 @@ concurrency:
       timezone: Asia/Hong_Kong
       active_hours: [7, 23]
       profile: semi_conservative
-      federations: [HKG, CHN, SGP, MAS, PHI, TPE, VIE, THA, INA, MGL, KOR, JPN, AUS, NZL]
+      federations: [CHN, VIE, AUS, NZL, FIJ, VAN, PLW, SOL, KIR, PNG, MHL, TUV, NAU, SAM, TON, FSM]
 
 # Fuzzy-Profilauswahl: Gewichtung für zufällige Profilwahl pro Gruppe
 # Worker wählt bei jedem Gruppen-Start zufällig (gewichtet) — kein erkennbares Muster

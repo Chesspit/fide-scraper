@@ -885,8 +885,8 @@ tab_heatmap = dbc.Container(fluid=True, children=[
         ),
     ], className="g-3"),
 
-    # Dummy outputs
-    html.Div(id="worker-cmd-out",  style={"display": "none"}),
+    # Feedback-Meldung nach Button-Klick
+    html.Div(id="worker-cmd-out", className="mt-2"),
 ])
 
 # ---------------------------------------------------------------------------
@@ -1503,11 +1503,18 @@ def handle_worker_buttons(start, stop, restart, max_groups, max_hours):
         state["started_at"]  = time.strftime("%Y-%m-%dT%H:%M:%S")
         state["groups_done"] = 0
         WORKER_STATE_PATH.write_text(json.dumps(state, indent=2))
+        msg = ("✅ Worker gestartet", "success")
     elif triggered == "btn-stop":
         write_worker_state("stopped")
+        msg = ("⏹ Stop-Befehl gesetzt — Threads beenden aktuelle Gruppe und stoppen", "warning")
     elif triggered == "btn-restart":
         write_worker_state("restart")
-    return ""
+        msg = ("🔄 Neustart-Befehl gesetzt — Threads beenden aktuelle Gruppe, "
+               "Worker startet neu mit neuer Konfiguration", "info")
+    else:
+        return ""
+    return dbc.Alert(msg[0], color=msg[1], duration=8000,
+                     className="small py-2 mb-0 mt-2", is_open=True)
 
 
 @app.callback(

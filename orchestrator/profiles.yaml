@@ -11,9 +11,71 @@ concurrency:
     - normal            # T1
     - semi_conservative # T2
     - semi_aggressive   # T3
-  datacenter:
-    enabled: false      # DC-Thread ein/aus (Toggle im Dashboard, wirksam nach Neustart)
-    profile: semi_conservative  # Profil für den DC-Thread
+  # Datacenter-Threads: je 1 pro Land, mit eigenem ProxyJet-Host + Credentials
+  # enabled: false → Thread wird nicht gestartet (bis Proxy bestellt + .env eingetragen)
+  # timezone + active_hours: Thread läuft nur innerhalb 7–23 Uhr Ortszeit
+  # federations: diese Föderationen bekommen thread_affinity=<id> beim Gruppen-Generieren
+  datacenter_threads:
+    - id: dc_de
+      enabled: true
+      label: DC-DE
+      slot: 99
+      host: proxy-jet.io
+      port: 1010
+      username_env: PROXYJET_DC_USERNAME
+      password_env: PROXYJET_PASSWORD
+      timezone: Europe/Berlin
+      active_hours: [7, 23]
+      profile: semi_conservative
+      federations: []
+    - id: dc_in
+      enabled: false
+      label: DC-IN
+      slot: 100
+      host: in.proxy-jet.io
+      port: 1010
+      username_env: PROXYJET_DC_IN_USERNAME
+      password_env: PROXYJET_DC_IN_PASSWORD
+      timezone: Asia/Kolkata
+      active_hours: [7, 23]
+      profile: semi_conservative
+      federations: [IND, PAK, BAN, SRI, NEP]
+    - id: dc_uk
+      enabled: false
+      label: DC-UK
+      slot: 101
+      host: gb.proxy-jet.io
+      port: 1010
+      username_env: PROXYJET_DC_UK_USERNAME
+      password_env: PROXYJET_DC_UK_PASSWORD
+      timezone: Europe/London
+      active_hours: [7, 23]
+      profile: semi_conservative
+      federations: [ENG, SCO, WLS, IRL, NIR, CYP, MLT, GIB]
+    - id: dc_us
+      enabled: false
+      label: DC-US
+      slot: 102
+      host: us.proxy-jet.io
+      port: 1010
+      username_env: PROXYJET_DC_US_USERNAME
+      password_env: PROXYJET_DC_US_PASSWORD
+      timezone: America/New_York
+      active_hours: [7, 23]
+      profile: semi_conservative
+      federations: [USA, CAN, MEX, PUR, CUB, DOM, JAM, TTO, BER, BAH]
+    - id: dc_hk
+      enabled: false
+      label: DC-HK
+      slot: 103
+      host: hk.proxy-jet.io
+      port: 1010
+      username_env: PROXYJET_DC_HK_USERNAME
+      password_env: PROXYJET_DC_HK_PASSWORD
+      timezone: Asia/Hong_Kong
+      active_hours: [7, 23]
+      profile: semi_conservative
+      federations: [HKG, CHN, SGP, MAS, PHI, TPE, VIE, THA, INA, MGL, KOR, JPN, AUS, NZL]
 
 # Fuzzy-Profilauswahl: Gewichtung für zufällige Profilwahl pro Gruppe
 # Worker wählt bei jedem Gruppen-Start zufällig (gewichtet) — kein erkennbares Muster

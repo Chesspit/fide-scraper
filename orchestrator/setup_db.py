@@ -62,6 +62,9 @@ def _apply_schema(conn: sqlite3.Connection) -> None:
         "ALTER TABLE scrape_groups ADD COLUMN profile TEXT",  # NULL = fuzzy selection
         "ALTER TABLE scrape_runs ADD COLUMN mb_downloaded REAL",  # MB pro Gruppe
         "ALTER TABLE scrape_runs ADD COLUMN thread_slot INTEGER",  # Thread-Slot (0–3)
+        # DC-Thread-Affinität: NULL=residential, 'dc_de'/'dc_in'/... = nur dieser DC-Thread
+        "ALTER TABLE scrape_groups ADD COLUMN thread_affinity TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_groups_affinity ON scrape_groups(thread_affinity, status)",
     ]:
         try:
             conn.execute(stmt)

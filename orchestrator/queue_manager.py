@@ -33,7 +33,8 @@ class Group:
     player_count: int
     priority: int
     device: str | None = None
-    profile: str | None = None  # None = fuzzy selection
+    profile: str | None = None          # None = fuzzy selection
+    thread_affinity: str | None = None  # None = residential, 'dc_de'/'dc_in'/... = DC-Thread
 
 
 class QueueManager:
@@ -56,7 +57,11 @@ class QueueManager:
     # Group selection
     # ------------------------------------------------------------------
 
-    def get_next_group(self, device: str | None = None) -> Optional[Group]:
+    def get_next_group(
+        self,
+        device: str | None = None,
+        dc_affinity: str | None = None,
+    ) -> Optional[Group]:
         """Return the next pending group using weighted random sampling.
 
         Race-condition-safe via optimistic locking: after fuzzy selection, an
@@ -66,56 +71,60 @@ class QueueManager:
         Args:
             device: If set, only picks groups assigned to this device OR unassigned
                     (device IS NULL). If None, picks any pending group.
+            dc_affinity: If set (e.g. 'dc_in'), only picks groups with that exact
+                         thread_affinity. If None (residential/default mode), only
+                         picks groups where thread_affinity IS NULL (avoids DC pool).
         """
         for _attempt in range(5):
-            group = self._try_claim_next(device)
+            group = self._try_claim_next(device, dc_affinity)
             if group is not None:
                 return group
             # Another worker claimed our choice — retry immediately
         return None
 
-    def _try_claim_next(self, device: str | None) -> Optional[Group]:
+    def _try_claim_next(self, device: str | None, dc_affinity: str | None) -> Optional[Group]:
         """One attempt: fuzzy-select + atomic claim. Returns None if queue empty
         or if another worker claimed the chosen group between SELECT and UPDATE."""
         conn = self._connect()
 
+        # Thread-Affinitäts-Filter:
+        # DC-Thread → nur Gruppen mit passender thread_affinity
+        # Residential → nur Gruppen ohne thread_affinity (kein DC-Pool)
+        if dc_affinity:
+            affinity_filter = "AND thread_affinity = ?"
+            affinity_params: tuple = (dc_affinity,)
+        else:
+            affinity_filter = "AND (thread_affinity IS NULL)"
+            affinity_params = ()
+
         if device:
             device_filter = "AND (device IS NULL OR device = ?)"
-            params_min: tuple = (device,)
+            device_params: tuple = (device,)
         else:
             device_filter = ""
-            params_min = ()
+            device_params = ()
+
+        all_params = affinity_params + device_params
 
         row = conn.execute(
-            f"SELECT MIN(priority) FROM scrape_groups WHERE status = 'pending' {device_filter}",
-            params_min,
+            f"SELECT MIN(priority) FROM scrape_groups WHERE status = 'pending' {affinity_filter} {device_filter}",
+            all_params,
         ).fetchone()
         if row[0] is None:
             return None  # queue empty
 
         tier_max = row[0] + TIER_WIDTH
 
-        if device:
-            candidates = conn.execute(
-                """
-                SELECT id, federation, continent, year, elo_min, elo_max,
-                       player_count, priority, device, profile
-                FROM scrape_groups
-                WHERE status = 'pending' AND priority <= ?
-                  AND (device IS NULL OR device = ?)
-                """,
-                (tier_max, device),
-            ).fetchall()
-        else:
-            candidates = conn.execute(
-                """
-                SELECT id, federation, continent, year, elo_min, elo_max,
-                       player_count, priority, device, profile
-                FROM scrape_groups
-                WHERE status = 'pending' AND priority <= ?
-                """,
-                (tier_max,),
-            ).fetchall()
+        candidates = conn.execute(
+            f"""
+            SELECT id, federation, continent, year, elo_min, elo_max,
+                   player_count, priority, device, profile, thread_affinity
+            FROM scrape_groups
+            WHERE status = 'pending' AND priority <= ?
+              {affinity_filter} {device_filter}
+            """,
+            (tier_max,) + all_params,
+        ).fetchall()
 
         if not candidates:
             return None
@@ -206,6 +215,14 @@ class QueueManager:
         conn.execute(
             "UPDATE scrape_groups SET profile=? WHERE id=?",
             (profile if profile else None, group_id),
+        )
+        conn.commit()
+
+    def update_thread_affinity(self, group_id: int, thread_affinity: str | None) -> None:
+        conn = self._connect()
+        conn.execute(
+            "UPDATE scrape_groups SET thread_affinity=? WHERE id=?",
+            (thread_affinity if thread_affinity else None, group_id),
         )
         conn.commit()
 

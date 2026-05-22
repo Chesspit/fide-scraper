@@ -83,7 +83,7 @@ def _save_max_workers(n: int) -> None:
 
 
 def _save_datacenter_enabled(enabled: bool) -> None:
-    """Persist concurrency.datacenter.enabled to profiles.yaml."""
+    """Persist concurrency.datacenter.enabled to profiles.yaml (legacy fallback)."""
     try:
         with open(PROFILES_PATH, encoding="utf-8") as f:
             data = yaml.safe_load(f)
@@ -92,6 +92,54 @@ def _save_datacenter_enabled(enabled: bool) -> None:
             yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
     except Exception:
         pass
+
+
+def _save_dc_thread_enabled(dc_id: str, enabled: bool) -> None:
+    """Persist enabled-Flag für einen DC-Thread in profiles.yaml."""
+    try:
+        with open(PROFILES_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        threads = data.get("concurrency", {}).get("datacenter_threads", [])
+        for t in threads:
+            if t.get("id") == dc_id:
+                t["enabled"] = enabled
+                break
+        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+    except Exception:
+        pass
+
+
+def _get_dc_thread_status() -> list[dict]:
+    """Gibt für jeden DC-Thread: label, id, enabled, local_time, is_active, has_credentials."""
+    from zoneinfo import ZoneInfo
+    from datetime import datetime as _dt
+    threads = _get_concurrency_cfg().get("datacenter_threads", [])
+    result = []
+    for t in threads:
+        tz_name = t.get("timezone", "UTC")
+        try:
+            tz = ZoneInfo(tz_name)
+            now = _dt.now(tz)
+            local_time = now.strftime("%H:%M")
+            h_start, h_end = t.get("active_hours", [7, 23])
+            is_active_hours = h_start <= now.hour < h_end
+        except Exception:
+            local_time = "?"
+            is_active_hours = True
+        has_creds = bool(os.getenv(t.get("username_env", ""), ""))
+        result.append({
+            "id":         t.get("id", ""),
+            "label":      t.get("label", t.get("id", "")),
+            "enabled":    t.get("enabled", False),
+            "local_time": local_time,
+            "timezone":   tz_name,
+            "is_active_hours": is_active_hours,
+            "has_credentials": has_creds,
+            "federations": t.get("federations", []),
+            "slot":        t.get("slot", 99),
+        })
+    return result
 
 
 # Fuzzy-Label aus aktuellen Gewichten bauen (wird bei App-Start einmalig gelesen)
@@ -212,36 +260,71 @@ def update_group_priority(group_id: int, new_priority: int) -> None:
 # ---------------------------------------------------------------------------
 # DB helpers — Tab 2: Queue
 # ---------------------------------------------------------------------------
-def query_queue() -> list[dict]:
-    """Top 500 non-done, non-skipped groups sorted by priority (ascending = highest first)."""
+def query_queue(affinity_filter: str | None = None) -> list[dict]:
+    """Top 500 non-done, non-skipped groups sorted by priority (ascending = highest first).
+
+    affinity_filter:
+      None       → alle Gruppen
+      'dc'       → nur Gruppen mit thread_affinity IS NOT NULL
+      'residential' → nur Gruppen mit thread_affinity IS NULL AND device IS NULL
+      'mac_mini' → device = 'mac_mini'
+      'raspi'    → device = 'raspi'
+    """
     conn = get_conn()
+
+    if affinity_filter == "dc":
+        where_extra = "AND thread_affinity IS NOT NULL"
+    elif affinity_filter == "residential":
+        where_extra = "AND thread_affinity IS NULL AND (device IS NULL OR device = '')"
+    elif affinity_filter == "mac_mini":
+        where_extra = "AND device = 'mac_mini'"
+    elif affinity_filter == "raspi":
+        where_extra = "AND device = 'raspi'"
+    else:
+        where_extra = ""
+
     rows = conn.execute(
-        """SELECT id, priority, federation, continent, year,
+        f"""SELECT id, priority, federation, continent, year,
                   elo_min || '–' || elo_max AS elo_band,
                   player_count, status, retries,
                   COALESCE(device, '') AS device,
-                  COALESCE(last_run_at, '–') AS last_run_at
+                  COALESCE(last_run_at, '–') AS last_run_at,
+                  COALESCE(thread_affinity, '') AS thread_affinity
            FROM scrape_groups
            WHERE status IN ('pending', 'running', 'failed')
+             {where_extra}
            ORDER BY priority ASC, federation ASC
            LIMIT 500""",
     ).fetchall()
     conn.close()
     result = [dict(r) for r in rows]
 
-    # Thread-Slot aus worker_state.json anreichern:
-    # current_group im State hat Format "FED/YEAR/ELOMIN–ELOMAX"
+    # Thread-Slot aus worker_state.json anreichern
     threads = read_worker_state().get("threads", [])
+    _DC_SLOT_LABELS = {99: "DC-DE", 100: "DC-IN", 101: "DC-UK", 102: "DC-US", 103: "DC-HK"}
     thread_map = {
-        t.get("current_group", ""): ("DC" if t.get("slot") == 99 else f"T{t.get('slot', '?')}")
+        t.get("current_group", ""): (
+            _DC_SLOT_LABELS.get(t.get("slot"), f"T{t.get('slot', '?')}")
+            if t.get("slot", 0) >= 99 else f"T{t.get('slot', '?')}"
+        )
         for t in threads
-        if t.get("current_group")
+        if t.get("current_group") and not t.get("current_group", "").startswith("💤")
     }
     for row in result:
         row["last_run_at"] = _fmt_dt(row.get("last_run_at"))
         grp_label = f"{row['federation']}/{row['year']}/{row['elo_band']}"
         row["thread_slot"] = thread_map.get(grp_label, "–")
     return result
+
+
+def update_group_thread_affinity(group_id: int, affinity: str) -> None:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE scrape_groups SET thread_affinity=? WHERE id=?",
+        (affinity if affinity else None, group_id),
+    )
+    conn.commit()
+    conn.close()
 
 
 def update_group_device(group_id: int, device: str) -> None:
@@ -614,11 +697,14 @@ tab_heatmap = dbc.Container(fluid=True, children=[
             ),
         ], width=1),
         dbc.Col([
-            dbc.Label("DC-Thread", className="small text-muted mb-1"),
+            dbc.Label("DC-DE", className="small text-muted mb-1"),
             dbc.Switch(
-                id="sw-dc-thread",
-                value=_get_concurrency_cfg().get("datacenter", {}).get("enabled", False),
+                id="sw-dc-de",
+                value=next((t.get("enabled", False) for t in
+                            _get_concurrency_cfg().get("datacenter_threads", [])
+                            if t.get("id") == "dc_de"), False),
                 className="mt-1",
+                title="DC-DE Thread (proxy-jet.io)",
             ),
         ], width=1),
         dbc.Col([
@@ -649,6 +735,22 @@ tab_heatmap = dbc.Container(fluid=True, children=[
         ], width=3),
     ], className="mb-3 align-items-end g-2"),
 
+    # DC-Threads Karte
+    dcc.Interval(id="interval-dc-status", interval=30_000, n_intervals=0),
+    dbc.Card(
+        dbc.CardBody([
+            html.Div([
+                html.Span("🖥 Datacenter-Threads",
+                          className="fw-semibold me-3 small"),
+                html.Span("(wirksam nach Neustart)",
+                          className="text-muted small"),
+            ], className="mb-2"),
+            html.Div(id="dc-threads-panel", className="d-flex flex-wrap gap-2"),
+        ], className="py-2 px-3"),
+        className="mb-3",
+        style={"borderLeft": "3px solid #9C27B0"},
+    ),
+
     # Legend
     html.Div([
         legend_item(STATUS_COLOR["done"],    "Done"),
@@ -675,17 +777,18 @@ tab_heatmap = dbc.Container(fluid=True, children=[
 # Tab 2 — Queue layout
 # ---------------------------------------------------------------------------
 QUEUE_COLUMNS = [
-    {"name": "Priorität",   "id": "priority",    "editable": True,  "type": "numeric"},
-    {"name": "Gerät",       "id": "device",      "editable": True,  "presentation": "dropdown"},
-    {"name": "Thread",      "id": "thread_slot", "editable": False},
-    {"name": "Föd.",        "id": "federation",  "editable": False},
-    {"name": "Kontinent",   "id": "continent",   "editable": False},
-    {"name": "Jahr",        "id": "year",        "editable": False, "type": "numeric"},
-    {"name": "ELO-Band",    "id": "elo_band",    "editable": False},
-    {"name": "Spieler",     "id": "player_count","editable": False, "type": "numeric"},
-    {"name": "Status",      "id": "status",      "editable": False},
-    {"name": "Versuche",    "id": "retries",     "editable": False, "type": "numeric"},
-    {"name": "Letzter Lauf","id": "last_run_at", "editable": False},
+    {"name": "Priorität",   "id": "priority",         "editable": True,  "type": "numeric"},
+    {"name": "Gerät",       "id": "device",           "editable": True,  "presentation": "dropdown"},
+    {"name": "DC-Affinität","id": "thread_affinity",  "editable": True,  "presentation": "dropdown"},
+    {"name": "Thread",      "id": "thread_slot",      "editable": False},
+    {"name": "Föd.",        "id": "federation",       "editable": False},
+    {"name": "Kontinent",   "id": "continent",        "editable": False},
+    {"name": "Jahr",        "id": "year",             "editable": False, "type": "numeric"},
+    {"name": "ELO-Band",    "id": "elo_band",         "editable": False},
+    {"name": "Spieler",     "id": "player_count",     "editable": False, "type": "numeric"},
+    {"name": "Status",      "id": "status",           "editable": False},
+    {"name": "Versuche",    "id": "retries",          "editable": False, "type": "numeric"},
+    {"name": "Letzter Lauf","id": "last_run_at",      "editable": False},
 ]
 
 DEVICE_OPTIONS = [
@@ -693,6 +796,15 @@ DEVICE_OPTIONS = [
     {"label": "mac_mini",      "value": "mac_mini"},
     {"label": "raspi",         "value": "raspi"},
     {"label": "vps",           "value": "vps"},
+]
+
+AFFINITY_OPTIONS = [
+    {"label": "— (Residential)", "value": ""},
+    {"label": "DC-DE",           "value": "dc_de"},
+    {"label": "DC-IN",           "value": "dc_in"},
+    {"label": "DC-UK",           "value": "dc_uk"},
+    {"label": "DC-US",           "value": "dc_us"},
+    {"label": "DC-HK",           "value": "dc_hk"},
 ]
 
 tab_queue = dbc.Container(fluid=True, children=[
@@ -711,6 +823,23 @@ tab_queue = dbc.Container(fluid=True, children=[
         ),
     ], align="center", className="mb-1"),
 
+    # ── Kategorie-Filter ─────────────────────────────────────────────────
+    dbc.RadioItems(
+        id="queue-category-filter",
+        options=[
+            {"label": "Alle",        "value": "all"},
+            {"label": "🖥 Datacenter", "value": "dc"},
+            {"label": "🔄 Residential","value": "residential"},
+            {"label": "🍎 Mac Mini",   "value": "mac_mini"},
+            {"label": "🍓 Raspi",      "value": "raspi"},
+        ],
+        value="all",
+        inline=True,
+        className="mb-2 small",
+        inputClassName="me-1",
+        labelClassName="me-3",
+    ),
+
     dash_table.DataTable(
         id="queue-table",
         columns=QUEUE_COLUMNS,
@@ -718,7 +847,8 @@ tab_queue = dbc.Container(fluid=True, children=[
         editable=True,
         row_selectable="single",
         dropdown={
-            "device": {"options": DEVICE_OPTIONS, "clearable": True},
+            "device":           {"options": DEVICE_OPTIONS,   "clearable": True},
+            "thread_affinity":  {"options": AFFINITY_OPTIONS, "clearable": True},
         },
         page_size=50,
         page_action="native",
@@ -734,15 +864,19 @@ tab_queue = dbc.Container(fluid=True, children=[
              "color": STATUS_COLOR["running"], "fontWeight": "bold"},
             {"if": {"filter_query": '{status} = "failed"',   "column_id": "status"},
              "color": STATUS_COLOR["failed"],  "fontWeight": "bold"},
-            {"if": {"column_id": "priority"},    "backgroundColor": "#FFFDE7"},
-            {"if": {"column_id": "device"},      "backgroundColor": "#E8F5E9"},
+            {"if": {"column_id": "priority"},        "backgroundColor": "#FFFDE7"},
+            {"if": {"column_id": "device"},          "backgroundColor": "#E8F5E9"},
+            {"if": {"column_id": "thread_affinity"}, "backgroundColor": "#EDE7F6"},
             {"if": {"filter_query": '{thread_slot} != "–"', "column_id": "thread_slot"},
              "backgroundColor": "#E3F2FD", "fontWeight": "bold", "color": "#1565C0"},
+            {"if": {"filter_query": '{thread_affinity} != ""', "column_id": "thread_affinity"},
+             "color": "#4527A0", "fontWeight": "bold"},
         ],
         tooltip_header={
-            "priority":    "Klicken zum Bearbeiten — niedrigerer Wert = früher gescrapt",
-            "device":      "Gerät zuweisen — leer = beliebiges Gerät",
-            "thread_slot": "Aktiver Thread-Slot (nur für laufende Gruppen)",
+            "priority":       "Klicken zum Bearbeiten — niedrigerer Wert = früher gescrapt",
+            "device":         "Gerät zuweisen — leer = beliebiges Gerät",
+            "thread_affinity":"DC-Thread-Zuweisung — leer = Residential-Pool",
+            "thread_slot":    "Aktiver Thread-Slot (nur für laufende Gruppen)",
         },
     ),
 
@@ -924,16 +1058,21 @@ def refresh_heatmap(_, federation):
             perf_str   = _speed_eta(started_at, c_done, c_total)
             abbr       = _PROFILE_ABBR.get(t_profile, t_profile[:4].upper())
 
-            if slot == 99:  # DC-Thread
-                badge_cls  = "badge bg-secondary me-1"
-                slot_label = "DC"
+            _DC_SLOT_LABELS = {99: "DC-DE", 100: "DC-IN", 101: "DC-UK", 102: "DC-US", 103: "DC-HK"}
+            is_sleeping = grp.startswith("💤")
+
+            if slot in _DC_SLOT_LABELS:
+                dc_label   = _DC_SLOT_LABELS[slot]
+                badge_cls  = "badge bg-secondary me-1" + (" opacity-50" if is_sleeping else "")
+                slot_label = dc_label + (" 💤" if is_sleeping else "")
+                badge_color = "secondary"
             else:
                 badge_color = _SLOT_BADGE[slot % len(_SLOT_BADGE)]
                 badge_cls   = f"badge bg-{badge_color} me-1" + (
                     " text-dark" if badge_color == "warning" else "")
                 slot_label  = f"T{slot}"
 
-            grp_str = f"{fed}/{year} · {elo}" if elo else grp
+            grp_str = grp if is_sleeping else (f"{fed}/{year} · {elo}" if elo else grp)
             lines = [
                 html.Div([
                     html.Span(slot_label, className=badge_cls),
@@ -1018,15 +1157,93 @@ def set_max_workers(value):
 
 
 @app.callback(
-    Output("sw-dc-thread", "value"),
-    Input("sw-dc-thread", "value"),
+    Output("sw-dc-de", "value"),
+    Input("sw-dc-de", "value"),
     prevent_initial_call=True,
 )
-def toggle_dc_thread(enabled):
-    """Persist datacenter.enabled to profiles.yaml. Wirksam nach Worker-Neustart."""
+def toggle_dc_de(enabled):
+    """Persist DC-DE enabled-Flag in profiles.yaml. Wirksam nach Worker-Neustart."""
     if enabled is not None:
-        _save_datacenter_enabled(bool(enabled))
+        _save_dc_thread_enabled("dc_de", bool(enabled))
     return enabled
+
+
+@app.callback(
+    Output("dc-threads-panel", "children"),
+    Input("interval-dc-status", "n_intervals"),
+    Input("main-tabs", "active_tab"),
+)
+def refresh_dc_threads_panel(_, active_tab):
+    """Zeigt alle DC-Threads mit Status, Ortszeit und Toggle."""
+    threads = _get_dc_thread_status()
+    ws_threads = {t.get("slot"): t for t in read_worker_state().get("threads", [])}
+
+    cards = []
+    for t in threads:
+        slot        = t["slot"]
+        is_enabled  = t["enabled"]
+        has_creds   = t["has_credentials"]
+        is_active   = t["is_active_hours"]
+        local_time  = t["local_time"]
+        label       = t["label"]
+        feds        = ", ".join(t["federations"][:5]) if t["federations"] else "Fallback"
+        ws          = ws_threads.get(slot, {})
+        is_running  = bool(ws.get("current_group"))
+        is_sleeping = str(ws.get("current_group", "")).startswith("💤")
+
+        if not has_creds:
+            status_badge_el = dbc.Badge("kein Proxy", color="light", text_color="secondary")
+        elif is_sleeping:
+            status_badge_el = dbc.Badge("💤 schläft", color="secondary")
+        elif is_running:
+            status_badge_el = dbc.Badge("▶ aktiv", color="success")
+        elif is_enabled and is_active:
+            status_badge_el = dbc.Badge("bereit", color="info")
+        elif is_enabled and not is_active:
+            status_badge_el = dbc.Badge("außerhalb", color="warning", text_color="dark")
+        else:
+            status_badge_el = dbc.Badge("aus", color="light", text_color="muted")
+
+        card = dbc.Card([
+            dbc.CardBody([
+                html.Div([
+                    html.Span(label, className="fw-bold me-2 small"),
+                    dbc.Switch(
+                        id={"type": "dc-thread-toggle", "id": t["id"]},
+                        value=is_enabled,
+                        disabled=not has_creds,
+                        className="d-inline-block align-middle",
+                        style={"transform": "scale(0.8)"},
+                    ),
+                ], className="d-flex align-items-center mb-1"),
+                html.Div(f"🕐 {local_time} ({t['timezone'].split('/')[-1]})",
+                         className="text-muted" + " small" + ("" if is_active else " text-warning")),
+                html.Div(status_badge_el, className="my-1"),
+                html.Div(feds, className="text-muted", style={"fontSize": "0.75rem"}),
+            ], className="p-2"),
+        ], style={"minWidth": "130px", "maxWidth": "150px",
+                  "borderLeft": f"3px solid {'#4CAF50' if is_enabled and has_creds else '#9E9E9E'}"})
+        cards.append(card)
+
+    return cards
+
+
+@app.callback(
+    Output({"type": "dc-thread-toggle", "id": dash.ALL}, "value"),
+    Input({"type": "dc-thread-toggle", "id": dash.ALL}, "value"),
+    State({"type": "dc-thread-toggle", "id": dash.ALL}, "id"),
+    prevent_initial_call=True,
+)
+def toggle_dc_thread(values, ids):
+    """Persist DC-Thread enabled-Flag per Toggle-Klick in profiles.yaml."""
+    triggered = callback_context.triggered_id
+    if triggered and isinstance(triggered, dict):
+        dc_id = triggered.get("id")
+        for val, id_dict in zip(values, ids):
+            if id_dict.get("id") == dc_id:
+                _save_dc_thread_enabled(dc_id, bool(val))
+                break
+    return values
 
 
 @app.callback(
@@ -1179,12 +1396,16 @@ def apply_status_override(n, group_id, override_status, dd_status):
     Output("queue-count", "children"),
     Input("interval-queue", "n_intervals"),
     Input("main-tabs", "active_tab"),
+    Input("queue-category-filter", "value"),
 )
-def refresh_queue(_, active_tab):
+def refresh_queue(_, active_tab, category_filter):
     if active_tab != "tab-queue":
         return dash.no_update, dash.no_update
-    rows = query_queue()
-    return rows, f"{len(rows):,} Gruppen"
+    f = None if (category_filter == "all" or not category_filter) else category_filter
+    rows = query_queue(affinity_filter=f)
+    cat_label = {"dc": "Datacenter", "residential": "Residential",
+                 "mac_mini": "Mac Mini", "raspi": "Raspi"}.get(f, "alle")
+    return rows, f"{len(rows):,} Gruppen ({cat_label})"
 
 
 @app.callback(
@@ -1194,7 +1415,7 @@ def refresh_queue(_, active_tab):
     prevent_initial_call=True,
 )
 def save_queue_edits(current_data, previous_data):
-    """Persist priority and device changes made directly in the table."""
+    """Persist priority, device and thread_affinity changes made directly in the table."""
     if not current_data or not previous_data:
         return ""
     for curr, prev in zip(current_data, previous_data):
@@ -1206,6 +1427,11 @@ def save_queue_edits(current_data, previous_data):
         if curr.get("device") != prev.get("device"):
             try:
                 update_group_device(curr["id"], curr.get("device", "") or "")
+            except (ValueError, TypeError, KeyError):
+                pass
+        if curr.get("thread_affinity") != prev.get("thread_affinity"):
+            try:
+                update_group_thread_affinity(curr["id"], curr.get("thread_affinity", "") or "")
             except (ValueError, TypeError, KeyError):
                 pass
     return ""

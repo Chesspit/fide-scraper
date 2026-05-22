@@ -15,10 +15,15 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 class ProxyJetManager:
-    def __init__(self, username_env: str = "PROXYJET_USERNAME"):
+    def __init__(
+        self,
+        username_env: str = "PROXYJET_USERNAME",
+        password_env: str = "PROXYJET_PASSWORD",
+        host_override: str | None = None,
+    ):
         self._user = os.getenv(username_env, "")
-        self._pw   = os.getenv("PROXYJET_PASSWORD", "")
-        self._host = os.getenv("PROXYJET_HOST", "proxy-jet.io")
+        self._pw   = os.getenv(password_env, "")
+        self._host = host_override or os.getenv("PROXYJET_HOST", "proxy-jet.io")
         self._port = os.getenv("PROXYJET_PORT", "1010")
         self._cooldown_until: float = 0.0
         self._lock = threading.Lock()  # thread-safe cooldown state

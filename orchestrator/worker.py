@@ -21,8 +21,9 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
 import yaml
@@ -51,7 +52,36 @@ _PAUSE_POLL_INTERVAL = 5      # seconds between pause-state polls
 _EMPTY_QUEUE_SLEEP = 120      # seconds to wait when queue is empty (single-thread)
 _THREAD_EMPTY_SLEEP = 30      # seconds to wait when queue is empty (per thread)
 _CIRCUIT_BREAKER_THRESHOLD = 15  # consecutive double-failures before aborting group
-_DC_THREAD_SLOT = 99          # Reservierter Slot-Index für den Datacenter-Thread
+_DC_SLEEP_CHECK_INTERVAL = 600  # seconds between timezone re-checks when DC thread sleeps
+
+
+# ---------------------------------------------------------------------------
+# DC thread timezone helpers
+# ---------------------------------------------------------------------------
+
+def _dc_is_active(dc_cfg: dict) -> bool:
+    """Return True if current local time is within the DC thread's active_hours window."""
+    try:
+        tz = ZoneInfo(dc_cfg["timezone"])
+        h = datetime.now(tz).hour
+        h_start, h_end = dc_cfg.get("active_hours", [7, 23])
+        return h_start <= h < h_end
+    except Exception:
+        return True  # Fehler → immer aktiv (fail-safe)
+
+
+def _dc_seconds_until_active(dc_cfg: dict) -> float:
+    """Seconds until the DC thread's next active window starts."""
+    try:
+        tz = ZoneInfo(dc_cfg["timezone"])
+        now = datetime.now(tz)
+        h_start = dc_cfg.get("active_hours", [7, 23])[0]
+        target = now.replace(hour=h_start, minute=0, second=0, microsecond=0)
+        if now.hour >= h_start:
+            target += timedelta(days=1)
+        return max(60.0, (target - now).total_seconds())
+    except Exception:
+        return 3600.0
 
 # Lock protecting all read-modify-write operations on worker_state.json
 _state_lock = threading.Lock()
@@ -560,14 +590,29 @@ def run(
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    cfg      = _load_concurrency_config()
-    max_w    = cfg.get("max_workers", 1)
-    dc_cfg   = cfg.get("datacenter", {})
-    dc_enabled = dc_cfg.get("enabled", False)
+    cfg   = _load_concurrency_config()
+    max_w = cfg.get("max_workers", 1)
 
-    if max_w > 1 or dc_enabled:
+    # Neues Format: datacenter_threads (Liste)
+    dc_thread_cfgs = [t for t in cfg.get("datacenter_threads", []) if t.get("enabled", False)]
+
+    # Backward-Kompatibilität: altes datacenter-Block (single DC)
+    if not dc_thread_cfgs and cfg.get("datacenter", {}).get("enabled", False):
+        logger.warning("Altes datacenter-Format erkannt — bitte auf datacenter_threads migrieren")
+        old = cfg["datacenter"]
+        dc_thread_cfgs = [{
+            "id": "dc_de", "enabled": True, "label": "DC", "slot": 99,
+            "host": None, "port": 1010,
+            "username_env": "PROXYJET_DC_USERNAME",
+            "password_env": "PROXYJET_PASSWORD",
+            "timezone": "Europe/Berlin", "active_hours": [7, 23],
+            "profile": old.get("profile", "semi_conservative"),
+            "federations": [],
+        }]
+
+    if max_w > 1 or dc_thread_cfgs:
         _run_parallel_loop(max_w, cfg.get("worker_profiles", []),
-                           dc_cfg, profile_name, max_groups, max_hours)
+                           dc_thread_cfgs, profile_name, max_groups, max_hours)
     else:
         _run_single_loop(profile_name, max_groups, max_hours)
 
@@ -575,12 +620,12 @@ def run(
 def _run_parallel_loop(
     max_w: int,
     worker_profiles_cfg: list[str],
-    dc_cfg: dict,
+    dc_thread_cfgs: list[dict],
     profile_override: str | None,
     max_groups: int | None,
     max_hours: float | None,
 ) -> None:
-    """Parallel mode: spawn max_w residential threads + optional datacenter thread."""
+    """Parallel mode: spawn max_w residential threads + enabled datacenter threads."""
     proxy_manager = ProxyJetManager()
     device = os.getenv("WORKER_DEVICE")
 
@@ -597,25 +642,29 @@ def _run_parallel_loop(
         logger.info("Startup: %d unterbrochene running-Gruppen → pending zurückgesetzt", reset_count)
     qm_main.close()
 
-    # Datacenter-Thread konfigurieren
-    dc_enabled     = dc_cfg.get("enabled", False)
-    dc_profile     = dc_cfg.get("profile", "normal")
-    dc_proxy       = None
-    if dc_enabled:
-        dc_proxy = ProxyJetManager(username_env="PROXYJET_DC_USERNAME")
+    # Datacenter-Threads konfigurieren (je eigener Host + Credentials)
+    active_dc: list[tuple[dict, ProxyJetManager]] = []
+    for dc_cfg in dc_thread_cfgs:
+        dc_proxy = ProxyJetManager(
+            username_env=dc_cfg["username_env"],
+            password_env=dc_cfg.get("password_env", "PROXYJET_PASSWORD"),
+            host_override=dc_cfg.get("host") or None,
+        )
         if not dc_proxy._user:
-            logger.warning("DC-Thread aktiviert, aber PROXYJET_DC_USERNAME fehlt — DC deaktiviert")
-            dc_enabled = False
+            logger.warning("DC-Thread %s: %s fehlt — übersprungen",
+                           dc_cfg["label"], dc_cfg["username_env"])
+            continue
+        active_dc.append((dc_cfg, dc_proxy))
 
-    total_threads = max_w + (1 if dc_enabled else 0)
+    total_threads = max_w + len(active_dc)
 
     if device:
         logger.info("Gerät-Filter: '%s'", device)
-    logger.info("Parallel-Modus: %d Threads (%d residential%s) — Profile: %s",
-                total_threads, max_w,
-                " + DC" if dc_enabled else "",
-                ", ".join(f"T{i}={profiles_list[i % len(profiles_list)]}" for i in range(max_w))
-                + (f", DC={dc_profile}" if dc_enabled else ""))
+    dc_info = " | ".join(f"{d['label']}={d['profile']}" for d, _ in active_dc)
+    logger.info("Parallel-Modus: %d Threads (%d residential + %d DC) — Residential: %s%s",
+                total_threads, max_w, len(active_dc),
+                ", ".join(f"T{i}={profiles_list[i % len(profiles_list)]}" for i in range(max_w)),
+                f" | DC: {dc_info}" if dc_info else "")
     if max_groups:
         logger.info("Limit: %d Gruppen (gesamt über alle Threads)", max_groups)
     if max_hours:
@@ -646,15 +695,9 @@ def _run_parallel_loop(
             )
             for slot in range(max_w)
         ]
-        if dc_enabled:
-            futures.append(executor.submit(
-                run_slot,
-                _DC_THREAD_SLOT,
-                dc_profile,
-                device,
-                dc_proxy,
-                stop_event,
-            ))
+        for dc_cfg, dc_proxy in active_dc:
+            futures.append(executor.submit(run_dc_slot, dc_cfg, dc_proxy, stop_event))
+
         for fut in futures:
             try:
                 fut.result()
@@ -670,6 +713,153 @@ def _run_parallel_loop(
 
     write_state(command="stopped", threads=[])
     logger.info("Alle %d Threads beendet", max_w)
+
+
+def run_dc_slot(
+    dc_cfg: dict,
+    dc_proxy: ProxyJetManager,
+    stop_event: threading.Event,
+) -> None:
+    """DC-Thread: scrapet nur Gruppen mit passender thread_affinity,
+    pausiert außerhalb der konfigurierten Ortszeit (active_hours).
+    """
+    slot         = dc_cfg["slot"]
+    profile_name = dc_cfg["profile"]
+    affinity     = dc_cfg["id"]
+    label        = dc_cfg["label"]
+
+    logger.info("DC-Thread %s (Slot %d) gestartet [%s, %s, aktiv %s–%s Uhr]",
+                label, slot, profile_name, dc_cfg.get("timezone", "?"),
+                *dc_cfg.get("active_hours", [7, 23]))
+    pm_local = ProfileManager()
+    qm_local = QueueManager()
+    pg_conn  = None
+
+    try:
+        pg_conn = get_connection()
+
+        while not stop_event.is_set():
+            state = read_worker_state()
+            cmd   = state.get("command", "stopped")
+
+            if cmd in ("stopped", "restart"):
+                logger.info("DC-Thread %s: %s-Befehl empfangen", label, cmd)
+                stop_event.set()
+                break
+
+            if cmd == "pause":
+                time.sleep(_PAUSE_POLL_INTERVAL)
+                continue
+
+            # Limit-Checks
+            max_g    = state.get("max_groups")
+            max_h    = state.get("max_hours")
+            done     = state.get("groups_done", 0)
+            start_at = state.get("started_at")
+
+            if max_g and done >= max_g:
+                logger.info("DC-Thread %s: Gruppen-Limit %d erreicht — stoppe", label, max_g)
+                stop_event.set()
+                break
+
+            if max_h and start_at:
+                try:
+                    elapsed = time.time() - time.mktime(
+                        time.strptime(start_at, "%Y-%m-%dT%H:%M:%S"))
+                    if elapsed >= max_h * 3600:
+                        logger.info("DC-Thread %s: Zeit-Limit %.1fh erreicht — stoppe", label, max_h)
+                        stop_event.set()
+                        break
+                except Exception:
+                    pass
+
+            # Timezone-Check: nur innerhalb active_hours aktiv
+            if not _dc_is_active(dc_cfg):
+                secs = _dc_seconds_until_active(dc_cfg)
+                h_start = dc_cfg.get("active_hours", [7, 23])[0]
+                logger.info("DC-Thread %s: außerhalb Aktivzeiten — schlafe %.0f s (bis %02d:00 Uhr %s)",
+                            label, secs, h_start, dc_cfg.get("timezone", ""))
+                _update_thread_slot(slot,
+                    profile=profile_name,
+                    current_group=f"💤 bis {h_start:02d}:00 Uhr",
+                    combos_done=0,
+                    combos_total=None,
+                    player_count=None,
+                    group_started_at=None,
+                )
+                stop_event.wait(timeout=min(secs, _DC_SLEEP_CHECK_INTERVAL))
+                continue
+
+            profile = pm_local.pick_fuzzy(override=profile_name)
+            group   = qm_local.get_next_group(dc_affinity=affinity)
+
+            if group is None:
+                logger.debug("DC-Thread %s: Queue leer — warte %ds", label, _THREAD_EMPTY_SLEEP)
+                _clear_thread_slot(slot)
+                time.sleep(_THREAD_EMPTY_SLEEP)
+                continue
+
+            grp_label = f"{group.federation}/{group.year}/{group.elo_min}–{group.elo_max}"
+            logger.info("DC-Thread %s: Starte Gruppe %s [%s]", label, grp_label, profile_name)
+
+            _update_thread_slot(slot,
+                profile=profile_name,
+                current_group=grp_label,
+                combos_done=0,
+                combos_total=None,
+                player_count=group.player_count,
+                group_started_at=time.time(),
+            )
+
+            run_started = time.strftime("%Y-%m-%dT%H:%M:%S")
+            try:
+                records, pg_conn, mb_group = scrape_group(
+                    group, pg_conn, dc_proxy, profile, qm_local, slot=slot
+                )
+                qm_local.mark_done(group.id, records)
+                qm_local.log_run(group.id, run_started, "success",
+                                 records_found=records,
+                                 profile_used=profile_name,
+                                 mb_downloaded=mb_group,
+                                 thread_slot=slot)
+                _increment_global_stats(mb_group)
+                logger.info("DC-Thread %s: Fertig %s — %d Partien", label, grp_label, records)
+
+            except InterruptedError:
+                qm_local.reset_to_pending(group.id)
+                qm_local.log_run(group.id, run_started, "failed",
+                                 error_msg="stopped by user", profile_used=profile_name,
+                                 thread_slot=slot)
+                break
+
+            except BlockedError as exc:
+                logger.error("DC-Thread %s: IP geblockt: %s — Gruppe übersprungen", label, exc)
+                qm_local.mark_failed(group.id, str(exc))
+                qm_local.log_run(group.id, run_started, "failed",
+                                 error_msg=str(exc), profile_used=profile_name,
+                                 thread_slot=slot)
+
+            except Exception as exc:
+                logger.exception("DC-Thread %s: Fehler bei %s", label, grp_label)
+                qm_local.mark_failed(group.id, str(exc))
+                qm_local.log_run(group.id, run_started, "failed",
+                                 error_msg=str(exc), profile_used=profile_name,
+                                 thread_slot=slot)
+                pg_conn = ensure_connection(pg_conn)
+
+            _clear_thread_slot(slot)
+
+    finally:
+        if pg_conn:
+            try:
+                pg_conn.close()
+            except Exception:
+                pass
+        try:
+            qm_local.close()
+        except Exception:
+            pass
+        logger.info("DC-Thread %s (Slot %d) gestoppt", label, slot)
 
 
 def _run_single_loop(

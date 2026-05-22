@@ -1,6 +1,6 @@
 # FIDE Scraper — Projektdokumentation
 
-Stand: 21. Mai 2026 (Abend)
+Stand: 22. Mai 2026 (Abend)
 
 ---
 
@@ -255,33 +255,31 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 
 ---
 
-## 5. Aktueller Datensatz-Stand (2026-05-21)
+## 5. Aktueller Datensatz-Stand (2026-05-22)
 
 | Kennzahl | Wert |
 |---|---|
-| **Gesamt-Partien** | **2.829.049** |
-| **Gegner aufgelöst** | **~97,5 %** |
-| **Spieler mit Daten** | **15.208** |
-| **Früheste Periode mit Daten** | **2008-04** |
-| **Neueste Periode** | **2026-04** |
+| **Gesamt-Partien** | **3.094.551** |
+| **Spieler mit Daten** | **20.943** |
+| **DB-Größe** | **~6,8 GB** |
+| **Früheste Periode** | **2008-04** |
+| **Neueste Periode** | **2026-05** (einige frühe Gruppen) |
+| **global_XX ELO ≥ 2300** | **51/51 complete** ✅ |
 
 ### 5.1 Scraping-Status Kern-Gruppen
 
 | Gruppe | Spieler | Gescrapt | Status |
 |---|---|---|---|
-| female_top | 66 | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
-| male_control | 649 | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
-| elite_2600 | 202 | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
-| female_2200 | 321 | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
+| female_top | 23 aktiv | 2008-04 – 2026-04 | ℹ️ inaktive Spielerinnen → wenige ok-Perioden |
+| male_control | 48 aktiv | 2008-04 – 2026-04 | ℹ️ Spieler weitgehend inaktiv |
+| elite_2600 | 190 | 2008-04 – 2026-05 | ✅ complete |
+| female_2200 | 207 | 2008-04 – 2026-05 | ✅ complete |
 | swiss_2026 | 349 | 2009-01 – 2026-04 | ⚠️ partial (2008 fehlt) |
-| male_2200 | 170 | — | ⛔ skipped (gestrichen 2026-05-18) |
-| global_02–23b | 56–147 | ELO 2328–2603 | ✅ complete (41 Gruppen, 2012-08 – 2026-04) |
-| global_24a | 90 | ELO 2325–2327 | 🔄 läuft (seit 2026-05-21) |
-| global_24b–28b | — | ELO 2300–2324 | ⬜ pending (9 Gruppen) |
+| male_2200 | 112 | 2008-04 – 2026-04 | ✅ complete |
+| global_02–28b | 56–250 | **2008-04 – 2026-04** | **✅ alle 51 Gruppen complete** |
 
-> **FIDE-Perioden:** `scraper/main.py` überspringt automatisch strukturell leere Monate
-> (is_valid_fide_period): 2008 Apr/Jul/Okt, 2009 Jan/Apr/Jul/Sep/Nov,
-> 2010–2012-07 zweimonatlich, ab 2012-08 monatlich.
+> **FIDE-Perioden:** Quartalsweise 2008-04 – 2009-11, zweimonatlich 2010-01 – 2012-07,
+> monatlich ab 2012-08. `is_valid_fide_period()` filtert automatisch.
 
 ### 5.2 Angereicherte Spalten in `game_results`
 
@@ -421,7 +419,7 @@ python3 -m scripts.quality_check --report-only
 
 ---
 
-## 7. Scraping Orchestrator (deployed 2026-05-09, Parallel-Modus + DC-Thread 2026-05-21)
+## 7. Scraping Orchestrator (deployed 2026-05-09, 7-Thread-Setup ab 2026-05-22)
 
 Ein eigenständiges Tool zur Verwaltung des globalen Scrapings via ProxyJet-Proxy.
 
@@ -429,76 +427,60 @@ Ein eigenständiges Tool zur Verwaltung des globalen Scrapings via ProxyJet-Prox
 
 ```
 orchestrator/
-├── app.py              ← Dash-Dashboard (3 Tabs: Heatmap / Queue / Abgeschlossen)
-├── worker.py           ← Worker: sequentiell (max_workers=1) oder parallel (2–4 Threads)
-├── queue_manager.py    ← SQLite-Queue, Fuzzy-Scheduling, Optimistic Locking
-├── proxy_manager.py    ← ProxyJet Rotating Residential Proxy (thread-safe)
+├── app.py              ← Dash-Dashboard (5 Tabs: Übersicht / Übersicht Land / Steuerung / Queue / Abgeschlossen)
+├── worker.py           ← Worker: Residential-Slots + DC-Threads unabhängig
+├── queue_manager.py    ← SQLite-Queue, thread_affinity-Filter, Optimistic Locking
+├── proxy_manager.py    ← ProxyJet Proxy (host_override + password_env pro DC-Thread)
 ├── profile_manager.py  ← Scrape-Profile + Fuzzy-Auswahl
 ├── generate_groups.py  ← 24.588 Gruppen (Föd. × Jahr × ELO-Band) generieren
-├── setup_db.py         ← SQLite-Schema
-├── profiles.yaml       ← Profile + fuzzy_weights + [concurrency] (schreibbar via Dashboard)
-├── assets/custom.css   ← Dash CSS-Fixes
-├── Dockerfile          ← Python 3.12 slim
-├── docker-compose.yml  ← dashboard + worker (restart: unless-stopped)
-└── requirements.txt
+├── setup_db.py         ← SQLite-Schema (inkl. thread_affinity-Spalte)
+├── profiles.yaml       ← Profile + worker_slots + datacenter_threads (schreibbar via Dashboard)
+├── Dockerfile, docker-compose.yml, requirements.txt
 ```
 
-### 7.2 Parallel-Modus (ab 2026-05-21)
+### 7.2 Thread-Architektur (ab 2026-05-22)
 
-Jeder Thread ist ein unabhängiger Mini-Worker mit eigener PG- und SQLite-Verbindung.
-Konfiguration in `profiles.yaml [concurrency]`:
+**7 parallele Threads** — 2 Residential + 5 Datacenter:
 
 ```yaml
 concurrency:
-  max_workers: 2          # 1=sequentiell, 2–4=parallel (max. 4)
-  worker_profiles:
-    - semi_aggressive     # T0
-    - normal              # T1
-    - semi_conservative   # T2
-    - semi_aggressive     # T3
-  datacenter:
-    enabled: false        # DC-Thread ein/aus (Toggle im Dashboard)
-    profile: semi_conservative
+  worker_slots:                  # Residential: unabhängiges enabled-Flag pro Slot
+    - {slot: 0, enabled: true, profile: semi_aggressive}   # T1
+    - {slot: 1, enabled: true, profile: normal}            # T2
+    - {slot: 2, enabled: false, profile: semi_conservative} # T3 (bereit)
+    - {slot: 3, enabled: false, profile: semi_aggressive}   # T4 (bereit)
+  dc_mode: auto                  # auto = Timezone-basiert | individual = 24/7
+  dc_active_hours: [7, 23]       # Gilt für alle DC-Threads im auto-Modus
+  datacenter_threads:            # 5 DC-Threads mit eigenem Host/Credentials/Timezone
+    - {id: dc_de, slot: 99,  host: proxy-jet.io,    timezone: Europe/Berlin, federations: [POL,UKR,...]}
+    - {id: dc_in, slot: 100, host: in.proxy-jet.io, timezone: Asia/Kolkata,  federations: [IND,IRI]}
+    - {id: dc_uk, slot: 101, host: eu.proxy-jet.io, timezone: Europe/London, federations: [ENG,NOR,...]}
+    - {id: dc_us, slot: 102, host: ca.proxy-jet.io, timezone: America/New_York, federations: [USA,CAN,MEX]}
+    - {id: dc_hk, slot: 103, host: in.proxy-jet.io, timezone: Asia/Hong_Kong,  federations: [CHN,VIE,...]}
 ```
 
-**Umschalten ohne SSH:** Dashboard → Threads-Dropdown (1×–4×) → 🔄 Neustart
-- Worker schließt aktuelle Gruppen fertig, exitiert dann (sys.exit 0)
-- Docker startet ihn automatisch neu mit neuer Konfiguration
+**thread_affinity:** Jede SQLite-Gruppe ist einem DC-Thread zugewiesen (`dc_de`, `dc_in`, ...) oder
+residential (`NULL`). DC-Threads claimen nur ihre eigenen Gruppen; Residential-Threads claimen
+nur `thread_affinity IS NULL`.
 
-**ProxyJet:** Eine einzige rotating-residential Konfiguration reicht für alle Threads.
-Jeder parallele Request bekommt automatisch eine andere IP aus dem Pool.
+### 7.3 DC-Modi
 
-### 7.2b Datacenter-Thread (ab 2026-05-21)
+| Modus | Verhalten |
+|---|---|
+| **🤖 Automatisch** | ALLE DC-Threads mit Credentials starten; Timezone-Check entscheidet ob aktiv (07–23 Uhr Ortszeit) |
+| **🖐 Individuell** | Nur `enabled=true` Threads starten; kein Timezone-Check; laufen 24/7 |
 
-Optionaler zusätzlicher Thread via ProxyJet **Datacenter**-Proxy (günstiger als Residential).
-Läuft als **Slot 99** unabhängig von den 1×–4× Residential-Threads.
+### 7.4 Scraping-Profile
 
-| | Residential | Datacenter |
-|---|---|---|
-| Endpoint | eu.proxy-jet.io:1010 | eu.proxy-jet.io:1010 |
-| Username | `…-resi-DE` | `…-dc-DE` |
-| Kosten | höher | günstiger |
-| Env-Variable | `PROXYJET_USERNAME` | `PROXYJET_DC_USERNAME` |
+| Profil | Wartezeit | Timeout | Einsatz |
+|---|---|---|---|
+| `semi_aggressive` | 2s (±35%) | 15s | T1 |
+| `normal` | 3s (±40%) | 20s | T2 |
+| `semi_conservative` | 5,5s (±45%) | 25s | alle DC-Threads |
 
-**Steuerung:** Dashboard Heatmap-Tab → **DC-Thread**-Toggle → 🔄 Neustart
+> **VPS-IP geblockt:** Alle VPS-Requests laufen über ProxyJet. Mac Mini scrapt direkt.
 
-Im Dashboard erscheint der DC-Thread als grauer **DC**-Badge in der Status-Anzeige (Queue-Tab) neben den farbigen T0/T1-Badges. Die Abgeschlossen-Tabelle zeigt ebenfalls `DC` in der Thread-Spalte.
-
-### 7.3 Scraping-Profile
-
-| Profil | Proxy | Wartezeit | Timeout | Einsatz |
-|---|---|---|---|---|
-| `semi_aggressive` | aktiv | 2s (±35%) | 15s | T0, T3 |
-| `normal` | aktiv | 3s (±40%) | 20s | T1 |
-| `semi_conservative` | aktiv | 5,5s (±45%) | 25s | T2, DC-Thread |
-| `conservative` | aktiv | 8s (±50%) | 30s | Referenz (inaktiv) |
-
-Fuzzy-Auswahl für Gruppen ohne explizites Profil: 60% semi_aggressive / 40% normal.
-
-> **VPS-IP geblockt:** FIDE sperrt die VPS-IP dauerhaft. Alle VPS-Requests laufen
-> über ProxyJet Residential-Proxy. Mac Mini scrapt direkt (kein Proxy nötig).
-
-### 7.4 Dashboard
+### 7.5 Dashboard
 
 ```
 https://scelo.chesspit.net   (BasicAuth: peter / persönliches PW)
@@ -506,24 +488,26 @@ https://scelo.chesspit.net   (BasicAuth: peter / persönliches PW)
 
 | Tab | Inhalt |
 |---|---|
-| **Heatmap** | Föderations-Grid; Worker-Steuerung (Start/Pause/Stop/🔄 Neustart); Threads-Dropdown (1×–4×); DC-Thread-Toggle |
-| **Queue** | Pending/Running/Failed-Gruppen; Priorität + Gerät editierbar; Thread-Spalte; Worker-Status-Anzeige in Kopfzeile |
-| **Abgeschlossen** | Erledigte Gruppen mit Statistiken + Thread-Spalte (T0/T1/DC) |
+| **🌍 Übersicht** | Föderations-Completion-Heatmap (ELO < 2300, alle Föderationen) |
+| **🗺️ Übersicht Land** | Federation×Jahr-Heatmap mit Click-to-Detail-Modal |
+| **⚙️ Steuerung** | Metric-Cards; Residential-Karten (T1–T4 mit Toggle+Profil); DC-Karten (Toggle+Modus+Zeiten); Start/Stop/Neustart |
+| **📋 Queue** | Pending-Gruppen; Thread-Spalte (▶ DC-IN = läuft, DC-IN = zugewiesen); Kategorie-Filter (Datacenter/Residential/Mac Mini/Raspi); DC-Sub-Dropdown |
+| **✅ Abgeschlossen** | Erledigte Gruppen mit Statistiken + Thread (T1–T4/DC-XX) |
 
-### 7.5 Features
+### 7.6 Features
 
 | Feature | Details |
 |---|---|
 | 24.588 Gruppen | Föd. × Jahr (2009–2026) × ELO-Band in SQLite |
-| Parallel-Modus | 2–4 Residential-Threads, jeder mit eigenem Profil und eigener Queue-Verbindung |
-| DC-Thread | Optionaler Slot-99-Thread via Datacenter-Proxy (günstiger, semi_conservative) |
-| Threads-Dropdown | 1×/2×/3×/4× — schreibt sofort in profiles.yaml, wirksam nach Neustart |
-| DC-Toggle | Ein/Aus-Schalter im Dashboard — wirksam nach Neustart |
-| 🔄 Neustart-Button | Sauberer Prozess-Exit → Docker-Neustart mit neuer Konfiguration |
-| Pre-Filter | ~55% skip-Rate via TXT-Snapshot (num_games=0 → kein FIDE-Request) |
-| Circuit Breaker | Nach 15 Doppel-Timeouts → Gruppe `failed`, Worker läuft weiter |
-| Thread-Spalte Queue/Abgeschlossen | T0/T1/DC für laufende und abgeschlossene Gruppen |
-| Status-Anzeige | Pro Thread nebeneinander: Badge + Profil + Gruppe + Fortschritt + Speed + ETA |
+| thread_affinity | DC-Thread-Zuweisung pro Gruppe (dc_de/in/uk/us/hk oder NULL) |
+| 5 DC-Threads | Eigener Host, Credentials, Timezone, Föderationen je Thread |
+| DC Auto-Modus | Alle Threads mit Credentials starten, Timezone entscheidet Aktivität |
+| DC Individuell-Modus | Nur enabled=true Threads, 24/7, kein Timezone-Check |
+| Residential-Toggles | T1–T4 unabhängig ein/ausschaltbar (wie DC-Threads) |
+| 🔄 Neustart-Alert | Zeigt aktive Konfiguration (N× Residential, DC-Threads, Modus+Zeiten) |
+| DACH-Priorisierung | T1/T2 nur DACH 2020–2026; andere Föderationen auf P500000+ |
+| Pre-Filter | ~55% skip-Rate via TXT-Snapshot (num_games=0) |
+| Thread-Spalte | T1–T4 / DC-DE/IN/UK/US/HK in Queue + Abgeschlossen |
 
 ---
 
@@ -553,19 +537,19 @@ Enthält zusätzlich QC-Zellen: Vergleich `Σ rating_change_weighted` mit tatsä
 
 ---
 
-## 9. Offene Punkte
+## 9. Offene Punkte / Nächste Schritte
 
 | Aufgabe | Priorität | Status |
 |---|---|---|
-| global_24a–28b via Mac Mini (ELO 2300–2327) | Hoch | 🔄 24a fertig ~20:13h, 24b morgen früh |
-| DC-Thread Erstlauf beobachten | Hoch | ⏰ heute Abend ~20:45h (VPS-Neustart) |
-| VPS auf 3 Threads hochschalten | Mittel | ⏰ Sonntag 2026-05-24 prüfen (Routine gesetzt) |
-| April-Nachscrape (38 Spieler, global_09b/10a/17b) | Mittel | ⬜ nach global-Gruppen |
-| dach_01–08 seeden + starten | Mittel | ⬜ nach global-Gruppen |
-| Kern-Gruppen 2008 nachholen | Mittel | ⬜ 3 Quartalsperioden fehlen |
+| VPS Stabilität beobachten (7 Threads) | Hoch | 🔄 läuft seit 2026-05-22 |
+| Historische 2010–2012 Gruppen (P13–P33) | Hoch | 🔄 läuft über T1/T2 Residential |
+| DACH 2020–2026 via T1/T2 | Hoch | 🔄 läuft (GER 2026 → DACH 2025–2020) |
+| DC-Threads Föderations-Queue füllen | Mittel | 🔄 läuft (2026→2009, ELO DESC) |
+| hist_2010/2011/2012 Gruppen (pre-2012) | Mittel | 🔄 über VPS Residential P13–P33 |
+| resolve_opponents nach Backfills | Mittel | ⬜ lokal |
 | Notebooks 01–09 ausführen | Mittel | ⬜ Daten bereit |
-| resolve_opponents nach Backfills | Niedrig | ⬜ lokal oder VPS |
 | Parquet-Export aktualisieren | Niedrig | ⬜ nach grösserem Backfill |
+| female_top/male_control Update | Niedrig | ⬜ (inaktive Spieler, wenig Mehrwert) |
 
 ---
 

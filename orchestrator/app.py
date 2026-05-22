@@ -374,7 +374,8 @@ def query_queue(affinity_filter: str | None = None) -> list[dict]:
            FROM scrape_groups
            WHERE status IN ('pending', 'running', 'failed')
              {where_extra}
-           ORDER BY priority ASC, federation ASC
+           ORDER BY CASE WHEN status='running' THEN 0 ELSE 1 END ASC,
+                    priority ASC, federation ASC
            LIMIT 500""",
     ).fetchall()
     conn.close()

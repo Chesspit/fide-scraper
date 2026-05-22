@@ -208,7 +208,7 @@ def _get_residential_thread_status() -> list[dict]:
         ws      = ws_threads.get(slot, {})
         result.append({
             "slot":          slot,
-            "label":         f"T{slot}",
+            "label":         f"T{slot + 1}",
             "profile":       s.get("profile", "normal"),
             "enabled":       s.get("enabled", False),
             "badge_color":   _SLOT_BADGE[slot % len(_SLOT_BADGE)],
@@ -378,21 +378,35 @@ def query_queue(affinity_filter: str | None = None) -> list[dict]:
     conn.close()
     result = [dict(r) for r in rows]
 
-    # Thread-Slot aus worker_state.json anreichern
-    threads = read_worker_state().get("threads", [])
+    # Thread-Anzeige: live Slot ODER konfigurierte Affinität → eine Spalte
     _DC_SLOT_LABELS = {99: "DC-DE", 100: "DC-IN", 101: "DC-UK", 102: "DC-US", 103: "DC-HK"}
-    thread_map = {
-        t.get("current_group", ""): (
-            _DC_SLOT_LABELS.get(t.get("slot"), f"T{t.get('slot', '?')}")
-            if t.get("slot", 0) >= 99 else f"T{t.get('slot', '?')}"
-        )
-        for t in threads
-        if t.get("current_group") and not t.get("current_group", "").startswith("💤")
+    _AFFINITY_LABELS = {
+        "dc_de": "DC-DE", "dc_in": "DC-IN", "dc_uk": "DC-UK",
+        "dc_us": "DC-US", "dc_hk": "DC-HK",
     }
+    threads = read_worker_state().get("threads", [])
+    thread_map = {}  # group_label → "▶ T2" / "▶ DC-IN"
+    for t in threads:
+        grp = t.get("current_group", "")
+        if not grp or grp.startswith("💤"):
+            continue
+        slot = t.get("slot", 0)
+        if slot >= 99:
+            label = f"▶ {_DC_SLOT_LABELS.get(slot, 'DC')}"
+        else:
+            label = f"▶ T{slot + 1}"
+        thread_map[grp] = label
+
     for row in result:
         row["last_run_at"] = _fmt_dt(row.get("last_run_at"))
         grp_label = f"{row['federation']}/{row['year']}/{row['elo_band']}"
-        row["thread_slot"] = thread_map.get(grp_label, "–")
+        if grp_label in thread_map:
+            # Gruppe läuft gerade → live Thread anzeigen
+            row["thread_affinity"] = thread_map[grp_label]
+        else:
+            # Wartend → konfigurierte Affinität als Label
+            aff = row.get("thread_affinity", "")
+            row["thread_affinity"] = _AFFINITY_LABELS.get(aff, "") if aff else ""
     return result
 
 
@@ -442,7 +456,16 @@ def query_completed() -> list[dict]:
                g.records_found,
                r.profile_used,
                CASE
-                   WHEN r.thread_slot IS NOT NULL THEN 'T' || r.thread_slot
+                   WHEN r.thread_slot >= 99 THEN
+                       CASE r.thread_slot
+                           WHEN 99  THEN 'DC-DE'
+                           WHEN 100 THEN 'DC-IN'
+                           WHEN 101 THEN 'DC-UK'
+                           WHEN 102 THEN 'DC-US'
+                           WHEN 103 THEN 'DC-HK'
+                           ELSE 'DC'
+                       END
+                   WHEN r.thread_slot IS NOT NULL THEN 'T' || (r.thread_slot + 1)
                    ELSE '–'
                END                                          AS thread_slot,
                CASE
@@ -868,18 +891,17 @@ tab_heatmap = dbc.Container(fluid=True, children=[
 # Tab 2 — Queue layout
 # ---------------------------------------------------------------------------
 QUEUE_COLUMNS = [
-    {"name": "Priorität",   "id": "priority",         "editable": True,  "type": "numeric"},
-    {"name": "Gerät",       "id": "device",           "editable": True,  "presentation": "dropdown"},
-    {"name": "DC-Affinität","id": "thread_affinity",  "editable": True,  "presentation": "dropdown"},
-    {"name": "Thread",      "id": "thread_slot",      "editable": False},
-    {"name": "Föd.",        "id": "federation",       "editable": False},
-    {"name": "Kontinent",   "id": "continent",        "editable": False},
-    {"name": "Jahr",        "id": "year",             "editable": False, "type": "numeric"},
-    {"name": "ELO-Band",    "id": "elo_band",         "editable": False},
-    {"name": "Spieler",     "id": "player_count",     "editable": False, "type": "numeric"},
-    {"name": "Status",      "id": "status",           "editable": False},
-    {"name": "Versuche",    "id": "retries",          "editable": False, "type": "numeric"},
-    {"name": "Letzter Lauf","id": "last_run_at",      "editable": False},
+    {"name": "Priorität",   "id": "priority",        "editable": True,  "type": "numeric"},
+    {"name": "Gerät",       "id": "device",          "editable": True,  "presentation": "dropdown"},
+    {"name": "Thread",      "id": "thread_affinity", "editable": True,  "presentation": "dropdown"},
+    {"name": "Föd.",        "id": "federation",      "editable": False},
+    {"name": "Kontinent",   "id": "continent",       "editable": False},
+    {"name": "Jahr",        "id": "year",            "editable": False, "type": "numeric"},
+    {"name": "ELO-Band",    "id": "elo_band",        "editable": False},
+    {"name": "Spieler",     "id": "player_count",    "editable": False, "type": "numeric"},
+    {"name": "Status",      "id": "status",          "editable": False},
+    {"name": "Versuche",    "id": "retries",         "editable": False, "type": "numeric"},
+    {"name": "Letzter Lauf","id": "last_run_at",     "editable": False},
 ]
 
 DEVICE_OPTIONS = [
@@ -954,16 +976,17 @@ tab_queue = dbc.Container(fluid=True, children=[
             {"if": {"column_id": "priority"},        "backgroundColor": "#FFFDE7"},
             {"if": {"column_id": "device"},          "backgroundColor": "#E8F5E9"},
             {"if": {"column_id": "thread_affinity"}, "backgroundColor": "#EDE7F6"},
-            {"if": {"filter_query": '{thread_slot} != "–"', "column_id": "thread_slot"},
-             "backgroundColor": "#E3F2FD", "fontWeight": "bold", "color": "#1565C0"},
-            {"if": {"filter_query": '{thread_affinity} != ""', "column_id": "thread_affinity"},
+            # DC-Zuweisung (DC-DE / DC-IN etc.)
+            {"if": {"filter_query": '{thread_affinity} contains "DC"', "column_id": "thread_affinity"},
              "color": "#4527A0", "fontWeight": "bold"},
+            # Läuft gerade (▶ T1 / ▶ DC-IN)
+            {"if": {"filter_query": '{thread_affinity} contains "▶"', "column_id": "thread_affinity"},
+             "backgroundColor": "#E3F2FD", "color": "#1565C0", "fontWeight": "bold"},
         ],
         tooltip_header={
             "priority":       "Klicken zum Bearbeiten — niedrigerer Wert = früher gescrapt",
             "device":         "Gerät zuweisen — leer = beliebiges Gerät",
-            "thread_affinity":"DC-Thread-Zuweisung — leer = Residential-Pool",
-            "thread_slot":    "Aktiver Thread-Slot (nur für laufende Gruppen)",
+            "thread_affinity":"Thread-Zuweisung (Dropdown) · ▶ = läuft gerade",
         },
     ),
 
@@ -1010,17 +1033,19 @@ tab_completed = dbc.Container(fluid=True, children=[
         style_cell={"fontSize": "0.85rem", "padding": "6px 10px", "textAlign": "left"},
         style_data_conditional=[
             {"if": {"row_index": "odd"}, "backgroundColor": "#FAFAFA"},
-            {"if": {"filter_query": '{thread_slot} = "T0"', "column_id": "thread_slot"},
-             "backgroundColor": "#BBDEFB", "fontWeight": "bold", "color": "#0D47A1"},
             {"if": {"filter_query": '{thread_slot} = "T1"', "column_id": "thread_slot"},
-             "backgroundColor": "#C8E6C9", "fontWeight": "bold", "color": "#1B5E20"},
+             "backgroundColor": "#BBDEFB", "fontWeight": "bold", "color": "#0D47A1"},
             {"if": {"filter_query": '{thread_slot} = "T2"', "column_id": "thread_slot"},
-             "backgroundColor": "#FFF9C4", "fontWeight": "bold", "color": "#F57F17"},
+             "backgroundColor": "#C8E6C9", "fontWeight": "bold", "color": "#1B5E20"},
             {"if": {"filter_query": '{thread_slot} = "T3"', "column_id": "thread_slot"},
+             "backgroundColor": "#FFF9C4", "fontWeight": "bold", "color": "#F57F17"},
+            {"if": {"filter_query": '{thread_slot} = "T4"', "column_id": "thread_slot"},
              "backgroundColor": "#B2EBF2", "fontWeight": "bold", "color": "#006064"},
+            {"if": {"filter_query": '{thread_slot} contains "DC"', "column_id": "thread_slot"},
+             "backgroundColor": "#EDE7F6", "fontWeight": "bold", "color": "#4527A0"},
         ],
         tooltip_header={
-            "thread_slot": "Thread-Slot der diesen Job bearbeitet hat (T0–T3 = parallel, – = Einzelthread oder unbekannt)",
+            "thread_slot": "Thread der diesen Job bearbeitet hat (T1–T4 = Residential, DC-XX = Datacenter)",
         },
     ),
 ], className="py-3")
@@ -1139,7 +1164,7 @@ def _build_worker_status_widget(ws: dict) -> html.Div:
                 badge_color = _SLOT_BADGE[slot % len(_SLOT_BADGE)]
                 badge_cls   = f"badge bg-{badge_color} me-1" + (
                     " text-dark" if badge_color == "warning" else "")
-                slot_label  = f"T{slot}"
+                slot_label  = f"T{slot + 1}"
 
             grp_str = grp if is_sleeping else (f"{fed}/{year} · {elo}" if elo else grp)
             lines = [
@@ -1614,7 +1639,13 @@ def save_queue_edits(current_data, previous_data):
                 pass
         if curr.get("thread_affinity") != prev.get("thread_affinity"):
             try:
-                update_group_thread_affinity(curr["id"], curr.get("thread_affinity", "") or "")
+                val = curr.get("thread_affinity", "") or ""
+                # Nicht speichern wenn es ein Live-Anzeige-Wert ist (▶ T1, ▶ DC-IN)
+                if not val.startswith("▶"):
+                    # Label → raw-Wert zurück (DC-IN → dc_in)
+                    _label_to_raw = {"DC-DE": "dc_de", "DC-IN": "dc_in", "DC-UK": "dc_uk",
+                                     "DC-US": "dc_us", "DC-HK": "dc_hk"}
+                    update_group_thread_affinity(curr["id"], _label_to_raw.get(val, val))
             except (ValueError, TypeError, KeyError):
                 pass
     return ""

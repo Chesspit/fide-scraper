@@ -1234,6 +1234,8 @@ app.layout = dbc.Container(fluid=True, children=[
 # Callbacks — Tab 1 (Heatmap)
 # ===========================================================================
 
+_PINNED_FEDS = ["GER", "SUI", "AUT"]   # immer oben, unabhängig vom Kontinent
+
 @app.callback(
     Output("dd-federation", "options"),
     Output("dd-federation", "value"),
@@ -1241,9 +1243,15 @@ app.layout = dbc.Container(fluid=True, children=[
 )
 def update_federation_dropdown(continent):
     feds = query_federations(continent)
-    opts = [{"label": f, "value": f} for f in feds]
-    # Default: GER wenn verfügbar, sonst erster Eintrag
-    default = "GER" if "GER" in feds else (feds[0] if feds else None)
+
+    # Favoriten oben (immer, unabhängig vom gewählten Kontinent)
+    opts = [{"label": f"★ {f}", "value": f} for f in _PINNED_FEDS]
+    opts.append({"label": "──────────────", "value": "__sep__", "disabled": True})
+    # Kontinent-Liste ohne Dopplungen mit Favoriten
+    opts += [{"label": f, "value": f} for f in feds if f not in _PINNED_FEDS]
+
+    # Default: GER
+    default = "GER"
     return opts, default
 
 

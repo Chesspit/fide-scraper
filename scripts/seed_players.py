@@ -386,10 +386,10 @@ def update_groups_table(conn, group_name: str, player_count: int):
 
 
 def load_group_definition(conn, group_name: str) -> dict | None:
-    """Load group definition (elo_min, elo_max, federations) from groups table."""
+    """Load group definition (elo_min, elo_max, federations, sex) from groups table."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT elo_min, elo_max, federations, sampling, backfill_from, backfill_to "
+            "SELECT elo_min, elo_max, federations, sampling, backfill_from, backfill_to, sex "
             "FROM groups WHERE group_name = %s",
             (group_name,),
         )
@@ -397,12 +397,13 @@ def load_group_definition(conn, group_name: str) -> dict | None:
     if not row:
         return None
     return {
-        "elo_min":      row[0],
-        "elo_max":      row[1],
-        "federations":  row[2],  # e.g. "SUI" or "SUI,AUT,GER" or None
-        "sampling":     row[3],
+        "elo_min":       row[0],
+        "elo_max":       row[1],
+        "federations":   row[2],  # e.g. "SUI" or "SUI,AUT,GER" or None
+        "sampling":      row[3],
         "backfill_from": row[4],
         "backfill_to":   row[5],
+        "sex":           (row[6] or "").strip() or None,  # 'F', 'M', or None
     }
 
 
@@ -490,11 +491,13 @@ def main():
                 if fed_str_raw else None
             )
 
+            sex_filter = grp_def.get("sex")  # 'F', 'M', or None
             candidates = [
                 p for p in all_players
                 if p["active"]
                 and min_rating <= (p["std_rating"] or 0) <= max_rating
                 and (federations is None or p["federation"] in federations)
+                and (sex_filter is None or p.get("sex") == sex_filter)
             ]
 
             fide_ids = [p["fide_id"] for p in candidates]

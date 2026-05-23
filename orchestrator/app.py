@@ -53,8 +53,12 @@ COLORSCALE = [
 _DATA_DIR = Path(os.getenv("ORCHESTRATOR_DATA_DIR", Path(__file__).resolve().parent))
 WORKER_STATE_PATH = _DATA_DIR / "worker_state.json"
 
-OVERVIEW_FEDERATIONS = ["GER", "SUI", "AUT", "POL", "UKR", "NOR",
-                        "·1", "·2", "·3", "·4", "·5", "·6", "·7", "·8"]
+# Direktspalten + Separator + eine Spalte pro DC-Thread
+# Die DC-Labels müssen den `label`-Feldern in profiles.yaml entsprechen.
+OVERVIEW_FEDERATIONS = ["GER", "SUI", "AUT", "·", "DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK"]
+
+# Föderationen die direkt als eigene Spalte erscheinen (kein DC-Aggregat)
+_OV_DIRECT_FEDS = {"GER", "SUI", "AUT"}
 
 pm = ProfileManager()
 
@@ -283,35 +287,65 @@ def query_federations(continent: str) -> list[str]:
     return [r[0] for r in rows]
 
 
-def query_overview() -> list[dict]:
-    """Scraping-Fortschritt pro (federation, elo_bucket).
+def _get_dc_overview_map() -> dict[str, list[str]]:
+    """DC-Label → Föderationsliste (live aus profiles.yaml)."""
+    threads = _get_concurrency_cfg().get("datacenter_threads", [])
+    return {t["label"]: t.get("federations", []) for t in threads}
 
-    Breite Bänder (z.B. SUI 2138–2575) werden auf ALLE betroffenen 50-Punkte-
-    Buckets aufgeteilt, damit die Heatmap keine Lücken mit 'nicht eingeplant'
-    zeigt, obwohl der ELO-Bereich von einer breiten Gruppe abgedeckt wird.
+
+def query_overview() -> list[dict]:
+    """Scraping-Fortschritt pro (federation_or_dc_label, elo_bucket).
+
+    - GER / SUI / AUT: direkte Spalten (nur diese Föderation)
+    - DC-DE / DC-IN / DC-UK / DC-US / DC-HK: Aggregat aller dem Thread
+      zugewiesenen Föderationen (aus profiles.yaml)
+    - "·" (Separator): wird nicht abgefragt
+
+    Breite Bänder werden auf alle 50-Punkte-Buckets aufgeteilt, damit die
+    Heatmap keine Lücken zeigt, obwohl ein breiter ELO-Bereich von einer
+    einzigen Gruppe abgedeckt wird.
     """
-    placeholders = ",".join("?" * len(OVERVIEW_FEDERATIONS))
+    dc_map = _get_dc_overview_map()   # {"DC-DE": ["POL","UKR",...], ...}
+
+    # Reverse-Map: Föderationscode → DC-Label
+    fed_to_dc: dict[str, str] = {
+        fed: label
+        for label, feds in dc_map.items()
+        for fed in feds
+    }
+
+    all_feds = list(_OV_DIRECT_FEDS) + list(fed_to_dc.keys())
+    if not all_feds:
+        return []
+
+    placeholders = ",".join("?" * len(all_feds))
     conn = get_conn()
-    # Rohdaten: eine Zeile pro scrape_group (nicht aggregiert nach Bucket)
     rows = conn.execute(
         f"""SELECT federation, elo_min, elo_max, status
             FROM scrape_groups
             WHERE federation IN ({placeholders})""",
-        OVERVIEW_FEDERATIONS,
+        all_feds,
     ).fetchall()
     conn.close()
 
-    # Jede Gruppe auf alle 50-Punkte-Buckets aufteilen die sie abdeckt
     from collections import defaultdict
     bucket_data: dict[tuple, dict] = defaultdict(lambda: {"total": 0, "done": 0})
 
     for fed, elo_min, elo_max, status in rows:
+        # Direkte Spalte oder DC-Aggregat?
+        if fed in _OV_DIRECT_FEDS:
+            target = fed
+        else:
+            target = fed_to_dc.get(fed)
+        if target is None:
+            continue
+
         lo_bucket = (elo_min // 50) * 50
         hi_bucket = (elo_max // 50) * 50
         for bucket in range(lo_bucket, hi_bucket + 50, 50):
             if bucket >= 2300:          # ≥ 2300 = Mac Mini → nicht in Übersicht
                 continue
-            key = (fed, bucket)
+            key = (target, bucket)
             bucket_data[key]["total"] += 1
             if status == "done":
                 bucket_data[key]["done"] += 1
@@ -690,18 +724,42 @@ def build_overview_figure() -> go.Figure:
     # Lookup: (federation, elo_bucket) → row
     lookup = {(r["federation"], r["elo_bucket"]): r for r in rows}
 
+    # DC-Thread-Föderationen für Hover-Text (Label → sortierte Feds-Liste)
+    dc_map = _get_dc_overview_map()
+
     z, text = [], []
     for bkt in all_buckets:
         z_row, text_row = [], []
         for fed in OVERVIEW_FEDERATIONS:
+            if fed == "·":
+                # Visueller Separator — transparent / kein Tooltip
+                z_row.append(float("nan"))
+                text_row.append("")
+                continue
             r = lookup.get((fed, bkt))
             if r:
                 pct = round(r["done_count"] / r["total"] * 100 / 10) * 10
+                if fed in dc_map:
+                    feds_str = ", ".join(dc_map[fed])
+                    hover = (
+                        f"<b>{fed}</b>: {pct}%<br>"
+                        f"{r['done_count']}/{r['total']} Gruppen done<br>"
+                        f"<span style='font-size:0.85em;color:#666'>{feds_str}</span>"
+                    )
+                else:
+                    hover = f"{pct}%<br>{r['done_count']}/{r['total']} Gruppen done"
                 z_row.append(pct)
-                text_row.append(f"{pct}%<br>{r['done_count']}/{r['total']} Gruppen done")
+                text_row.append(hover)
             else:
                 z_row.append(0)
-                text_row.append("0% · noch nicht eingeplant")
+                if fed in dc_map:
+                    feds_str = ", ".join(dc_map[fed])
+                    text_row.append(
+                        f"<b>{fed}</b>: 0%<br>noch nicht eingeplant<br>"
+                        f"<span style='font-size:0.85em;color:#666'>{feds_str}</span>"
+                    )
+                else:
+                    text_row.append("0% · noch nicht eingeplant")
         z.append(z_row)
         text.append(text_row)
 

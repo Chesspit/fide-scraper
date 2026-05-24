@@ -674,32 +674,38 @@ def build_figure(federation: str) -> go.Figure:
 # ---------------------------------------------------------------------------
 # Overview figure (Übersicht-Tab)
 # ---------------------------------------------------------------------------
-# z = 0..100, diskret in 10%-Schritten. 0% = grau, 100% = tiefgrün.
-_OV_ZMIN, _OV_ZMAX = 0, 100
+# z = -10..100. z=-10 = keine Daten; z=0 = 0% pending (grau); z=10..100 = 10–100%.
+_OV_ZMIN, _OV_ZMAX = -10, 100
 
-_OV_STEPS = [
-    (0,   "#BDBDBD"),  # 0%   grau
-    (10,  "#DCEDC8"),  # 10%  sehr hellgrün
-    (20,  "#DCEDC8"),  # 20%  = 10%
-    (30,  "#81C784"),  # 30%  hellgrün
-    (40,  "#81C784"),  # 40%  = 30%
-    (50,  "#43A047"),  # 50%  mittelgrün
-    (60,  "#43A047"),  # 60%  = 50%
-    (70,  "#2E7D32"),  # 70%  dunkelgrün
-    (80,  "#2E7D32"),  # 80%  = 70%
-    (90,  "#1B5E20"),  # 90%  sehr dunkel
-    (100, "#0D4A18"),  # 100% tiefgrün (dunkler als 90%, aber nicht schwarz)
+
+def _ov_pos(z: float) -> float:
+    """Normalisiert z aus [_OV_ZMIN, _OV_ZMAX] auf [0.0, 1.0]."""
+    return (z - _OV_ZMIN) / (_OV_ZMAX - _OV_ZMIN)
+
+
+# Diskrete Farbstufen — jedes Band explizit als [lo, color], [hi, color]
+OVERVIEW_COLORSCALE = [
+    [_ov_pos(-10),   "#F0F0F0"],  # keine Daten (sehr hell)
+    [_ov_pos(-0.01), "#F0F0F0"],
+    [_ov_pos(0),     "#BDBDBD"],  # 0% pending (grau)
+    [_ov_pos(9.99),  "#BDBDBD"],
+    [_ov_pos(10),    "#DCEDC8"],  # 10–29%  sehr hellgrün
+    [_ov_pos(29.99), "#DCEDC8"],
+    [_ov_pos(30),    "#81C784"],  # 30–49%  hellgrün
+    [_ov_pos(49.99), "#81C784"],
+    [_ov_pos(50),    "#43A047"],  # 50–69%  mittelgrün
+    [_ov_pos(69.99), "#43A047"],
+    [_ov_pos(70),    "#2E7D32"],  # 70–89%  dunkelgrün
+    [_ov_pos(89.99), "#2E7D32"],
+    [_ov_pos(90),    "#1B5E20"],  # 90–99%  sehr dunkel
+    [_ov_pos(99.99), "#1B5E20"],
+    [_ov_pos(100),   "#0D4A18"],  # 100%    tiefgrün
+    [1.0,            "#0D4A18"],
 ]
 
-# Diskrete Farbstufen: jede 10%-Stufe hat eine eigene Farbe
-OVERVIEW_COLORSCALE = []
-for _pct, _col in _OV_STEPS:
-    _lo = _pct / 100
-    _hi = (_pct + 9.99) / 100 if _pct < 100 else 1.0
-    OVERVIEW_COLORSCALE += [[_lo, _col], [_hi, _col]]
-
 _OV_LEGEND = [
-    ("#BDBDBD", "<10%"),
+    ("#F0F0F0", "keine Daten"),
+    ("#BDBDBD", "0%"),
     ("#DCEDC8", "<30%"),
     ("#81C784", "<50%"),
     ("#43A047", "<70%"),
@@ -751,15 +757,15 @@ def build_overview_figure() -> go.Figure:
                 z_row.append(pct)
                 text_row.append(hover)
             else:
-                z_row.append(0)
+                z_row.append(-10)
                 if fed in dc_map:
                     feds_str = ", ".join(dc_map[fed])
                     text_row.append(
-                        f"<b>{fed}</b>: 0%<br>noch nicht eingeplant<br>"
+                        f"<b>{fed}</b>: keine Daten<br>noch nicht eingeplant<br>"
                         f"<span style='font-size:0.85em;color:#666'>{feds_str}</span>"
                     )
                 else:
-                    text_row.append("0% · noch nicht eingeplant")
+                    text_row.append("keine Daten · noch nicht eingeplant")
         z.append(z_row)
         text.append(text_row)
 

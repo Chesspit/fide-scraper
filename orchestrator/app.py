@@ -674,7 +674,11 @@ def build_figure(federation: str) -> go.Figure:
 # ---------------------------------------------------------------------------
 # Overview figure (Übersicht-Tab)
 # ---------------------------------------------------------------------------
-# z = -10..100. z=-10 = keine Daten; z=0 = 0% pending (grau); z=10..100 = 10–100%.
+# z = -10..100.
+#   z=-10        → keine Daten (nicht in DB)
+#   z=0          → 0% pending (DB-Eintrag, 0/N done)
+#   z=5          → >0% aber <10% (angefangen)
+#   z=10..100    → 10–100%, gerundet auf 10er-Schritte
 _OV_ZMIN, _OV_ZMAX = -10, 100
 
 
@@ -688,24 +692,27 @@ OVERVIEW_COLORSCALE = [
     [_ov_pos(-10),   "#F0F0F0"],  # keine Daten (sehr hell)
     [_ov_pos(-0.01), "#F0F0F0"],
     [_ov_pos(0),     "#BDBDBD"],  # 0% pending (grau)
-    [_ov_pos(9.99),  "#BDBDBD"],
-    [_ov_pos(10),    "#DCEDC8"],  # 10–29%  sehr hellgrün
+    [_ov_pos(4.99),  "#BDBDBD"],
+    [_ov_pos(5),     "#F1F8E9"],  # >0–<10%  sehr blasses Grün
+    [_ov_pos(9.99),  "#F1F8E9"],
+    [_ov_pos(10),    "#DCEDC8"],  # 10–29%   sehr hellgrün
     [_ov_pos(29.99), "#DCEDC8"],
-    [_ov_pos(30),    "#81C784"],  # 30–49%  hellgrün
+    [_ov_pos(30),    "#81C784"],  # 30–49%   hellgrün
     [_ov_pos(49.99), "#81C784"],
-    [_ov_pos(50),    "#43A047"],  # 50–69%  mittelgrün
+    [_ov_pos(50),    "#43A047"],  # 50–69%   mittelgrün
     [_ov_pos(69.99), "#43A047"],
-    [_ov_pos(70),    "#2E7D32"],  # 70–89%  dunkelgrün
+    [_ov_pos(70),    "#2E7D32"],  # 70–89%   dunkelgrün
     [_ov_pos(89.99), "#2E7D32"],
-    [_ov_pos(90),    "#1B5E20"],  # 90–99%  sehr dunkel
+    [_ov_pos(90),    "#1B5E20"],  # 90–99%   sehr dunkel
     [_ov_pos(99.99), "#1B5E20"],
-    [_ov_pos(100),   "#0D4A18"],  # 100%    tiefgrün
+    [_ov_pos(100),   "#0D4A18"],  # 100%     tiefgrün
     [1.0,            "#0D4A18"],
 ]
 
 _OV_LEGEND = [
     ("#F0F0F0", "keine Daten"),
     ("#BDBDBD", "0%"),
+    ("#F1F8E9", "<10%"),
     ("#DCEDC8", "<30%"),
     ("#81C784", "<50%"),
     ("#43A047", "<70%"),
@@ -744,16 +751,23 @@ def build_overview_figure() -> go.Figure:
                 continue
             r = lookup.get((fed, bkt))
             if r:
-                pct = round(r["done_count"] / r["total"] * 100 / 10) * 10
+                raw_pct = r["done_count"] / r["total"] * 100
+                if raw_pct == 0:
+                    pct = 0
+                elif raw_pct < 10:
+                    pct = 5   # <10%-Band (z=5)
+                else:
+                    pct = round(raw_pct / 10) * 10
+                pct_label = f"<10%" if pct == 5 else f"{pct}%"
                 if fed in dc_map:
                     feds_str = ", ".join(dc_map[fed])
                     hover = (
-                        f"<b>{fed}</b>: {pct}%<br>"
+                        f"<b>{fed}</b>: {pct_label}<br>"
                         f"{r['done_count']}/{r['total']} Gruppen done<br>"
                         f"<span style='font-size:0.85em;color:#666'>{feds_str}</span>"
                     )
                 else:
-                    hover = f"{pct}%<br>{r['done_count']}/{r['total']} Gruppen done"
+                    hover = f"{pct_label}<br>{r['done_count']}/{r['total']} Gruppen done"
                 z_row.append(pct)
                 text_row.append(hover)
             else:

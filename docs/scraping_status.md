@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-25 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-05-25 17:15 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -8,8 +8,8 @@ Stand: 2026-05-25 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **3.285.732** |
-| Spieler mit ok-Daten | **28.728** |
+| Partien gesamt | **3.285.732+** |
+| Spieler mit ok-Daten | **28.728+** |
 | DB-Größe | **~7,2 GB (est.)** |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ |
 
@@ -19,8 +19,8 @@ Stand: 2026-05-25 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Gruppe | Spieler | ELO-Range | Zeitraum | Status |
 |--------|--------:|-----------|----------|--------|
-| female_top | 23 | 2400–2600 (F, inaktiv) | 2008-04 – 2026-04 | ✅ gescrapt (wenig ok-Perioden, da inaktiv) |
-| male_control | 48 | 2400–2600 (M, age-matched) | 2008-04 – 2026-04 | ✅ gescrapt |
+| female_top | 23 | 2400–2600 (F, inaktiv) | 2008-04 – 2026-04 | ✅ complete |
+| male_control | 48 | 2400–2600 (M, age-matched) | 2008-04 – 2026-04 | ✅ complete |
 | elite_2600 | 190 | ≥ 2600 | 2008-04 – 2026-05 | ✅ complete |
 | swiss_2026 | 349 | — (SMM 2026) | 2009-01 – 2026-04 | ✅ partial (2008 fehlt) |
 | female_2200 | 207 | 2200–2399 (F) | 2008-04 – 2026-05 | ✅ complete |
@@ -56,7 +56,8 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 | Bereich | Gruppen | Spielerinnen | ELO-Range | Status |
 |---------|--------:|-------------:|-----------|--------|
 | female_2100_01 – female_2100_06 | 6 | 395 | 2104–2199 | ✅ complete |
-| female_2000_01 – female_2000_09 | 9 | 671 | 2004–2103 | 🔄 female_2000_01 läuft (ETA ~20:00) |
+| female_2000_01 | 1 | 66 | 2090–2103 | ✅ complete (seit 2026-05-25) |
+| female_2000_02 – female_2000_09 | 8 | 605 | 2004–2089 | 🔄 _02 läuft (~50%), _03–_09 pending |
 | female_1900_01 – female_1900_16 | 16 | 1.117 | 1903–2003 | ⏳ pending |
 | female_1800_01 – female_1800_24 | 24 | 1.769 | 1800–1902 | ⏳ pending |
 | **Gesamt** | **55** | **3.952** | **1800–2199** | |
@@ -96,7 +97,7 @@ bash scripts/run_female_chain.sh female_2000_02
 | DC-MX (Slot 105) | Datacenter | semi_conservative | FRA, BEL, NED, LUX | America/Mexico_City |
 | DC-AE (Slot 106) | Datacenter | semi_conservative | SRB, CRO, BIH, MKD, MNE, SLO, KOS, ALB, GRE, TUR | Asia/Dubai |
 
-### Residential Queue-Strategie (T1/T2)
+### Residential Queue-Strategie (T0/T1)
 
 **Nur DACH-Region**, Ziel: GER 1800+ bis 2022, AUT+SUI bis 2020–2021
 
@@ -114,46 +115,69 @@ bash scripts/run_female_chain.sh female_2000_02
 | P100000+ | DACH vor 2020 (deprioritisiert) |
 | P500000+ | alle anderen Föderationen |
 
-**Zwischenziel:** GER 1800+ komplett bis 2022 ✓ / AUT+SUI komplett bis 2020–2021 ✓
-→ ~666 Gruppen bis Zwischenziel
-
 ### DC Queue-Strategie
 
 Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DESC / ELO DESC
 
-| DC-Thread | Gruppen pending | Jahresbereich |
-|-----------|----------------:|---------------|
-| DC-DE | ~1.968 | 2009–2026 |
-| DC-IN | ~2.344 | 2009–2026 |
-| DC-UK | ~1.394 | 2009–2026 |
-| DC-US | ~673 | 2009–2026 |
-| DC-HK | ~530 | 2009–2026 |
-| DC-ES | ~2.941 | 2009–2026 |
-| DC-MX | ~3.079 | 2009–2026 |
-| DC-AE | ~1.546 | 2009–2026 |
+| DC-Thread | Gruppen done | Gruppen pending | Jahresbereich |
+|-----------|-------------:|----------------:|---------------|
+| DC-DE | 82 | ~1.967 | 2009–2026 |
+| DC-IN | 140 | ~2.344 | 2009–2026 |
+| DC-UK | 46 | ~1.394 | 2009–2026 |
+| DC-US | 59 | ~673 | 2009–2026 |
+| DC-HK | 45 | ~530 | 2009–2026 |
+| DC-ES | 11 | ~2.941 | 2009–2026 |
+| DC-MX | 53 | ~3.079 | 2009–2026 |
+| DC-AE | 2 | ~1.546 | 2009–2026 |
 
 ---
 
-## Änderungen Session 2026-05-25
+## Analytics-Frontend (Port 8055)
+
+| | |
+|---|---|
+| URL | **https://scelo.chesspit.net/analytics** *(oder lokal Port 8055)* |
+| Framework | Dash (Python), Multi-Page |
+| Default-Spieler | Gukesh D (FIDE-ID 46616543, Weltmeister 2024) |
+
+### Seiten
+
+| Seite | Gruppe | Pfad | Beschreibung |
+|-------|--------|------|--------------|
+| ELO-Top100 | Aktiv | `/c` | Live-Top-100 Rangliste mit ELO-Verlauf |
+| ELO-Verteilung | Aktiv | `/dist` | ELO-Verteilungshistogramm nach Kategorie |
+| Spieler-Steckbrief | Aktiv | `/player-profile` | Profil + Rating-History + Spielstatistiken |
+| Partien-Detail | Test | `/games` | Alle Partien eines Spielers, filterbar |
+| GM/IM Entwicklung | Test | `/titles` | Zeitreihe der Titelträger |
+
+---
+
+## Änderungen Session 2026-05-25 (aktuell)
 
 ### Mac Mini
 | Was | Details |
 |-----|---------|
-| **female_2100_01–06** ✅ | Alle 6 Gruppen (395 Spielerinnen, ELO 2104–2199) abgeschlossen |
-| **run_female_chain.sh** | Neues Script: kettet alle 49 female_XX-Gruppen vollautomatisch (seed → backfill → DB-update) |
-| **female_2000_01** 🔄 | 66 Spielerinnen, ELO 2090–2103; läuft seit 13:38 Uhr, ETA ~20:00 |
+| **female_2000_01** ✅ | 66 Spielerinnen, ELO 2090–2103, abgeschlossen |
+| **female_2000_02** 🔄 | 65 Spielerinnen, ~50% fertig, läuft weiter |
+| **run_female_chain.sh** | Chain läuft vollautomatisch durch alle female_XX-Gruppen |
 
 ### VPS Orchestrator
 | Was | Details |
 |-----|---------|
-| **3 neue DC-Scraper** | DC-ES (ESP/ITA/POR/AND/GIB), DC-MX (FRA/BEL/NED/LUX), DC-AE (SRB/CRO/BIH/MKD/MNE/SLO/KOS/ALB/GRE/TUR) |
-| **DC-UK Föds bereinigt** | NED/BEL/LUX zu DC-MX verschoben |
-| **DC-US Föds bereinigt** | MEX zu DC-MX verschoben |
-| **Queue-Affinities** | 7.530 Gruppen auf dc_es/dc_mx/dc_ae umgezogen (Bulk-UPDATE) |
-| **Individuelle Von/Bis** | Kein globales DC-Zeitfenster mehr; jede Karte hat eigene Start/Endzeit |
-| **Dashboard Standard-Tab** | App öffnet jetzt direkt auf Tab „Steuerung" |
-| **DC-Karten Layout** | Alle 8 Karten in einer Zeile; alle Föderationen angezeigt; kein Max-Stunden-Feld |
-| **docker-compose.yml** | DC-ES/MX/AE Credentials (`PROXYJET_DC_*`) als Env-Variablen in dashboard + worker |
+| **Worker-Neustart 17:14** | Nach HK-Abschluss (VIE 2025) automatisch neu gestartet, alle Threads aktiv |
+| **Bericht-Tab** | Neuer Tab „📊 Bericht": tägliches Datenvolumen pro Thread (MB), Zwischensummen Residential/DC mit % |
+| **3 neue DC-Scrapers** | DC-ES (ESP/ITA/POR/AND/GIB), DC-MX (FRA/BEL/NED/LUX), DC-AE (SRB/CRO/BIH/MKD/MNE/SLO/KOS/ALB/GRE/TUR) |
+| **Übersicht-Heatmap** | DC-ES/MX/AE als neue Spalten ergänzt |
+| **docker-compose.yml** | DC-ES/MX/AE Credentials als Env-Variablen in dashboard + worker |
+
+### Analytics-Frontend
+| Was | Details |
+|-----|---------|
+| **Navbar restrukturiert** | Gruppen „Aktiv" (ELO-Top100, ELO-Verteilung, Spieler-Steckbrief) und „Test" (Partien-Detail, GM/IM) |
+| **Version A/B gelöscht** | `elo_a.py`, `elo_b.py`, `elo_dist_b.py` entfernt |
+| **ELO-Top100** | Umbenannt von „Version C" |
+| **Default-Spieler** | Gukesh D (46616543) auf allen Seiten als Vorauswahl |
+| **Partien-Detail** | 2-Karten-Filter, Zeitraum-Slider (Ab Jahr), 2-zeilige Spaltenköpfe, keine Sortierung/Filter-Zeile |
 
 ---
 
@@ -162,7 +186,7 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 ### Mac Mini
 | Was | Details |
 |-----|---------|
-| **female_2100_01** 🔄 | 65 Spielerinnen, ELO 2183–2199, läuft seit 09:45 Uhr |
+| **female_2100_01** 🔄→✅ | 65 Spielerinnen, ELO 2183–2199, abgeschlossen |
 | **55 female_XX-Gruppen angelegt** | ELO 1800–2199, 3.952 Spielerinnen, 2010-01–2026-04, pending |
 
 ### VPS Orchestrator
@@ -179,29 +203,16 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 ### Mac Mini
 | Was | Details |
 |-----|---------|
-| global_24b ✅ | 74 Spieler, ELO 2322–2324 |
-| global_25a ✅ | 73 Spieler, ELO 2319–2321 |
-| global_25b ✅ | 67 Spieler, ELO 2317–2318 |
-| global_26a ✅ | 76 Spieler, ELO 2314–2316 |
-| global_26b ✅ | 62 Spieler, ELO 2312–2313 |
-| global_27a ✅ | 70 Spieler, ELO 2310–2311 |
-| global_27b ✅ | 114 Spieler, ELO 2306–2309 |
-| global_28a ✅ | 79 Spieler, ELO 2303–2305 |
-| global_28b ✅ | 68 Spieler, ELO 2300–2302 |
+| global_24b – global_28b ✅ | 9 Gruppen, ELO 2300–2324, alle fertig |
 | **ELO ≥ 2300 complete** | **Alle 51 Gruppen fertig** — Chain-Script lief durch bis 19:17 Uhr |
-| hist_-Gruppen | 5 historische Gruppen (2010–2012) in PostgreSQL angelegt, über VPS Residential gescrapt |
+| hist_-Gruppen | 5 historische Gruppen (2010–2012) in PostgreSQL angelegt |
 
 ### VPS Orchestrator
 | Was | Details |
 |-----|---------|
 | **5 DC-Threads** | DC-DE/IN/UK/US/HK — alle mit eigenem Host/Credentials/Timezone |
 | **DC Auto-Modus** | Timezone-basiert 07–23 Uhr Ortszeit, Toggle im Dashboard |
-| **DC Individuell-Modus** | Timezone ignoriert, Threads laufen 24/7 wenn enabled |
 | **thread_affinity** | Jede Gruppe in SQLite-Queue hat DC-Thread-Zuweisung |
-| **T1/T2 DACH-Fokus** | Nur DACH 2020–2026; andere Föd. auf P500000+ geschoben |
-| **Historische Gruppen** | 21 Gruppen (2010–2012, ELO ≥ 2300) auf P13–P33 — läuft über T1/T2 |
-| **Dashboard** | 5 Tabs, DC-Toggle/Modus/Zeitfenster, Residential-Karten mit Toggle |
-| **Neustart-Alert** | Zeigt aktive Konfiguration beim Neustart-Klick |
 
 ---
 

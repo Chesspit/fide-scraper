@@ -1226,6 +1226,45 @@ tab_completed = dbc.Container(fluid=True, children=[
 ], className="py-3")
 
 # ---------------------------------------------------------------------------
+# Tab: Bericht — tägliche MB nach Thread
+# ---------------------------------------------------------------------------
+
+# Slot → Label-Mapping (inkl. neue DC-Scraper)
+_REPORT_SLOT_LABELS = {
+    0:   "T0",
+    1:   "T1",
+    99:  "DC-DE",
+    100: "DC-IN",
+    101: "DC-UK",
+    102: "DC-US",
+    103: "DC-HK",
+    104: "DC-ES",
+    105: "DC-MX",
+    106: "DC-AE",
+}
+_RESIDENTIAL_SLOTS = {0, 1}
+_REPORT_COLORS = {
+    "T0":    "#1565C0",
+    "T1":    "#42A5F5",
+    "DC-DE": "#E65100",
+    "DC-IN": "#FF8F00",
+    "DC-UK": "#2E7D32",
+    "DC-US": "#66BB6A",
+    "DC-HK": "#6A1B9A",
+    "DC-ES": "#C62828",
+    "DC-MX": "#00838F",
+    "DC-AE": "#4E342E",
+}
+
+tab_bericht = dbc.Container(fluid=True, children=[
+    dcc.Interval(id="interval-bericht", interval=60_000, n_intervals=0),
+    dbc.Row(dbc.Col(html.H5("Scraping-Bericht — tägliches Datenvolumen",
+                            className="text-secondary fw-bold my-3"))),
+    dcc.Graph(id="bericht-chart", style={"height": "420px"}),
+    html.Div(id="bericht-table", className="mt-3"),
+], className="py-3")
+
+# ---------------------------------------------------------------------------
 # Main layout
 # ---------------------------------------------------------------------------
 app.layout = dbc.Container(fluid=True, children=[
@@ -1239,6 +1278,7 @@ app.layout = dbc.Container(fluid=True, children=[
         dbc.Tab(tab_heatmap,  label="⚙️ Steuerung",        tab_id="tab-heatmap"),
         dbc.Tab(tab_queue,    label="📋 Queue",             tab_id="tab-queue"),
         dbc.Tab(tab_completed,label="✅ Abgeschlossen",     tab_id="tab-completed"),
+        dbc.Tab(tab_bericht,  label="📊 Bericht",           tab_id="tab-bericht"),
     ], id="main-tabs", active_tab="tab-heatmap"),
 ], style={"backgroundColor": "#F8F9FA", "minHeight": "100vh", "paddingBottom": "40px"})
 
@@ -1976,6 +2016,180 @@ def refresh_overview(_, active_tab):
     if active_tab not in ("tab-overview", None):
         return dash.no_update
     return build_overview_figure()
+
+
+# ===========================================================================
+# Callbacks — Tab 5 (Bericht)
+# ===========================================================================
+
+def _query_bericht_data() -> list[dict]:
+    """Tägliches Datenvolumen pro Thread-Slot aus scrape_runs.
+
+    Gibt Liste von Dicts zurück:
+        {"day": "2026-05-25", "slot_label": "T0", "mb": 13.52}
+    Slots ohne Daten werden nicht zurückgegeben (fehlende Bars = 0).
+    """
+    conn = get_conn()
+    rows = conn.execute(
+        """
+        SELECT
+            DATE(started_at)   AS day,
+            thread_slot,
+            ROUND(SUM(mb_downloaded), 2) AS mb
+        FROM   scrape_runs
+        WHERE  mb_downloaded > 0
+          AND  started_at IS NOT NULL
+        GROUP  BY day, thread_slot
+        ORDER  BY day ASC, thread_slot ASC
+        """
+    ).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        slot = r["thread_slot"]
+        label = _REPORT_SLOT_LABELS.get(slot, f"Slot-{slot}")
+        result.append({"day": r["day"], "slot_label": label, "mb": r["mb"] or 0.0})
+    return result
+
+
+@app.callback(
+    Output("bericht-chart", "figure"),
+    Output("bericht-table", "children"),
+    Input("interval-bericht", "n_intervals"),
+    Input("main-tabs", "active_tab"),
+)
+def refresh_bericht(_, active_tab):
+    if active_tab != "tab-bericht":
+        return dash.no_update, dash.no_update
+
+    data = _query_bericht_data()
+
+    if not data:
+        empty_fig = go.Figure()
+        empty_fig.update_layout(
+            paper_bgcolor="#F8F9FA",
+            plot_bgcolor="#F8F9FA",
+            font_color="#888",
+            annotations=[{"text": "Noch keine Daten vorhanden.", "showarrow": False,
+                           "xref": "paper", "yref": "paper", "x": 0.5, "y": 0.5,
+                           "font": {"size": 14}}],
+            xaxis_visible=False, yaxis_visible=False,
+        )
+        return empty_fig, html.P("Noch keine Daten.", style={"color": "#888", "fontSize": "0.9rem"})
+
+    # ── Alle Tage + alle bekannten Labels sammeln ──────────────────────────
+    all_days    = sorted({d["day"] for d in data})
+    # Reihenfolge der Threads: Residential T0/T1 zuerst, dann DC nach Slot-Nr.
+    ordered_labels = ["T0", "T1", "DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK", "DC-ES", "DC-MX", "DC-AE"]
+    present_labels = {d["slot_label"] for d in data}
+    labels_shown   = [l for l in ordered_labels if l in present_labels]
+
+    # Pivot: {label → {day → mb}}
+    pivot: dict[str, dict[str, float]] = {l: {} for l in labels_shown}
+    for d in data:
+        if d["slot_label"] in pivot:
+            pivot[d["slot_label"]][d["day"]] = d["mb"]
+
+    # ── Stacked-Bar Chart ──────────────────────────────────────────────────
+    fig = go.Figure()
+    for label in labels_shown:
+        y_vals = [pivot[label].get(day, 0.0) for day in all_days]
+        is_residential = label in ("T0", "T1")
+        fig.add_trace(go.Bar(
+            name=label,
+            x=all_days,
+            y=y_vals,
+            marker_color=_REPORT_COLORS.get(label, "#AAAAAA"),
+            legendgroup="Residential" if is_residential else "Datacenter",
+            legendgrouptitle_text=("Residential" if is_residential else "Datacenter")
+                if label in ("T0", "DC-DE") else None,   # Titel nur beim ersten je Gruppe
+        ))
+
+    # Vertikale Trennlinie zwischen Residential-Summe und DC für optischen Hinweis
+    # (gelöst via legendgroup, nicht via Shape, da stacked bereits getrennt)
+
+    fig.update_layout(
+        barmode="stack",
+        paper_bgcolor="#F8F9FA",
+        plot_bgcolor="#FFFFFF",
+        font=dict(family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", size=12),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom", y=1.02,
+            xanchor="left",   x=0,
+            tracegroupgap=12,
+        ),
+        xaxis=dict(
+            title=None,
+            tickangle=-30,
+            tickfont=dict(size=11),
+            gridcolor="#EEEEEE",
+        ),
+        yaxis=dict(
+            title="Megabyte",
+            gridcolor="#EEEEEE",
+        ),
+        margin=dict(l=50, r=20, t=50, b=50),
+        hovermode="x unified",
+    )
+
+    # ── Zusammenfassungs-Tabelle ───────────────────────────────────────────
+    # Zeilen = Tage (neueste oben), Spalten = Thread-Labels
+    table_cols = [{"name": "Datum",  "id": "_day"}] + [
+        {"name": l, "id": l} for l in labels_shown
+    ] + [{"name": "Gesamt", "id": "_total"}]
+
+    table_rows = []
+    for day in reversed(all_days):
+        row: dict[str, str] = {"_day": day}
+        total = 0.0
+        for label in labels_shown:
+            mb = pivot[label].get(day, 0.0)
+            row[label] = f"{mb:.1f}" if mb else "–"
+            total += mb
+        row["_total"] = f"{total:.1f}"
+        table_rows.append(row)
+
+    table = dash_table.DataTable(
+        data=table_rows,
+        columns=table_cols,
+        page_size=30,
+        page_action="native",
+        sort_action="none",
+        style_table={"overflowX": "auto"},
+        style_header={
+            "backgroundColor": "#F0F0F0",
+            "fontWeight":      "bold",
+            "fontSize":        "0.80rem",
+            "textAlign":       "center",
+            "padding":         "4px 8px",
+        },
+        style_cell={
+            "fontSize":   "0.82rem",
+            "padding":    "4px 10px",
+            "textAlign":  "right",
+            "color":      "#333",
+        },
+        style_cell_conditional=[
+            {"if": {"column_id": "_day"},   "textAlign": "left", "fontWeight": "600"},
+            {"if": {"column_id": "_total"}, "fontWeight": "600", "color": "#1565C0"},
+        ],
+        style_data_conditional=[
+            {"if": {"row_index": "odd"}, "backgroundColor": "#FAFAFA"},
+        ],
+        style_as_list_view=True,
+    )
+
+    return fig, html.Div([
+        html.H6("Tagesdetails (MB je Thread)", className="text-secondary mt-3 mb-2",
+                style={"fontSize": "0.85rem", "fontWeight": "600"}),
+        html.Div(style={
+            "backgroundColor": "#FFFFFF",
+            "border": "1px solid #E0E0E0",
+            "borderRadius": "6px",
+            "padding": "12px 16px",
+        }, children=[table]),
+    ])
 
 
 # ---------------------------------------------------------------------------

@@ -138,6 +138,36 @@ def _save_dc_thread_enabled(dc_id: str, enabled: bool) -> None:
         pass
 
 
+def _save_slot_max_hours(slot: int, hours) -> None:
+    """Persist max_hours für einen Residential-Slot in profiles.yaml (None = unbegrenzt)."""
+    try:
+        with open(PROFILES_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        for s in data.get("concurrency", {}).get("worker_slots", []):
+            if s.get("slot") == slot:
+                s["max_hours"] = float(hours) if hours else None
+                break
+        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+    except Exception:
+        pass
+
+
+def _save_dc_thread_max_hours(dc_id: str, hours) -> None:
+    """Persist max_hours für einen DC-Thread in profiles.yaml (None = unbegrenzt)."""
+    try:
+        with open(PROFILES_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        for t in data.get("concurrency", {}).get("datacenter_threads", []):
+            if t.get("id") == dc_id:
+                t["max_hours"] = float(hours) if hours else None
+                break
+        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+    except Exception:
+        pass
+
+
 def _get_dc_thread_status() -> list[dict]:
     """Gibt für jeden DC-Thread: label, id, enabled, local_time, is_active, has_credentials."""
     from zoneinfo import ZoneInfo
@@ -166,6 +196,7 @@ def _get_dc_thread_status() -> list[dict]:
             "has_credentials": has_creds,
             "federations": t.get("federations", []),
             "slot":        t.get("slot", 99),
+            "max_hours":   t.get("max_hours"),
         })
     return result
 
@@ -245,6 +276,7 @@ def _get_residential_thread_status() -> list[dict]:
             "combos_total":  ws.get("combos_total"),
             "player_count":  ws.get("player_count"),
             "started_at":    ws.get("group_started_at"),
+            "max_hours":     s.get("max_hours"),
         })
     return result
 
@@ -462,10 +494,14 @@ def query_queue(affinity_filter: str | None = None) -> list[dict]:
     result = [dict(r) for r in rows]
 
     # Thread-Anzeige: live Slot ODER konfigurierte Affinität → eine Spalte
-    _DC_SLOT_LABELS = {99: "DC-DE", 100: "DC-IN", 101: "DC-UK", 102: "DC-US", 103: "DC-HK"}
+    _DC_SLOT_LABELS = {
+        99: "DC-DE", 100: "DC-IN", 101: "DC-UK", 102: "DC-US", 103: "DC-HK",
+        104: "DC-X1", 105: "DC-X2", 106: "DC-X3",
+    }
     _AFFINITY_LABELS = {
         "dc_de": "DC-DE", "dc_in": "DC-IN", "dc_uk": "DC-UK",
         "dc_us": "DC-US", "dc_hk": "DC-HK",
+        "dc_x1": "DC-X1", "dc_x2": "DC-X2", "dc_x3": "DC-X3",
     }
     threads = read_worker_state().get("threads", [])
     thread_map = {}  # group_label → "▶ T2" / "▶ DC-IN"
@@ -1078,6 +1114,9 @@ AFFINITY_OPTIONS = [
     {"label": "DC-UK",           "value": "dc_uk"},
     {"label": "DC-US",           "value": "dc_us"},
     {"label": "DC-HK",           "value": "dc_hk"},
+    {"label": "DC-X1",           "value": "dc_x1"},
+    {"label": "DC-X2",           "value": "dc_x2"},
+    {"label": "DC-X3",           "value": "dc_x3"},
 ]
 
 tab_queue = dbc.Container(fluid=True, children=[
@@ -1122,6 +1161,9 @@ tab_queue = dbc.Container(fluid=True, children=[
                     {"label": "DC-UK",  "value": "dc_uk"},
                     {"label": "DC-US",  "value": "dc_us"},
                     {"label": "DC-HK",  "value": "dc_hk"},
+                    {"label": "DC-X1",  "value": "dc_x1"},
+                    {"label": "DC-X2",  "value": "dc_x2"},
+                    {"label": "DC-X3",  "value": "dc_x3"},
                 ],
                 value="dc",
                 clearable=False,
@@ -1551,8 +1593,23 @@ def refresh_dc_threads_panel(_, active_tab, dc_mode):
                 time_div,
                 html.Div(status_badge_el, className="my-1"),
                 html.Div(feds, className="text-muted", style={"fontSize": "0.75rem"}),
+                # Max-Stunden-Feld
+                html.Div([
+                    html.Span("⏱ max h", className="text-muted me-1",
+                              style={"fontSize": "0.72rem"}),
+                    dbc.Input(
+                        id={"type": "dc-max-hours", "id": t["id"]},
+                        type="number", min=0.5, step=0.5,
+                        placeholder="∞",
+                        value=t.get("max_hours"),
+                        debounce=True,
+                        size="sm",
+                        style={"width": "60px", "fontSize": "0.75rem",
+                               "display": "inline-block"},
+                    ),
+                ], className="d-flex align-items-center mt-1"),
             ], className="p-2"),
-        ], style={"minWidth": "130px", "maxWidth": "150px",
+        ], style={"minWidth": "130px", "maxWidth": "155px",
                   "borderLeft": f"3px solid {border_color}"})
         cards.append(card)
 
@@ -1573,6 +1630,42 @@ def toggle_dc_thread(values, ids):
         for val, id_dict in zip(values, ids):
             if id_dict.get("id") == dc_id:
                 _save_dc_thread_enabled(dc_id, bool(val))
+                break
+    return values
+
+
+@app.callback(
+    Output({"type": "dc-max-hours", "id": dash.ALL}, "value"),
+    Input({"type": "dc-max-hours", "id": dash.ALL}, "value"),
+    State({"type": "dc-max-hours", "id": dash.ALL}, "id"),
+    prevent_initial_call=True,
+)
+def save_dc_max_hours(values, ids):
+    """Persist max_hours für DC-Thread in profiles.yaml."""
+    triggered = callback_context.triggered_id
+    if triggered and isinstance(triggered, dict):
+        dc_id = triggered.get("id")
+        for val, id_dict in zip(values, ids):
+            if id_dict.get("id") == dc_id:
+                _save_dc_thread_max_hours(dc_id, val)
+                break
+    return values
+
+
+@app.callback(
+    Output({"type": "residential-max-hours", "slot": dash.ALL}, "value"),
+    Input({"type": "residential-max-hours", "slot": dash.ALL}, "value"),
+    State({"type": "residential-max-hours", "slot": dash.ALL}, "id"),
+    prevent_initial_call=True,
+)
+def save_residential_max_hours(values, ids):
+    """Persist max_hours für Residential-Slot in profiles.yaml."""
+    triggered = callback_context.triggered_id
+    if triggered and isinstance(triggered, dict):
+        slot = triggered.get("slot")
+        for val, id_dict in zip(values, ids):
+            if id_dict.get("slot") == slot:
+                _save_slot_max_hours(slot, val)
                 break
     return values
 
@@ -1656,10 +1749,25 @@ def refresh_residential_threads_panel(_, active_tab):
                     style={"fontSize": "0.78rem", "minWidth": "130px"},
                     className="mb-1",
                 ),
+                # Max-Stunden-Feld
+                html.Div([
+                    html.Span("⏱ max h", className="text-muted me-1",
+                              style={"fontSize": "0.72rem"}),
+                    dbc.Input(
+                        id={"type": "residential-max-hours", "slot": slot},
+                        type="number", min=0.5, step=0.5,
+                        placeholder="∞",
+                        value=t.get("max_hours"),
+                        debounce=True,
+                        size="sm",
+                        style={"width": "60px", "fontSize": "0.75rem",
+                               "display": "inline-block"},
+                    ),
+                ], className="d-flex align-items-center mb-1"),
                 # Status / laufende Gruppe
                 status_el,
             ], className="p-2"),
-        ], style={"minWidth": "150px", "maxWidth": "170px",
+        ], style={"minWidth": "155px", "maxWidth": "175px",
                   "borderLeft": f"3px solid {border_color}"})
         cards.append(card)
 

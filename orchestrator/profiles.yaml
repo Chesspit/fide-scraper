@@ -10,15 +10,19 @@ concurrency:
     - slot: 0
       enabled: true
       profile: semi_aggressive
+      max_hours: null
     - slot: 1
       enabled: true
       profile: normal
+      max_hours: null
     - slot: 2
       enabled: false
       profile: semi_conservative
+      max_hours: null
     - slot: 3
       enabled: false
       profile: semi_aggressive
+      max_hours: null
   # max_workers + worker_profiles: Backward-Compat (wird beim Start migriert)
   max_workers: 2
   worker_profiles:
@@ -44,6 +48,7 @@ concurrency:
       timezone: Europe/Berlin
       active_hours: [7, 23]
       profile: semi_conservative
+      max_hours: null
       federations: [POL, UKR, LAT, LIT, LTU, EST, CZE, SVK, FID]
     - id: dc_in
       enabled: false
@@ -56,6 +61,7 @@ concurrency:
       timezone: Asia/Kolkata
       active_hours: [7, 23]
       profile: semi_conservative
+      max_hours: null
       federations: [IND, IRI]
     - id: dc_uk
       enabled: false
@@ -68,6 +74,7 @@ concurrency:
       timezone: Europe/London
       active_hours: [7, 23]
       profile: semi_conservative
+      max_hours: null
       federations: [ENG, SCO, WLS, IRL, NIR, DEN, NOR, SWE, FIN, ISL, NED, BEL, LUX]
     - id: dc_us
       enabled: false
@@ -80,6 +87,7 @@ concurrency:
       timezone: America/New_York
       active_hours: [7, 23]
       profile: semi_conservative
+      max_hours: null
       federations: [USA, CAN, MEX]
     - id: dc_hk
       enabled: false
@@ -92,7 +100,48 @@ concurrency:
       timezone: Asia/Hong_Kong
       active_hours: [7, 23]
       profile: semi_conservative
+      max_hours: null
       federations: [CHN, VIE, AUS, NZL, FIJ, VAN, PLW, SOL, KIR, PNG, MHL, TUV, NAU, SAM, TON, FSM]
+    # ── Platzhalter für 3 weitere Datacenter-Scraper (noch nicht aktiv) ──────
+    - id: dc_x1
+      enabled: false
+      label: DC-X1
+      slot: 104
+      host: proxy-jet.io
+      port: 1010
+      username_env: PROXYJET_DC_X1_USERNAME
+      password_env: PROXYJET_DC_X1_PASSWORD
+      timezone: UTC
+      active_hours: [7, 23]
+      profile: semi_conservative
+      max_hours: null
+      federations: []
+    - id: dc_x2
+      enabled: false
+      label: DC-X2
+      slot: 105
+      host: proxy-jet.io
+      port: 1010
+      username_env: PROXYJET_DC_X2_USERNAME
+      password_env: PROXYJET_DC_X2_PASSWORD
+      timezone: UTC
+      active_hours: [7, 23]
+      profile: semi_conservative
+      max_hours: null
+      federations: []
+    - id: dc_x3
+      enabled: false
+      label: DC-X3
+      slot: 106
+      host: proxy-jet.io
+      port: 1010
+      username_env: PROXYJET_DC_X3_USERNAME
+      password_env: PROXYJET_DC_X3_PASSWORD
+      timezone: UTC
+      active_hours: [7, 23]
+      profile: semi_conservative
+      max_hours: null
+      federations: []
 
 # Fuzzy-Profilauswahl: Gewichtung für zufällige Profilwahl pro Gruppe
 # Worker wählt bei jedem Gruppen-Start zufällig (gewichtet) — kein erkennbares Muster

@@ -1021,8 +1021,8 @@ tab_heatmap = dbc.Container(fluid=True, children=[
                       className="text-muted small ms-2"),
             html.Div(id="dc-threads-panel", style={
                 "display": "grid",
-                "gridTemplateColumns": "repeat(4, 1fr)",
-                "gap": "10px",
+                "gridTemplateColumns": "repeat(8, 1fr)",
+                "gap": "8px",
                 "marginTop": "10px",
             }),
         ], className="py-2 px-3"),
@@ -1495,7 +1495,7 @@ def refresh_dc_threads_panel(_, active_tab):
         is_active  = t["is_active_hours"]
         local_time = t["local_time"]
         label      = t["label"]
-        feds       = ", ".join(t["federations"][:4]) if t["federations"] else "—"
+        feds       = ", ".join(t["federations"]) if t["federations"] else "—"
         ws         = ws_threads.get(slot, {})
         is_running  = bool(ws.get("current_group"))
         is_sleeping = str(ws.get("current_group", "")).startswith("💤")
@@ -1570,20 +1570,6 @@ def refresh_dc_threads_panel(_, active_tab):
                     html.Span("Uhr", className="text-muted ms-1",
                               style={"fontSize": "0.72rem"}),
                 ], className="d-flex align-items-center mt-1"),
-                # Max-Stunden
-                html.Div([
-                    html.Span("⏱ max h", className="text-muted me-1",
-                              style={"fontSize": "0.72rem"}),
-                    dbc.Input(
-                        id={"type": "dc-max-hours", "id": t["id"]},
-                        type="number", min=0.5, step=0.5,
-                        placeholder="∞",
-                        value=t.get("max_hours"),
-                        debounce=True, size="sm",
-                        style={"width": "54px", "fontSize": "0.75rem",
-                               "display": "inline-block"},
-                    ),
-                ], className="d-flex align-items-center mt-1"),
             ], className="p-2"),
         ], style={"borderLeft": f"3px solid {border_color}"})
         cards.append(card)
@@ -1608,23 +1594,6 @@ def toggle_dc_thread(values, ids):
                 break
     return values
 
-
-@app.callback(
-    Output({"type": "dc-max-hours", "id": dash.ALL}, "value"),
-    Input({"type": "dc-max-hours", "id": dash.ALL}, "value"),
-    State({"type": "dc-max-hours", "id": dash.ALL}, "id"),
-    prevent_initial_call=True,
-)
-def save_dc_max_hours(values, ids):
-    """Persist max_hours für DC-Thread in profiles.yaml."""
-    triggered = callback_context.triggered_id
-    if triggered and isinstance(triggered, dict):
-        dc_id = triggered.get("id")
-        for val, id_dict in zip(values, ids):
-            if id_dict.get("id") == dc_id:
-                _save_dc_thread_max_hours(dc_id, val)
-                break
-    return values
 
 
 @app.callback(

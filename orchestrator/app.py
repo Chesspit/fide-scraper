@@ -55,7 +55,7 @@ WORKER_STATE_PATH = _DATA_DIR / "worker_state.json"
 
 # Direktspalten + Separator + eine Spalte pro DC-Thread
 # Die DC-Labels müssen den `label`-Feldern in profiles.yaml entsprechen.
-OVERVIEW_FEDERATIONS = ["GER", "SUI", "AUT", "·", "DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK"]
+OVERVIEW_FEDERATIONS = ["GER", "SUI", "AUT", "·", "DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK", "DC-ES", "DC-MX", "DC-AE"]
 
 # Föderationen die direkt als eigene Spalte erscheinen (kein DC-Aggregat)
 _OV_DIRECT_FEDS = {"GER", "SUI", "AUT"}
@@ -457,7 +457,7 @@ def query_queue(affinity_filter: str | None = None) -> list[dict]:
 
     if affinity_filter == "dc":
         where_extra = "AND thread_affinity IS NOT NULL"
-    elif affinity_filter in ("dc_de", "dc_in", "dc_uk", "dc_us", "dc_hk"):
+    elif affinity_filter in ("dc_de", "dc_in", "dc_uk", "dc_us", "dc_hk", "dc_es", "dc_mx", "dc_ae"):
         where_extra = f"AND thread_affinity = '{affinity_filter}'"
     elif affinity_filter == "residential":
         where_extra = "AND thread_affinity IS NULL AND (device IS NULL OR device = '')"
@@ -830,7 +830,7 @@ def build_overview_figure() -> go.Figure:
         margin=dict(l=90, r=20, t=60, b=20),
         plot_bgcolor="#FAFAFA",
         paper_bgcolor="#FAFAFA",
-        xaxis=dict(title="", side="top", tickfont=dict(size=13, family="monospace")),
+        xaxis=dict(title="", side="top", tickfont=dict(size=11, family="monospace")),
         yaxis=dict(title="ELO-Band", autorange=True, tickfont=dict(size=11)),
         title=dict(text="Scraping-Fortschritt nach Land & ELO-Band", x=0.5),
     )
@@ -1907,7 +1907,8 @@ def refresh_queue(_, active_tab, category_filter, dc_sub_filter):
     if category_filter == "dc" and dc_sub_filter and dc_sub_filter != "dc":
         f = dc_sub_filter  # z.B. 'dc_in' → filtert WHERE thread_affinity='dc_in'
         cat_label = {"dc_de": "DC-DE", "dc_in": "DC-IN", "dc_uk": "DC-UK",
-                     "dc_us": "DC-US", "dc_hk": "DC-HK"}.get(f, f)
+                     "dc_us": "DC-US", "dc_hk": "DC-HK",
+                     "dc_es": "DC-ES", "dc_mx": "DC-MX", "dc_ae": "DC-AE"}.get(f, f)
     elif category_filter == "all" or not category_filter:
         f = None
         cat_label = "alle"

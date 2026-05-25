@@ -1239,7 +1239,7 @@ app.layout = dbc.Container(fluid=True, children=[
         dbc.Tab(tab_heatmap,  label="⚙️ Steuerung",        tab_id="tab-heatmap"),
         dbc.Tab(tab_queue,    label="📋 Queue",             tab_id="tab-queue"),
         dbc.Tab(tab_completed,label="✅ Abgeschlossen",     tab_id="tab-completed"),
-    ], id="main-tabs", active_tab="tab-overview"),
+    ], id="main-tabs", active_tab="tab-heatmap"),
 ], style={"backgroundColor": "#F8F9FA", "minHeight": "100vh", "paddingBottom": "40px"})
 
 

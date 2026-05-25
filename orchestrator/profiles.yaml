@@ -124,7 +124,7 @@ concurrency:
       active_hours: [8, 22]
       profile: semi_conservative
       max_hours: null
-      federations: [MEX, GUA, HON, ESA, NCA, CRC, PAN, CUB, DOM, HAI, FRA, BEL, NED, LUX]
+      federations: [FRA, BEL, NED, LUX]
     - id: dc_ae
       enabled: false
       label: DC-AE

@@ -488,12 +488,12 @@ def query_queue(affinity_filter: str | None = None) -> list[dict]:
     # Thread-Anzeige: live Slot ODER konfigurierte Affinität → eine Spalte
     _DC_SLOT_LABELS = {
         99: "DC-DE", 100: "DC-IN", 101: "DC-UK", 102: "DC-US", 103: "DC-HK",
-        104: "DC-X1", 105: "DC-X2", 106: "DC-X3",
+        104: "DC-ES", 105: "DC-MX", 106: "DC-AE",
     }
     _AFFINITY_LABELS = {
         "dc_de": "DC-DE", "dc_in": "DC-IN", "dc_uk": "DC-UK",
         "dc_us": "DC-US", "dc_hk": "DC-HK",
-        "dc_x1": "DC-X1", "dc_x2": "DC-X2", "dc_x3": "DC-X3",
+        "dc_es": "DC-ES", "dc_mx": "DC-MX", "dc_ae": "DC-AE",
     }
     threads = read_worker_state().get("threads", [])
     thread_map = {}  # group_label → "▶ T2" / "▶ DC-IN"
@@ -1065,9 +1065,9 @@ AFFINITY_OPTIONS = [
     {"label": "DC-UK",           "value": "dc_uk"},
     {"label": "DC-US",           "value": "dc_us"},
     {"label": "DC-HK",           "value": "dc_hk"},
-    {"label": "DC-X1",           "value": "dc_x1"},
-    {"label": "DC-X2",           "value": "dc_x2"},
-    {"label": "DC-X3",           "value": "dc_x3"},
+    {"label": "DC-ES",           "value": "dc_es"},
+    {"label": "DC-MX",           "value": "dc_mx"},
+    {"label": "DC-AE",           "value": "dc_ae"},
 ]
 
 tab_queue = dbc.Container(fluid=True, children=[
@@ -1112,9 +1112,9 @@ tab_queue = dbc.Container(fluid=True, children=[
                     {"label": "DC-UK",  "value": "dc_uk"},
                     {"label": "DC-US",  "value": "dc_us"},
                     {"label": "DC-HK",  "value": "dc_hk"},
-                    {"label": "DC-X1",  "value": "dc_x1"},
-                    {"label": "DC-X2",  "value": "dc_x2"},
-                    {"label": "DC-X3",  "value": "dc_x3"},
+                    {"label": "DC-ES",  "value": "dc_es"},
+                    {"label": "DC-MX",  "value": "dc_mx"},
+                    {"label": "DC-AE",  "value": "dc_ae"},
                 ],
                 value="dc",
                 clearable=False,

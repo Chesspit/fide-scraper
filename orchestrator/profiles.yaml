@@ -71,7 +71,7 @@ concurrency:
       active_hours: [7, 23]
       profile: semi_conservative
       max_hours: null
-      federations: [ENG, SCO, WLS, IRL, NIR, DEN, NOR, SWE, FIN, ISL, NED, BEL, LUX]
+      federations: [ENG, SCO, WLS, IRL, NIR, DEN, NOR, SWE, FIN, ISL]
     - id: dc_us
       enabled: false
       label: DC-US
@@ -103,7 +103,7 @@ concurrency:
       enabled: false
       label: DC-ES
       slot: 104
-      host: es.proxy-jet.io        # ← Proxy-Host eintragen
+      host: eu.proxy-jet.io
       port: 1010
       username_env: PROXYJET_DC_ES_USERNAME
       password_env: PROXYJET_DC_ES_PASSWORD
@@ -111,12 +111,12 @@ concurrency:
       active_hours: [7, 23]
       profile: semi_conservative
       max_hours: null
-      federations: [ESP, POR, AND, GIB]
+      federations: [ESP, ITA, POR, AND, GIB]
     - id: dc_mx
       enabled: false
       label: DC-MX
       slot: 105
-      host: mx.proxy-jet.io        # ← Proxy-Host eintragen
+      host: ca.proxy-jet.io
       port: 1010
       username_env: PROXYJET_DC_MX_USERNAME
       password_env: PROXYJET_DC_MX_PASSWORD
@@ -124,12 +124,12 @@ concurrency:
       active_hours: [8, 22]
       profile: semi_conservative
       max_hours: null
-      federations: [MEX, GUA, HON, ESA, NCA, CRC, PAN, CUB, DOM, HAI]
+      federations: [MEX, GUA, HON, ESA, NCA, CRC, PAN, CUB, DOM, HAI, FRA, BEL, NED, LUX]
     - id: dc_ae
       enabled: false
       label: DC-AE
       slot: 106
-      host: ae.proxy-jet.io        # ← Proxy-Host eintragen
+      host: in.proxy-jet.io
       port: 1010
       username_env: PROXYJET_DC_AE_USERNAME
       password_env: PROXYJET_DC_AE_PASSWORD
@@ -137,7 +137,7 @@ concurrency:
       active_hours: [7, 23]
       profile: semi_conservative
       max_hours: null
-      federations: [UAE, KSA, QAT, OMA, KUW, BHR, JOR, LBN, IRQ, YEM]
+      federations: [SRB, CRO, BIH, MKD, MNE, SLO, KOS, ALB, GRE, TUR]
 
 # Fuzzy-Profilauswahl: Gewichtung für zufällige Profilwahl pro Gruppe
 # Worker wählt bei jedem Gruppen-Start zufällig (gewichtet) — kein erkennbares Muster

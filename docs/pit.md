@@ -1,4 +1,5 @@
 Schritte zum Abschluss:
+✅ TEST Scraping Datacenter (DC-ES/MX/AE eingerichtet, 2026-05-25)
 Auswahl Seiten Dashboard Partien_details und IM/GM später
 Erweiterung Stories > wie?
 Domain Und Namensgebung. ELO-Insights
@@ -13,7 +14,7 @@ Textbos mit Einführung / Erklärung
 Female:
 nur female scrapen
 Zeitliche Entwicklung der Anzahl der weiblichen Spieler. 
-Anwendung Gauspurve, das heißt, wie viele starke Spieler es unter dieser Annahme gibt. 
+Anwendung Gausskurve, das heißt, wie viele starke Spieler es unter dieser Annahme gibt. 
 Artikel/Analyse zum Vergleich der weiblichen TOP-Spieler
 
 

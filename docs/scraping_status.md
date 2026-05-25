@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-22 Abend (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-05-25 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -8,9 +8,9 @@ Stand: 2026-05-22 Abend (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **3.094.551** |
-| Spieler mit ok-Daten | **20.943** |
-| DB-Größe | **~6,8 GB** |
+| Partien gesamt | **3.285.732** |
+| Spieler mit ok-Daten | **28.728** |
+| DB-Größe | **~7,2 GB (est.)** |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ |
 
 ---
@@ -46,38 +46,76 @@ Zeitraum gescrapt: **2008-04-01 – 2026-04-01** (inkl. Pre-2012-Quartalsperiode
 
 ---
 
+## Female-Gruppen (Mac Mini Backfill) — laufend 🔄
+
+**55 Gruppen (female_2100_01 – female_1800_24), ELO 1800–2199, nur Spielerinnen (F)**
+
+Zeitraum: **2010-01-01 – 2026-04-01** (inkl. Pre-2012-Quartalsperioden)
+Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** via `run_female_chain.sh`.
+
+| Bereich | Gruppen | Spielerinnen | ELO-Range | Status |
+|---------|--------:|-------------:|-----------|--------|
+| female_2100_01 – female_2100_06 | 6 | 395 | 2104–2199 | ✅ complete |
+| female_2000_01 – female_2000_09 | 9 | 671 | 2004–2103 | 🔄 female_2000_01 läuft (ETA ~20:00) |
+| female_1900_01 – female_1900_16 | 16 | 1.117 | 1903–2003 | ⏳ pending |
+| female_1800_01 – female_1800_24 | 24 | 1.769 | 1800–1902 | ⏳ pending |
+| **Gesamt** | **55** | **3.952** | **1800–2199** | |
+
+Laufzeitabschätzung Mac Mini (~14 Perioden/min): **~2–3 Tage gesamt**
+
+Chain läuft automatisch durch alle 49 Gruppen:
+```bash
+# Status prüfen:
+tail -20 /tmp/female_chain.log
+# Bei Abbruch neu starten (ab erster pending-Gruppe):
+bash scripts/run_female_chain.sh female_2000_02
+```
+
+---
+
 ## Orchestrator (VPS) — föderationsbasiertes Scraping
 
 | | |
 |---|---|
 | Dashboard | **https://scelo.chesspit.net** (BasicAuth) |
-| Modus | **7 Threads (2 Residential + 5 DC)** |
-| DC-Modus | Automatisch (Timezone-basiert, 07:00–23:00 Ortszeit) |
+| Modus | **bis zu 10 Threads (2 Residential + 8 DC)** |
+| DC-Modus | Individuelle Von/Bis-Zeit pro Karte (Ortszeit, Timezone-basiert) |
 
-### Aktive Threads
+### Alle Threads
 
 | Thread | Typ | Profil | Föderationen | Timezone |
 |--------|-----|--------|--------------|----------|
-| T1 | Residential | semi_aggressive | DACH (Priority) | — |
-| T2 | Residential | normal | DACH (Priority) | — |
+| T0 | Residential | semi_aggressive | DACH (Priority) | — |
+| T1 | Residential | normal | DACH (Priority) | — |
 | DC-DE (Slot 99) | Datacenter | semi_conservative | POL, UKR, LAT, LIT, EST, CZE, SVK, FID | Europe/Berlin |
 | DC-IN (Slot 100) | Datacenter | semi_conservative | IND, IRI | Asia/Kolkata |
-| DC-UK (Slot 101) | Datacenter | semi_conservative | ENG, SCO, WLS, IRL, NIR, DEN, NOR, SWE, FIN, ISL, NED, BEL, LUX | Europe/London |
-| DC-US (Slot 102) | Datacenter | semi_conservative | USA, CAN, MEX | America/New_York |
+| DC-UK (Slot 101) | Datacenter | semi_conservative | ENG, SCO, WLS, IRL, NIR, DEN, NOR, SWE, FIN, ISL | Europe/London |
+| DC-US (Slot 102) | Datacenter | semi_conservative | USA, CAN | America/New_York |
 | DC-HK (Slot 103) | Datacenter | semi_conservative | CHN, VIE + Ozeanien | Asia/Hong_Kong |
+| DC-ES (Slot 104) | Datacenter | semi_conservative | ESP, ITA, POR, AND, GIB | Europe/Madrid |
+| DC-MX (Slot 105) | Datacenter | semi_conservative | FRA, BEL, NED, LUX | America/Mexico_City |
+| DC-AE (Slot 106) | Datacenter | semi_conservative | SRB, CRO, BIH, MKD, MNE, SLO, KOS, ALB, GRE, TUR | Asia/Dubai |
 
 ### Residential Queue-Strategie (T1/T2)
 
-**Nur DACH-Region**, Ziel: 2020–2026 rückwärts
+**Nur DACH-Region**, Ziel: GER 1800+ bis 2022, AUT+SUI bis 2020–2021
 
 | Priorität | Inhalt |
 |-----------|--------|
-| P1–P12 | GER 2026 ELO 1904–2002 (neu aktiviert) |
+| P1–P12 | GER 2026 ELO 1904–2002 |
 | P13–P33 | Historische Gruppen 2010–2012, ELO ≥ 2300 (USA, POL, GER, ITA, ESP, RUS) |
 | P1001–P3017 | DACH 2025–2023 (GER 1900+, AUT+SUI alle ELO) |
+| P2001–P2234 | GER 1800–1899 2026 (234 Gruppen, interleaved) |
+| P3013–P3246 | GER 1800–1899 2023 |
 | P4001–P6069 | DACH 2022–2020 |
+| P4053–P4286 | GER 1800–1899 2022 |
+| P5059–P5292 | GER 1800–1899 2021 |
+| P6057–P6290 | GER 1800–1899 2020 |
 | P100000+ | DACH vor 2020 (deprioritisiert) |
 | P500000+ | alle anderen Föderationen |
+
+**Zwischenziel:** GER 1800+ komplett bis 2022 ✓ / AUT+SUI komplett bis 2020–2021 ✓
+→ ~666 Gruppen bis Zwischenziel
 
 ### DC Queue-Strategie
 
@@ -85,11 +123,54 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 
 | DC-Thread | Gruppen pending | Jahresbereich |
 |-----------|----------------:|---------------|
-| DC-DE | ~2.045 | 2009–2026 |
-| DC-IN | ~2.482 | 2009–2026 |
-| DC-UK | ~2.281 | 2009–2026 |
-| DC-US | ~1.005 | 2009–2026 |
-| DC-HK | ~557 | 2009–2026 |
+| DC-DE | ~1.968 | 2009–2026 |
+| DC-IN | ~2.344 | 2009–2026 |
+| DC-UK | ~1.394 | 2009–2026 |
+| DC-US | ~673 | 2009–2026 |
+| DC-HK | ~530 | 2009–2026 |
+| DC-ES | ~2.941 | 2009–2026 |
+| DC-MX | ~3.079 | 2009–2026 |
+| DC-AE | ~1.546 | 2009–2026 |
+
+---
+
+## Änderungen Session 2026-05-25
+
+### Mac Mini
+| Was | Details |
+|-----|---------|
+| **female_2100_01–06** ✅ | Alle 6 Gruppen (395 Spielerinnen, ELO 2104–2199) abgeschlossen |
+| **run_female_chain.sh** | Neues Script: kettet alle 49 female_XX-Gruppen vollautomatisch (seed → backfill → DB-update) |
+| **female_2000_01** 🔄 | 66 Spielerinnen, ELO 2090–2103; läuft seit 13:38 Uhr, ETA ~20:00 |
+
+### VPS Orchestrator
+| Was | Details |
+|-----|---------|
+| **3 neue DC-Scraper** | DC-ES (ESP/ITA/POR/AND/GIB), DC-MX (FRA/BEL/NED/LUX), DC-AE (SRB/CRO/BIH/MKD/MNE/SLO/KOS/ALB/GRE/TUR) |
+| **DC-UK Föds bereinigt** | NED/BEL/LUX zu DC-MX verschoben |
+| **DC-US Föds bereinigt** | MEX zu DC-MX verschoben |
+| **Queue-Affinities** | 7.530 Gruppen auf dc_es/dc_mx/dc_ae umgezogen (Bulk-UPDATE) |
+| **Individuelle Von/Bis** | Kein globales DC-Zeitfenster mehr; jede Karte hat eigene Start/Endzeit |
+| **Dashboard Standard-Tab** | App öffnet jetzt direkt auf Tab „Steuerung" |
+| **DC-Karten Layout** | Alle 8 Karten in einer Zeile; alle Föderationen angezeigt; kein Max-Stunden-Feld |
+| **docker-compose.yml** | DC-ES/MX/AE Credentials (`PROXYJET_DC_*`) als Env-Variablen in dashboard + worker |
+
+---
+
+## Änderungen Session 2026-05-23
+
+### Mac Mini
+| Was | Details |
+|-----|---------|
+| **female_2100_01** 🔄 | 65 Spielerinnen, ELO 2183–2199, läuft seit 09:45 Uhr |
+| **55 female_XX-Gruppen angelegt** | ELO 1800–2199, 3.952 Spielerinnen, 2010-01–2026-04, pending |
+
+### VPS Orchestrator
+| Was | Details |
+|-----|---------|
+| **GER 1800–1899 aktiviert** | 234 skipped → pending, interleaved in DACH-Jahresbänder |
+| **Dashboard DC-Spalten** | Übersicht-Heatmap: DC-DE/IN/UK/US/HK als Aggregat-Spalten |
+| **Dropdown-Favoriten** | ★ GER/SUI/AUT immer oben in Föderations-Dropdown |
 
 ---
 
@@ -108,7 +189,7 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 | global_28a ✅ | 79 Spieler, ELO 2303–2305 |
 | global_28b ✅ | 68 Spieler, ELO 2300–2302 |
 | **ELO ≥ 2300 complete** | **Alle 51 Gruppen fertig** — Chain-Script lief durch bis 19:17 Uhr |
-| hist_-Gruppen | 5 historische Gruppen (2010–2012) in PostgreSQL angelegt, aber über VPS Residential gescrapt |
+| hist_-Gruppen | 5 historische Gruppen (2010–2012) in PostgreSQL angelegt, über VPS Residential gescrapt |
 
 ### VPS Orchestrator
 | Was | Details |
@@ -124,19 +205,7 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 
 ---
 
-## Änderungen Session 2026-05-21
-
-| Was | Details |
-|-----|---------|
-| global_23b ✅ | 77 Spieler, ELO 2328–2330, 4.981/4.982 erfolgreich |
-| global_24a ✅ | 90 Spieler, ELO 2325–2327 |
-| **Parallel-Modus** | VPS: 2 Residential Threads + DC-Thread |
-| **DC-Thread (ProxyJet DE)** | Slot 99, semi_conservative, proxy-jet.io |
-| Dashboard-Redesign | Tab-Struktur umgebaut, Thread-Karten eingeführt |
-
----
-
 ## Ältere Änderungen
 
-→ Sessions 2026-05-13 bis 2026-05-20: global_14b – global_23a abgeschlossen,
+→ Sessions 2026-05-13 bis 2026-05-21: global_14b – global_24a abgeschlossen,
    Dashboard-Verbesserungen, VPS-Profil-Umstellung, Retry-After-Fix.

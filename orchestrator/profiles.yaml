@@ -30,12 +30,8 @@ concurrency:
     - normal
     - semi_conservative
     - semi_aggressive
-  # DC-Betriebsmodus:
-  #   auto:        Threads laufen nur innerhalb dc_active_hours Ortszeit (Timezone je Thread)
-  #   individual:  Timezone wird ignoriert — Threads laufen wenn enabled=true, rund um die Uhr
-  dc_mode: auto
-  dc_active_hours: [7, 23]   # Gilt für alle Threads im auto-Modus
   # Datacenter-Threads: je 1 pro Land, mit eigenem ProxyJet-Host + Credentials
+  # active_hours pro Thread = individuelle Start/Endzeit (Ortszeit, basierend auf timezone)
   datacenter_threads:
     - id: dc_de
       enabled: true

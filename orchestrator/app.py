@@ -98,30 +98,6 @@ def _save_datacenter_enabled(enabled: bool) -> None:
         pass
 
 
-def _save_dc_mode(mode: str) -> None:
-    """Persist dc_mode ('auto'|'individual') in profiles.yaml."""
-    try:
-        with open(PROFILES_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        data.setdefault("concurrency", {})["dc_mode"] = mode
-        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
-    except Exception:
-        pass
-
-
-def _save_dc_active_hours(h_start: int, h_end: int) -> None:
-    """Persist dc_active_hours in profiles.yaml."""
-    try:
-        with open(PROFILES_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        data.setdefault("concurrency", {})["dc_active_hours"] = [int(h_start), int(h_end)]
-        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
-    except Exception:
-        pass
-
-
 def _save_dc_thread_enabled(dc_id: str, enabled: bool) -> None:
     """Persist enabled-Flag für einen DC-Thread in profiles.yaml."""
     try:
@@ -131,6 +107,21 @@ def _save_dc_thread_enabled(dc_id: str, enabled: bool) -> None:
         for t in threads:
             if t.get("id") == dc_id:
                 t["enabled"] = enabled
+                break
+        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+    except Exception:
+        pass
+
+
+def _save_dc_thread_active_hours(dc_id: str, h_start, h_end) -> None:
+    """Persist active_hours für einen DC-Thread in profiles.yaml."""
+    try:
+        with open(PROFILES_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        for t in data.get("concurrency", {}).get("datacenter_threads", []):
+            if t.get("id") == dc_id:
+                t["active_hours"] = [int(h_start), int(h_end)]
                 break
         with open(PROFILES_PATH, "w", encoding="utf-8") as f:
             yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
@@ -197,6 +188,7 @@ def _get_dc_thread_status() -> list[dict]:
             "federations": t.get("federations", []),
             "slot":        t.get("slot", 99),
             "max_hours":   t.get("max_hours"),
+            "active_hours": t.get("active_hours", [7, 23]),
         })
     return result
 
@@ -1005,79 +997,38 @@ tab_heatmap = dbc.Container(fluid=True, children=[
         ], width=4),
     ], className="mb-3 align-items-end g-2"),
 
-    # Thread-Panels: Residential + Datacenter nebeneinander
+    # Thread-Panels: Residential (oben kompakt) + Datacenter (unten, 2×4-Raster)
     dcc.Interval(id="interval-dc-status", interval=30_000, n_intervals=0),
-    dbc.Row([
-        # Residential Threads
-        dbc.Col(
-            dbc.Card(
-                dbc.CardBody([
-                    html.Div([
-                        html.Span("🔄 Residential Threads",
-                                  className="fw-semibold me-3 small"),
-                        html.Span("(Profil wirksam nach Neustart)",
-                                  className="text-muted small"),
-                    ], className="mb-2"),
-                    html.Div(id="residential-threads-panel",
-                             className="d-flex flex-wrap gap-2"),
-                ], className="py-2 px-3"),
-                className="mb-3 h-100",
-                style={"borderLeft": "3px solid #1976D2"},
-            ),
-            width=6,
-        ),
-        # Datacenter Threads
-        dbc.Col(
-            dbc.Card(
-                dbc.CardBody([
-                    # Kopfzeile: Titel + Modus-Toggle
-                    html.Div([
-                        html.Span("🖥 Datacenter Threads",
-                                  className="fw-semibold me-3 small"),
-                        dbc.RadioItems(
-                            id="dc-mode-toggle",
-                            options=[
-                                {"label": "🤖 Automatisch", "value": "auto"},
-                                {"label": "🖐 Individuell", "value": "individual"},
-                            ],
-                            value=_get_concurrency_cfg().get("dc_mode", "auto"),
-                            inline=True,
-                            className="small d-inline-flex",
-                            inputClassName="me-1",
-                            labelClassName="me-3",
-                        ),
-                    ], className="mb-2 d-flex align-items-center flex-wrap gap-2"),
-                    # Zeitfenster (nur sichtbar im auto-Modus)
-                    html.Div([
-                        html.Span("Aktiv von", className="small text-muted me-1"),
-                        dbc.Input(
-                            id="dc-hours-start",
-                            type="number", min=0, max=23, step=1,
-                            value=_get_concurrency_cfg().get("dc_active_hours", [7, 23])[0],
-                            size="sm", debounce=True,
-                            style={"width": "60px", "display": "inline-block"},
-                        ),
-                        html.Span(" bis ", className="small text-muted mx-1"),
-                        dbc.Input(
-                            id="dc-hours-end",
-                            type="number", min=0, max=24, step=1,
-                            value=_get_concurrency_cfg().get("dc_active_hours", [7, 23])[1],
-                            size="sm", debounce=True,
-                            style={"width": "60px", "display": "inline-block"},
-                        ),
-                        html.Span(" Uhr (Ortszeit)", className="small text-muted ms-1"),
-                        html.Span(" · wirksam nach Neustart",
-                                  className="small text-muted ms-2"),
-                    ], id="dc-hours-row", className="mb-2"),
-                    html.Div(id="dc-threads-panel",
-                             className="d-flex flex-wrap gap-2"),
-                ], className="py-2 px-3"),
-                className="mb-3 h-100",
-                style={"borderLeft": "3px solid #9C27B0"},
-            ),
-            width=6,
-        ),
-    ], className="g-3"),
+
+    # Residential Threads (kompakte Zeile)
+    dbc.Card(
+        dbc.CardBody([
+            html.Div([
+                html.Span("🔄 Residential Threads", className="fw-semibold me-3 small"),
+                html.Span("(Profil wirksam nach Neustart)", className="text-muted small"),
+            ], className="mb-2"),
+            html.Div(id="residential-threads-panel", className="d-flex flex-wrap gap-2"),
+        ], className="py-2 px-3"),
+        className="mb-3",
+        style={"borderLeft": "3px solid #1976D2"},
+    ),
+
+    # Datacenter Threads (volle Breite, 2×4-Raster)
+    dbc.Card(
+        dbc.CardBody([
+            html.Span("🖥 Datacenter Threads", className="fw-semibold small"),
+            html.Span(" · Zeiten in Ortszeit (timezone) · wirksam nach Neustart",
+                      className="text-muted small ms-2"),
+            html.Div(id="dc-threads-panel", style={
+                "display": "grid",
+                "gridTemplateColumns": "repeat(4, 1fr)",
+                "gap": "10px",
+                "marginTop": "10px",
+            }),
+        ], className="py-2 px-3"),
+        className="mb-3",
+        style={"borderLeft": "3px solid #9C27B0"},
+    ),
 
     # Feedback-Meldung nach Button-Klick
     html.Div(id="worker-cmd-out", className="mt-2"),
@@ -1489,111 +1440,137 @@ def refresh_control_stats(_, active_tab):
 
 
 @app.callback(
-    Output("dc-mode-toggle", "value"),
-    Input("dc-mode-toggle", "value"),
+    Output({"type": "dc-hours-start", "id": dash.ALL}, "value"),
+    Input({"type": "dc-hours-start",  "id": dash.ALL}, "value"),
+    State({"type": "dc-hours-end",    "id": dash.ALL}, "value"),
+    State({"type": "dc-hours-start",  "id": dash.ALL}, "id"),
     prevent_initial_call=True,
 )
-def save_dc_mode(mode):
-    if mode:
-        _save_dc_mode(mode)
-    return mode
+def save_dc_hours_start(starts, ends, ids):
+    """Persist Startzeit für DC-Thread (liest End-Zeit aus State)."""
+    triggered = callback_context.triggered_id
+    if triggered and isinstance(triggered, dict):
+        dc_id = triggered.get("id")
+        for s, e, id_dict in zip(starts, ends, ids):
+            if id_dict.get("id") == dc_id and s is not None and e is not None:
+                _save_dc_thread_active_hours(dc_id, int(s), int(e))
+                break
+    return starts
 
 
 @app.callback(
-    Output("dc-hours-row", "style"),
-    Input("dc-mode-toggle", "value"),
-)
-def toggle_dc_hours_visibility(mode):
-    """Zeitfenster nur im auto-Modus anzeigen."""
-    if mode == "auto":
-        return {"marginBottom": "8px"}
-    return {"display": "none"}
-
-
-@app.callback(
-    Output("dc-hours-start", "value"),
-    Output("dc-hours-end",   "value"),
-    Input("dc-hours-start",  "value"),
-    Input("dc-hours-end",    "value"),
+    Output({"type": "dc-hours-end",  "id": dash.ALL}, "value"),
+    Input({"type": "dc-hours-end",   "id": dash.ALL}, "value"),
+    State({"type": "dc-hours-start", "id": dash.ALL}, "value"),
+    State({"type": "dc-hours-end",   "id": dash.ALL}, "id"),
     prevent_initial_call=True,
 )
-def save_dc_hours(h_start, h_end):
-    if h_start is not None and h_end is not None:
-        _save_dc_active_hours(int(h_start), int(h_end))
-    return h_start, h_end
+def save_dc_hours_end(ends, starts, ids):
+    """Persist Endzeit für DC-Thread (liest Start-Zeit aus State)."""
+    triggered = callback_context.triggered_id
+    if triggered and isinstance(triggered, dict):
+        dc_id = triggered.get("id")
+        for s, e, id_dict in zip(starts, ends, ids):
+            if id_dict.get("id") == dc_id and s is not None and e is not None:
+                _save_dc_thread_active_hours(dc_id, int(s), int(e))
+                break
+    return ends
 
 
 @app.callback(
     Output("dc-threads-panel", "children"),
     Input("interval-dc-status", "n_intervals"),
     Input("main-tabs", "active_tab"),
-    Input("dc-mode-toggle", "value"),
 )
-def refresh_dc_threads_panel(_, active_tab, dc_mode):
-    """Zeigt alle DC-Threads mit Status, Ortszeit und Toggle."""
-    threads = _get_dc_thread_status()
+def refresh_dc_threads_panel(_, active_tab):
+    """Zeigt alle DC-Threads mit Status, individuellen Zeiten und Toggle."""
+    threads    = _get_dc_thread_status()
     ws_threads = {t.get("slot"): t for t in read_worker_state().get("threads", [])}
 
     cards = []
     for t in threads:
-        slot        = t["slot"]
-        is_enabled  = t["enabled"]
-        has_creds   = t["has_credentials"]
-        is_active   = t["is_active_hours"]
-        local_time  = t["local_time"]
-        label       = t["label"]
-        feds        = ", ".join(t["federations"][:5]) if t["federations"] else "Fallback"
-        ws          = ws_threads.get(slot, {})
+        slot       = t["slot"]
+        is_enabled = t["enabled"]
+        has_creds  = t["has_credentials"]
+        is_active  = t["is_active_hours"]
+        local_time = t["local_time"]
+        label      = t["label"]
+        feds       = ", ".join(t["federations"][:4]) if t["federations"] else "—"
+        ws         = ws_threads.get(slot, {})
         is_running  = bool(ws.get("current_group"))
         is_sleeping = str(ws.get("current_group", "")).startswith("💤")
+        h_start, h_end = t["active_hours"]
 
-        is_auto = (dc_mode == "auto")
-
+        # Status-Badge
         if not has_creds:
             status_badge_el = dbc.Badge("kein Proxy", color="light", text_color="secondary")
         elif is_sleeping:
             status_badge_el = dbc.Badge("💤 schläft", color="secondary")
         elif is_running:
             status_badge_el = dbc.Badge("▶ aktiv", color="success")
-        elif is_enabled and (is_active or not is_auto):
+        elif is_enabled and is_active:
             status_badge_el = dbc.Badge("bereit", color="info")
-        elif is_enabled and is_auto and not is_active:
+        elif is_enabled and not is_active:
             status_badge_el = dbc.Badge("außerhalb", color="warning", text_color="dark")
         else:
             status_badge_el = dbc.Badge("aus", color="light", text_color="muted")
 
-        time_div = html.Div(
-            f"🕐 {local_time} ({t['timezone'].split('/')[-1]})",
-            className="text-muted small" + ("" if (is_active or not is_auto) else " text-warning"),
-        ) if is_auto else html.Div("🖐 individuell", className="text-muted small")
-
-        # Im auto-Modus: Toggle deaktiviert (läuft automatisch wenn Credentials vorhanden)
-        # Im individual-Modus: Toggle aktiv
+        # Toggle: aktiv wenn Credentials vorhanden
         toggle_el = dbc.Switch(
             id={"type": "dc-thread-toggle", "id": t["id"]},
             value=is_enabled,
-            disabled=(not has_creds) or is_auto,  # im auto-Modus immer disabled
+            disabled=not has_creds,
             className="d-inline-block align-middle",
-            style={"transform": "scale(0.8)", "opacity": "0.4" if is_auto else "1"},
+            style={"transform": "scale(0.8)"},
         )
 
-        # Aktiv-Indikator: im auto-Modus nur durch Credentials + Timezone bestimmt
+        # Randfarbe: grün=aktiv, orange=außerhalb Zeitfenster, grau=kein Proxy/aus
         border_color = (
-            "#4CAF50" if (has_creds and (not is_auto or is_active))
-            else ("#FF9800" if (has_creds and is_auto and not is_active)
+            "#4CAF50" if (has_creds and is_enabled and is_active)
+            else ("#FF9800" if (has_creds and is_enabled and not is_active)
             else "#9E9E9E")
         )
 
         card = dbc.Card([
             dbc.CardBody([
+                # Label + Toggle
                 html.Div([
                     html.Span(label, className="fw-bold me-2 small"),
                     toggle_el,
                 ], className="d-flex align-items-center mb-1"),
-                time_div,
+                # Ortszeit
+                html.Div(
+                    f"🕐 {local_time} ({t['timezone'].split('/')[-1]})",
+                    className="text-muted small" + ("" if is_active else " text-warning"),
+                ),
+                # Status
                 html.Div(status_badge_el, className="my-1"),
-                html.Div(feds, className="text-muted", style={"fontSize": "0.75rem"}),
-                # Max-Stunden-Feld
+                # Föderationen
+                html.Div(feds, className="text-muted", style={"fontSize": "0.72rem"}),
+                # Von / Bis Zeitfenster (individuell pro Scraper)
+                html.Div([
+                    html.Span("Von", className="text-muted me-1",
+                              style={"fontSize": "0.72rem"}),
+                    dbc.Input(
+                        id={"type": "dc-hours-start", "id": t["id"]},
+                        type="number", min=0, max=23, step=1,
+                        value=h_start, debounce=True, size="sm",
+                        style={"width": "48px", "fontSize": "0.75rem",
+                               "display": "inline-block"},
+                    ),
+                    html.Span("–", className="text-muted mx-1",
+                              style={"fontSize": "0.72rem"}),
+                    dbc.Input(
+                        id={"type": "dc-hours-end", "id": t["id"]},
+                        type="number", min=0, max=24, step=1,
+                        value=h_end, debounce=True, size="sm",
+                        style={"width": "48px", "fontSize": "0.75rem",
+                               "display": "inline-block"},
+                    ),
+                    html.Span("Uhr", className="text-muted ms-1",
+                              style={"fontSize": "0.72rem"}),
+                ], className="d-flex align-items-center mt-1"),
+                # Max-Stunden
                 html.Div([
                     html.Span("⏱ max h", className="text-muted me-1",
                               style={"fontSize": "0.72rem"}),
@@ -1602,15 +1579,13 @@ def refresh_dc_threads_panel(_, active_tab, dc_mode):
                         type="number", min=0.5, step=0.5,
                         placeholder="∞",
                         value=t.get("max_hours"),
-                        debounce=True,
-                        size="sm",
-                        style={"width": "60px", "fontSize": "0.75rem",
+                        debounce=True, size="sm",
+                        style={"width": "54px", "fontSize": "0.75rem",
                                "display": "inline-block"},
                     ),
                 ], className="d-flex align-items-center mt-1"),
             ], className="p-2"),
-        ], style={"minWidth": "130px", "maxWidth": "155px",
-                  "borderLeft": f"3px solid {border_color}"})
+        ], style={"borderLeft": f"3px solid {border_color}"})
         cards.append(card)
 
     return cards
@@ -1648,24 +1623,6 @@ def save_dc_max_hours(values, ids):
         for val, id_dict in zip(values, ids):
             if id_dict.get("id") == dc_id:
                 _save_dc_thread_max_hours(dc_id, val)
-                break
-    return values
-
-
-@app.callback(
-    Output({"type": "residential-max-hours", "slot": dash.ALL}, "value"),
-    Input({"type": "residential-max-hours", "slot": dash.ALL}, "value"),
-    State({"type": "residential-max-hours", "slot": dash.ALL}, "id"),
-    prevent_initial_call=True,
-)
-def save_residential_max_hours(values, ids):
-    """Persist max_hours für Residential-Slot in profiles.yaml."""
-    triggered = callback_context.triggered_id
-    if triggered and isinstance(triggered, dict):
-        slot = triggered.get("slot")
-        for val, id_dict in zip(values, ids):
-            if id_dict.get("slot") == slot:
-                _save_slot_max_hours(slot, val)
                 break
     return values
 
@@ -1749,21 +1706,6 @@ def refresh_residential_threads_panel(_, active_tab):
                     style={"fontSize": "0.78rem", "minWidth": "130px"},
                     className="mb-1",
                 ),
-                # Max-Stunden-Feld
-                html.Div([
-                    html.Span("⏱ max h", className="text-muted me-1",
-                              style={"fontSize": "0.72rem"}),
-                    dbc.Input(
-                        id={"type": "residential-max-hours", "slot": slot},
-                        type="number", min=0.5, step=0.5,
-                        placeholder="∞",
-                        value=t.get("max_hours"),
-                        debounce=True,
-                        size="sm",
-                        style={"width": "60px", "fontSize": "0.75rem",
-                               "display": "inline-block"},
-                    ),
-                ], className="d-flex align-items-center mb-1"),
                 # Status / laufende Gruppe
                 status_el,
             ], className="p-2"),
@@ -1836,17 +1778,17 @@ def handle_worker_buttons(start, stop, restart, max_groups, max_hours):
     elif triggered == "btn-restart":
         write_worker_state("restart")
         # Aktuelle Konfiguration aus profiles.yaml lesen für Bestätigungstext
-        cfg          = _get_concurrency_cfg()
-        dc_mode      = cfg.get("dc_mode", "auto")
-        dc_hours     = cfg.get("dc_active_hours", [7, 23])
-        slots        = cfg.get("worker_slots", [])
-        active_res   = sum(1 for s in slots if s.get("enabled", False)) if slots else cfg.get("max_workers", 1)
-        dc_threads   = [t for t in cfg.get("datacenter_threads", []) if t.get("enabled", False)]
-        dc_labels    = ", ".join(t["label"] for t in dc_threads) or "–"
-        mode_str     = f"auto {dc_hours[0]}–{dc_hours[1]} Uhr" if dc_mode == "auto" else "individuell"
+        cfg        = _get_concurrency_cfg()
+        slots      = cfg.get("worker_slots", [])
+        active_res = sum(1 for s in slots if s.get("enabled", False)) if slots else cfg.get("max_workers", 1)
+        dc_threads = [t for t in cfg.get("datacenter_threads", []) if t.get("enabled", False)]
+        dc_parts   = []
+        for t in dc_threads:
+            h = t.get("active_hours", [7, 23])
+            dc_parts.append(f"{t['label']} {h[0]}–{h[1]}")
+        dc_str = ", ".join(dc_parts) or "–"
         msg = (
-            f"🔄 Neustart gesetzt — wird neu starten mit: "
-            f"{active_res}× Residential | DC: {dc_labels} | Modus: {mode_str}",
+            f"🔄 Neustart gesetzt — {active_res}× Residential | DC: {dc_str}",
             "info"
         )
     else:

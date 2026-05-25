@@ -2076,39 +2076,47 @@ def refresh_bericht(_, active_tab):
     # ── Alle Tage + geordnete Labels ──────────────────────────────────────
     all_days = sorted({d["day"] for d in data})
 
-    # Canonical order: Residential first, then DC.
-    # Only labels with actual data are shown; order is preserved.
-    _ordered_all = [
-        "T0", "T1", "T2", "T3",                                    # Residential (erweiterbar)
-        "DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK",              # DC bestehend
-        "DC-ES", "DC-MX", "DC-AE",                                 # DC neu
-        "DC-??", "DC-??2", "DC-??3",                               # DC reserviert
-    ]
-    present_labels = {d["slot_label"] for d in data}
-    labels_shown   = [l for l in _ordered_all if l in present_labels]
+    # Residential: alle Slots in _RESIDENTIAL_SLOTS, Canonical-Reihenfolge
+    _ordered_res = ["T0", "T1", "T2", "T3"]
+    # DC: Bestehende + 3 fixe Platzhalter-Spalten (immer sichtbar)
+    _ordered_dc  = ["DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK", "DC-ES", "DC-MX", "DC-AE"]
+    _DC_SPARE    = [("_dc_sp1", "(frei 1)"), ("_dc_sp2", "(frei 2)"), ("_dc_sp3", "(frei 3)")]
 
-    # Separate in Residential und DC
-    res_labels = [l for l in labels_shown if l in {_REPORT_SLOT_LABELS[s] for s in _RESIDENTIAL_SLOTS}]
-    dc_labels  = [l for l in labels_shown if l not in res_labels]
+    present_labels = {d["slot_label"] for d in data}
+    res_labels = [l for l in _ordered_res if l in present_labels]
+    dc_labels  = [l for l in _ordered_dc  if l in present_labels]
+
+    all_data_labels = res_labels + dc_labels
 
     # Pivot: {label → {day → mb}}
-    pivot: dict[str, dict[str, float]] = {l: {} for l in labels_shown}
+    pivot: dict[str, dict[str, float]] = {l: {} for l in all_data_labels}
     for d in data:
         if d["slot_label"] in pivot:
             pivot[d["slot_label"]][d["day"]] = d["mb"]
 
-    # ── Tabellen-Spalten ──────────────────────────────────────────────────
-    # Aufbau: Datum | [Res-Threads] | Res-MB | Res-% | [DC-Threads] | DC-MB | DC-% | Gesamt
-    table_cols = [{"name": "Datum", "id": "_day"}]
+    # ── 2-zeilige Spaltenköpfe ────────────────────────────────────────────
+    # Zeile 1 = Gruppe ("Residential" / "Datacenter" / ""),
+    # Zeile 2 = einzelner Spaltenname.
+    # merge_duplicate_headers=True fasst gleiche Gruppenzeilen zusammen.
+    GRP_RES = "Residential"
+    GRP_DC  = "Datacenter"
+
+    table_cols = [{"name": ["", "Datum"], "id": "_day"}]
+
     for l in res_labels:
-        table_cols.append({"name": l,           "id": l})
-    table_cols.append({"name": "Res. MB",        "id": "_res_mb"})
-    table_cols.append({"name": "Res. %",         "id": "_res_pct"})
+        table_cols.append({"name": [GRP_RES, l],  "id": l})
+    table_cols.append({"name": [GRP_RES, "MB"],   "id": "_res_mb"})
+    table_cols.append({"name": [GRP_RES, "%"],     "id": "_res_pct"})
+
     for l in dc_labels:
-        table_cols.append({"name": l,            "id": l})
-    table_cols.append({"name": "DC MB",          "id": "_dc_mb"})
-    table_cols.append({"name": "DC %",           "id": "_dc_pct"})
-    table_cols.append({"name": "Gesamt",         "id": "_total"})
+        table_cols.append({"name": [GRP_DC, l],   "id": l})
+    # 3 fixe Platzhalter-Spalten
+    for spare_id, spare_name in _DC_SPARE:
+        table_cols.append({"name": [GRP_DC, spare_name], "id": spare_id})
+    table_cols.append({"name": [GRP_DC, "MB"],    "id": "_dc_mb"})
+    table_cols.append({"name": [GRP_DC, "%"],      "id": "_dc_pct"})
+
+    table_cols.append({"name": ["", "Gesamt"],     "id": "_total"})
 
     # ── Zeilen befüllen ────────────────────────────────────────────────────
     table_rows = []
@@ -2118,69 +2126,109 @@ def refresh_bericht(_, active_tab):
         dc_sum  = sum(pivot[l].get(day, 0.0) for l in dc_labels)
         total   = res_sum + dc_sum
 
-        for l in labels_shown:
+        for l in all_data_labels:
             mb = pivot[l].get(day, 0.0)
             row[l] = f"{mb:.1f}" if mb else "–"
+
+        # Platzhalter immer leer
+        for spare_id, _ in _DC_SPARE:
+            row[spare_id] = "–"
 
         row["_res_mb"]  = f"{res_sum:.1f}" if res_sum else "–"
         row["_res_pct"] = f"{res_sum / total * 100:.0f} %" if total else "–"
         row["_dc_mb"]   = f"{dc_sum:.1f}"  if dc_sum  else "–"
-        row["_dc_pct"]  = f"{dc_sum  / total * 100:.0f} %" if total else "–"
+        row["_dc_pct"]  = f"{dc_sum / total * 100:.0f} %" if total else "–"
         row["_total"]   = f"{total:.1f}"   if total   else "–"
         table_rows.append(row)
 
-    # ── Styling ────────────────────────────────────────────────────────────
-    _subtotal_ids = ["_res_mb", "_res_pct", "_dc_mb", "_dc_pct", "_total"]
+    # ── IDs aller Spaltengruppen (für Styling) ────────────────────────────
+    _spare_ids = [sp[0] for sp in _DC_SPARE]
+
+    # style_cell_conditional: Zentrierung für alle; Sonderbehandlung für Subtotals
     style_cell_cond = [
-        {"if": {"column_id": "_day"},    "textAlign": "left",  "fontWeight": "600"},
-        {"if": {"column_id": "_total"},  "fontWeight": "700",  "color": "#1565C0",
-         "borderLeft": "2px solid #BBDEFB"},
-        {"if": {"column_id": "_res_mb"}, "fontWeight": "600",  "color": "#1E5FA8",
-         "backgroundColor": "#E3F2FD", "borderLeft": "2px solid #90CAF9"},
-        {"if": {"column_id": "_res_pct"},"fontWeight": "500",  "color": "#1E5FA8",
-         "backgroundColor": "#EEF6FD"},
-        {"if": {"column_id": "_dc_mb"},  "fontWeight": "600",  "color": "#BF360C",
-         "backgroundColor": "#FBE9E7", "borderLeft": "2px solid #FFAB91"},
-        {"if": {"column_id": "_dc_pct"}, "fontWeight": "500",  "color": "#BF360C",
-         "backgroundColor": "#FDF3F0"},
+        # Datum: kleiner, zentriert
+        {"if": {"column_id": "_day"},
+         "textAlign": "center", "fontWeight": "600",
+         "width": "80px", "minWidth": "80px", "maxWidth": "80px",
+         "fontSize": "0.78rem", "color": "#555"},
+
+        # Residential-Subtotals: blau mit linker Trennlinie
+        {"if": {"column_id": "_res_mb"},
+         "fontWeight": "700", "color": "#0D47A1",
+         "backgroundColor": "#DDEEFF",
+         "borderLeft": "3px solid #90CAF9"},
+        {"if": {"column_id": "_res_pct"},
+         "fontWeight": "500", "color": "#0D47A1",
+         "backgroundColor": "#EAF4FF"},
+
+        # DC-Einzelspalten: erste DC-Spalte mit Trennlinie (ergibt sich aus borderLeft
+        # bei _dc_mb — die Trennlinie zum Subtotal setzen wir explicit)
+        {"if": {"column_id": "_dc_mb"},
+         "fontWeight": "700", "color": "#BF360C",
+         "backgroundColor": "#FFE0D0",
+         "borderLeft": "3px solid #FFAB91"},
+        {"if": {"column_id": "_dc_pct"},
+         "fontWeight": "500", "color": "#BF360C",
+         "backgroundColor": "#FFF0EA"},
+
+        # Platzhalter: gedimmt
+        *[{"if": {"column_id": sid},
+           "color": "#BDBDBD", "fontStyle": "italic",
+           "backgroundColor": "#FAFAFA"}
+          for sid in _spare_ids],
+
+        # Gesamt: fett blau, starke linke Trennlinie
+        {"if": {"column_id": "_total"},
+         "fontWeight": "700", "color": "#1565C0",
+         "borderLeft": "3px solid #42A5F5"},
     ]
+
+    # Erste echte DC-Spalte: linke Trennlinie (Residential / DC Grenze)
+    if dc_labels:
+        style_cell_cond.append(
+            {"if": {"column_id": dc_labels[0]},
+             "borderLeft": "3px solid #CFD8DC"}
+        )
 
     table = dash_table.DataTable(
         data=table_rows,
         columns=table_cols,
+        merge_duplicate_headers=True,
         page_size=30,
         page_action="native",
         sort_action="none",
         style_table={"overflowX": "auto"},
         style_header={
-            "backgroundColor": "#F0F0F0",
-            "fontWeight":      "bold",
+            "backgroundColor": "#EEEEEE",
+            "fontWeight":      "600",
             "fontSize":        "0.80rem",
             "textAlign":       "center",
             "padding":         "4px 8px",
+            "borderBottom":    "1px solid #CCCCCC",
         },
         style_cell={
             "fontSize":   "0.82rem",
-            "padding":    "4px 10px",
-            "textAlign":  "right",
+            "padding":    "4px 8px",
+            "textAlign":  "center",   # alle Zellen zentriert
             "color":      "#333",
+            "whiteSpace": "normal",
         },
         style_cell_conditional=style_cell_cond,
         style_data_conditional=[
-            {"if": {"row_index": "odd"}, "backgroundColor": "#FAFAFA"},
-            # Subtotal-Zellen behalten ihre Hintergrundfarbe auch in ungeraden Zeilen
-            *[{"if": {"row_index": "odd", "column_id": cid},
-               "backgroundColor": style["backgroundColor"]}
-              for cid, style in [("_res_mb", {"backgroundColor": "#E3F2FD"}),
-                                  ("_res_pct",{"backgroundColor": "#EEF6FD"}),
-                                  ("_dc_mb",  {"backgroundColor": "#FBE9E7"}),
-                                  ("_dc_pct", {"backgroundColor": "#FDF3F0"})]],
+            {"if": {"row_index": "odd"}, "backgroundColor": "#F7F7F7"},
+            # Subtotal-Spalten behalten ihre Farbe in ungeraden Zeilen
+            *[{"if": {"row_index": "odd", "column_id": cid}, "backgroundColor": bg}
+              for cid, bg in [
+                  ("_res_mb",  "#DDEEFF"), ("_res_pct", "#EAF4FF"),
+                  ("_dc_mb",   "#FFE0D0"), ("_dc_pct",  "#FFF0EA"),
+              ]],
         ],
         style_as_list_view=True,
     )
 
     return html.Div([
-        html.H6("Tagesdetails (MB je Thread)", className="text-secondary mt-3 mb-2",
+        html.H6("Tagesdetails (MB je Thread)",
+                className="text-secondary mt-3 mb-2",
                 style={"fontSize": "0.85rem", "fontWeight": "600"}),
         html.Div(style={
             "backgroundColor": "#FFFFFF",

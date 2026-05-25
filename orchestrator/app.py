@@ -1229,10 +1229,14 @@ tab_completed = dbc.Container(fluid=True, children=[
 # Tab: Bericht — tägliche MB nach Thread
 # ---------------------------------------------------------------------------
 
-# Slot → Label-Mapping (inkl. neue DC-Scraper)
+# Slot → Label-Mapping (inkl. neue DC-Scraper).
+# Residential: Slots 0–3 (aktuell T0/T1; T2/T3 reserviert für weitere Scrapers)
+# Datacenter:  Slots 99+ (nach Bedarf erweiterbar)
 _REPORT_SLOT_LABELS = {
     0:   "T0",
     1:   "T1",
+    2:   "T2",      # reserviert für zukünftige Residential-Scrapers
+    3:   "T3",      # reserviert
     99:  "DC-DE",
     100: "DC-IN",
     101: "DC-UK",
@@ -1241,8 +1245,11 @@ _REPORT_SLOT_LABELS = {
     104: "DC-ES",
     105: "DC-MX",
     106: "DC-AE",
+    107: "DC-??",   # Platzhalter für 3 weitere DC-Scrapers
+    108: "DC-??2",
+    109: "DC-??3",
 }
-_RESIDENTIAL_SLOTS = {0, 1}
+_RESIDENTIAL_SLOTS = {0, 1, 2, 3}   # alle niedrigen Slots = Residential
 _REPORT_COLORS = {
     "T0":    "#1565C0",
     "T1":    "#42A5F5",
@@ -1260,8 +1267,7 @@ tab_bericht = dbc.Container(fluid=True, children=[
     dcc.Interval(id="interval-bericht", interval=60_000, n_intervals=0),
     dbc.Row(dbc.Col(html.H5("Scraping-Bericht — tägliches Datenvolumen",
                             className="text-secondary fw-bold my-3"))),
-    dcc.Graph(id="bericht-chart", style={"height": "420px"}),
-    html.Div(id="bericht-table", className="mt-3"),
+    html.Div(id="bericht-table"),
 ], className="py-3")
 
 # ---------------------------------------------------------------------------
@@ -2053,36 +2059,37 @@ def _query_bericht_data() -> list[dict]:
 
 
 @app.callback(
-    Output("bericht-chart", "figure"),
     Output("bericht-table", "children"),
     Input("interval-bericht", "n_intervals"),
     Input("main-tabs", "active_tab"),
 )
 def refresh_bericht(_, active_tab):
     if active_tab != "tab-bericht":
-        return dash.no_update, dash.no_update
+        return dash.no_update
 
     data = _query_bericht_data()
 
     if not data:
-        empty_fig = go.Figure()
-        empty_fig.update_layout(
-            paper_bgcolor="#F8F9FA",
-            plot_bgcolor="#F8F9FA",
-            font_color="#888",
-            annotations=[{"text": "Noch keine Daten vorhanden.", "showarrow": False,
-                           "xref": "paper", "yref": "paper", "x": 0.5, "y": 0.5,
-                           "font": {"size": 14}}],
-            xaxis_visible=False, yaxis_visible=False,
-        )
-        return empty_fig, html.P("Noch keine Daten.", style={"color": "#888", "fontSize": "0.9rem"})
+        return html.P("Noch keine Daten vorhanden.",
+                      style={"color": "#888", "fontSize": "0.9rem"})
 
-    # ── Alle Tage + alle bekannten Labels sammeln ──────────────────────────
-    all_days    = sorted({d["day"] for d in data})
-    # Reihenfolge der Threads: Residential T0/T1 zuerst, dann DC nach Slot-Nr.
-    ordered_labels = ["T0", "T1", "DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK", "DC-ES", "DC-MX", "DC-AE"]
+    # ── Alle Tage + geordnete Labels ──────────────────────────────────────
+    all_days = sorted({d["day"] for d in data})
+
+    # Canonical order: Residential first, then DC.
+    # Only labels with actual data are shown; order is preserved.
+    _ordered_all = [
+        "T0", "T1", "T2", "T3",                                    # Residential (erweiterbar)
+        "DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK",              # DC bestehend
+        "DC-ES", "DC-MX", "DC-AE",                                 # DC neu
+        "DC-??", "DC-??2", "DC-??3",                               # DC reserviert
+    ]
     present_labels = {d["slot_label"] for d in data}
-    labels_shown   = [l for l in ordered_labels if l in present_labels]
+    labels_shown   = [l for l in _ordered_all if l in present_labels]
+
+    # Separate in Residential und DC
+    res_labels = [l for l in labels_shown if l in {_REPORT_SLOT_LABELS[s] for s in _RESIDENTIAL_SLOTS}]
+    dc_labels  = [l for l in labels_shown if l not in res_labels]
 
     # Pivot: {label → {day → mb}}
     pivot: dict[str, dict[str, float]] = {l: {} for l in labels_shown}
@@ -2090,65 +2097,53 @@ def refresh_bericht(_, active_tab):
         if d["slot_label"] in pivot:
             pivot[d["slot_label"]][d["day"]] = d["mb"]
 
-    # ── Stacked-Bar Chart ──────────────────────────────────────────────────
-    fig = go.Figure()
-    for label in labels_shown:
-        y_vals = [pivot[label].get(day, 0.0) for day in all_days]
-        is_residential = label in ("T0", "T1")
-        fig.add_trace(go.Bar(
-            name=label,
-            x=all_days,
-            y=y_vals,
-            marker_color=_REPORT_COLORS.get(label, "#AAAAAA"),
-            legendgroup="Residential" if is_residential else "Datacenter",
-            legendgrouptitle_text=("Residential" if is_residential else "Datacenter")
-                if label in ("T0", "DC-DE") else None,   # Titel nur beim ersten je Gruppe
-        ))
+    # ── Tabellen-Spalten ──────────────────────────────────────────────────
+    # Aufbau: Datum | [Res-Threads] | Res-MB | Res-% | [DC-Threads] | DC-MB | DC-% | Gesamt
+    table_cols = [{"name": "Datum", "id": "_day"}]
+    for l in res_labels:
+        table_cols.append({"name": l,           "id": l})
+    table_cols.append({"name": "Res. MB",        "id": "_res_mb"})
+    table_cols.append({"name": "Res. %",         "id": "_res_pct"})
+    for l in dc_labels:
+        table_cols.append({"name": l,            "id": l})
+    table_cols.append({"name": "DC MB",          "id": "_dc_mb"})
+    table_cols.append({"name": "DC %",           "id": "_dc_pct"})
+    table_cols.append({"name": "Gesamt",         "id": "_total"})
 
-    # Vertikale Trennlinie zwischen Residential-Summe und DC für optischen Hinweis
-    # (gelöst via legendgroup, nicht via Shape, da stacked bereits getrennt)
-
-    fig.update_layout(
-        barmode="stack",
-        paper_bgcolor="#F8F9FA",
-        plot_bgcolor="#FFFFFF",
-        font=dict(family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", size=12),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom", y=1.02,
-            xanchor="left",   x=0,
-            tracegroupgap=12,
-        ),
-        xaxis=dict(
-            title=None,
-            tickangle=-30,
-            tickfont=dict(size=11),
-            gridcolor="#EEEEEE",
-        ),
-        yaxis=dict(
-            title="Megabyte",
-            gridcolor="#EEEEEE",
-        ),
-        margin=dict(l=50, r=20, t=50, b=50),
-        hovermode="x unified",
-    )
-
-    # ── Zusammenfassungs-Tabelle ───────────────────────────────────────────
-    # Zeilen = Tage (neueste oben), Spalten = Thread-Labels
-    table_cols = [{"name": "Datum",  "id": "_day"}] + [
-        {"name": l, "id": l} for l in labels_shown
-    ] + [{"name": "Gesamt", "id": "_total"}]
-
+    # ── Zeilen befüllen ────────────────────────────────────────────────────
     table_rows = []
     for day in reversed(all_days):
         row: dict[str, str] = {"_day": day}
-        total = 0.0
-        for label in labels_shown:
-            mb = pivot[label].get(day, 0.0)
-            row[label] = f"{mb:.1f}" if mb else "–"
-            total += mb
-        row["_total"] = f"{total:.1f}"
+        res_sum = sum(pivot[l].get(day, 0.0) for l in res_labels)
+        dc_sum  = sum(pivot[l].get(day, 0.0) for l in dc_labels)
+        total   = res_sum + dc_sum
+
+        for l in labels_shown:
+            mb = pivot[l].get(day, 0.0)
+            row[l] = f"{mb:.1f}" if mb else "–"
+
+        row["_res_mb"]  = f"{res_sum:.1f}" if res_sum else "–"
+        row["_res_pct"] = f"{res_sum / total * 100:.0f} %" if total else "–"
+        row["_dc_mb"]   = f"{dc_sum:.1f}"  if dc_sum  else "–"
+        row["_dc_pct"]  = f"{dc_sum  / total * 100:.0f} %" if total else "–"
+        row["_total"]   = f"{total:.1f}"   if total   else "–"
         table_rows.append(row)
+
+    # ── Styling ────────────────────────────────────────────────────────────
+    _subtotal_ids = ["_res_mb", "_res_pct", "_dc_mb", "_dc_pct", "_total"]
+    style_cell_cond = [
+        {"if": {"column_id": "_day"},    "textAlign": "left",  "fontWeight": "600"},
+        {"if": {"column_id": "_total"},  "fontWeight": "700",  "color": "#1565C0",
+         "borderLeft": "2px solid #BBDEFB"},
+        {"if": {"column_id": "_res_mb"}, "fontWeight": "600",  "color": "#1E5FA8",
+         "backgroundColor": "#E3F2FD", "borderLeft": "2px solid #90CAF9"},
+        {"if": {"column_id": "_res_pct"},"fontWeight": "500",  "color": "#1E5FA8",
+         "backgroundColor": "#EEF6FD"},
+        {"if": {"column_id": "_dc_mb"},  "fontWeight": "600",  "color": "#BF360C",
+         "backgroundColor": "#FBE9E7", "borderLeft": "2px solid #FFAB91"},
+        {"if": {"column_id": "_dc_pct"}, "fontWeight": "500",  "color": "#BF360C",
+         "backgroundColor": "#FDF3F0"},
+    ]
 
     table = dash_table.DataTable(
         data=table_rows,
@@ -2170,17 +2165,21 @@ def refresh_bericht(_, active_tab):
             "textAlign":  "right",
             "color":      "#333",
         },
-        style_cell_conditional=[
-            {"if": {"column_id": "_day"},   "textAlign": "left", "fontWeight": "600"},
-            {"if": {"column_id": "_total"}, "fontWeight": "600", "color": "#1565C0"},
-        ],
+        style_cell_conditional=style_cell_cond,
         style_data_conditional=[
             {"if": {"row_index": "odd"}, "backgroundColor": "#FAFAFA"},
+            # Subtotal-Zellen behalten ihre Hintergrundfarbe auch in ungeraden Zeilen
+            *[{"if": {"row_index": "odd", "column_id": cid},
+               "backgroundColor": style["backgroundColor"]}
+              for cid, style in [("_res_mb", {"backgroundColor": "#E3F2FD"}),
+                                  ("_res_pct",{"backgroundColor": "#EEF6FD"}),
+                                  ("_dc_mb",  {"backgroundColor": "#FBE9E7"}),
+                                  ("_dc_pct", {"backgroundColor": "#FDF3F0"})]],
         ],
         style_as_list_view=True,
     )
 
-    return fig, html.Div([
+    return html.Div([
         html.H6("Tagesdetails (MB je Thread)", className="text-secondary mt-3 mb-2",
                 style={"fontSize": "0.85rem", "fontWeight": "600"}),
         html.Div(style={

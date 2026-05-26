@@ -1289,17 +1289,16 @@ tab_bericht = dbc.Container(fluid=True, children=[
 
 # ── Bericht-Länder: statische Spalten & Styling ─────────────────────────────
 _B2_COLS = [
-    {"name": ["",         "Föd."],      "id": "_fed"},
-    {"name": ["Gruppen",  "Abs."],      "id": "_gruppen"},
-    {"name": ["Gruppen",  "%"],         "id": "_gruppen_pct"},
-    {"name": ["Zeitraum", "Geplant"],   "id": "_zeitraum_plan"},
-    {"name": ["Zeitraum", "Gescraped"], "id": "_zeitraum_done"},
-    {"name": ["Zeitraum", "Laufend"],   "id": "_laufend"},
-    {"name": ["Spieler",  "Abs."],      "id": "_spieler"},
-    {"name": ["Spieler",  "%"],         "id": "_spieler_pct"},
-    {"name": ["",         "MB"],        "id": "_mb"},
+    {"name": ["",         "Föd."],          "id": "_fed"},
+    {"name": ["Gruppen",  "Abs."],          "id": "_gruppen"},
+    {"name": ["Gruppen",  "%"],             "id": "_gruppen_pct"},
+    {"name": ["Zeitraum", "Geplant"],       "id": "_zeitraum_plan"},
+    {"name": ["Zeitraum", "Gescraped"],     "id": "_zeitraum_done"},
+    {"name": ["Zeitraum", "Laufend"],       "id": "_laufend"},
+    {"name": ["Spieler",  "FIDE aktiv"],    "id": "_fide_aktiv"},
+    {"name": ["",         "MB"],            "id": "_mb"},
 ]
-_B2_GRP_STARTS = ["_gruppen", "_zeitraum_plan", "_spieler", "_mb"]
+_B2_GRP_STARTS = ["_gruppen", "_zeitraum_plan", "_fide_aktiv", "_mb"]
 _B2_SDC = [
     # Zebra nur für country-Zeilen
     {"if": {"row_index": "odd", "filter_query": '{_row_type} = "country"'},
@@ -1325,6 +1324,10 @@ _B2_SDC = [
     # Gruppen %: grün wenn 100 %
     {"if": {"filter_query": '{_gruppen_pct} = "100.0 %"', "column_id": "_gruppen_pct"},
      "color": "#198754", "fontWeight": "600"},
+    # FIDE aktiv — Null-Werte ausgegraut
+    {"if": {"filter_query": '{_fide_aktiv} = 0 || {_fide_aktiv} = "—"',
+            "column_id": "_fide_aktiv"},
+     "color": "#bbb"},
 ]
 
 tab_bericht2 = dbc.Container(fluid=True, children=[
@@ -1378,7 +1381,7 @@ tab_bericht2 = dbc.Container(fluid=True, children=[
                 *[{"if": {"column_id": c}, "backgroundColor": "#fef9c3"}
                   for c in ["_zeitraum_plan", "_zeitraum_done", "_laufend"]],
                 *[{"if": {"column_id": c}, "backgroundColor": "#dcfce7"}
-                  for c in ["_spieler", "_spieler_pct"]],
+                  for c in ["_fide_aktiv"]],
                 *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"}
                   for c in _B2_GRP_STARTS],
             ],
@@ -2183,6 +2186,41 @@ def _query_bericht_data() -> list[dict]:
     return result
 
 
+_pg_aktiv_cache: dict[str, int] = {}
+_pg_aktiv_cache_ts: float = 0.0
+_PG_AKTIV_TTL = 300.0   # 5 Min — selten nötig, PG nicht belasten
+
+
+def _query_pg_active_players() -> dict[str, int]:
+    """Zählt active=TRUE Spieler pro Föderation aus PostgreSQL (gecacht, 5 Min TTL).
+
+    Liefert {} wenn PG nicht erreichbar — Dashboard läuft weiter mit '—'-Werten.
+    """
+    global _pg_aktiv_cache, _pg_aktiv_cache_ts
+    if time.time() - _pg_aktiv_cache_ts < _PG_AKTIV_TTL:
+        return _pg_aktiv_cache
+    try:
+        from scraper.config import get_database_url
+        import psycopg2
+        pg = psycopg2.connect(get_database_url(), connect_timeout=5)
+        cur = pg.cursor()
+        cur.execute("""
+            SELECT federation, COUNT(*) AS n
+            FROM   players
+            WHERE  active = TRUE AND federation IS NOT NULL
+            GROUP  BY federation
+        """)
+        result = {row[0]: row[1] for row in cur.fetchall()}
+        pg.close()
+        _pg_aktiv_cache    = result
+        _pg_aktiv_cache_ts = time.time()
+        return result
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("PG active-players query failed: %s", exc)
+        return _pg_aktiv_cache   # stale cache ist besser als nichts
+
+
 def _query_laender_data() -> list[dict]:
     """Aggregiert scrape_groups + scrape_runs nach Föderation (VPS-Sicht).
 
@@ -2225,34 +2263,34 @@ def _query_laender_data() -> list[dict]:
         if y0 is None: return "—"
         return str(y0) if y0 == y1 else f"{y0} – {y1}"
 
+    pg_aktiv = _query_pg_active_players()   # {federation: active_count}
+
     result = []
     for r in rows:
         total_g   = r["total_groups"]   or 1
         done_g    = r["done_groups"]    or 0
         running_g = r["running_groups"] or 0
-        total_p   = r["total_players"]  or 0
-        done_p    = r["done_players"]   or 0
         mb        = round(r["total_mb"], 1)
         laufend   = str(r["year_running"]) if r["year_running"] is not None else ""
+        fed       = r["federation"] or "—"
+        aktiv     = pg_aktiv.get(fed, 0)
 
         result.append({
-            "_fed":           r["federation"] or "—",
+            "_fed":           fed,
             "_gruppen":       f"{done_g} / {total_g}",
             "_gruppen_pct":   f"{round(done_g / total_g * 100, 1)} %" if total_g else "—",
             "_zeitraum_plan": _yrng(r["year_plan_from"], r["year_plan_to"]),
             "_zeitraum_done": _yrng(r["year_done_from"], r["year_done_to"]),
             "_laufend":       laufend,
-            "_spieler":       f"{done_p} / {total_p}",
-            "_spieler_pct":   f"{round(done_p / total_p * 100, 1)} %" if total_p else "—",
+            "_fide_aktiv":    aktiv if aktiv else "—",
             "_mb":            mb,
             "_row_type":      "country",
-            # Rohwerte für Summen / Subgruppen (nicht in columns → unsichtbar)
+            # Rohwerte für Summen / Subgruppen-Split (nicht in columns → unsichtbar)
             "_continent":     r["continent"] or "—",
             "_r_done_g":      done_g,
             "_r_running_g":   running_g,
             "_r_total_g":     total_g,
-            "_r_done_p":      done_p,
-            "_r_total_p":     total_p,
+            "_r_fide_aktiv":  aktiv,
             "_r_yp0":         r["year_plan_from"],
             "_r_yp1":         r["year_plan_to"],
             "_r_yd0":         r["year_done_from"],
@@ -2264,11 +2302,10 @@ def _query_laender_data() -> list[dict]:
 
 def _make_subtotal_row(label: str, group: list, row_type: str) -> dict:
     """Baut eine Summenzeile (Kontinent oder Welt) aus einer Gruppe von Länder-Zeilen."""
-    dg = sum(r["_r_done_g"]  for r in group)
-    tg = sum(r["_r_total_g"] for r in group)
-    dp = sum(r["_r_done_p"]  for r in group)
-    tp = sum(r["_r_total_p"] for r in group)
-    mb = round(sum(r["_r_mb"] for r in group), 1)
+    dg = sum(r["_r_done_g"]      for r in group)
+    tg = sum(r["_r_total_g"]     for r in group)
+    fa = sum(r.get("_r_fide_aktiv", 0) for r in group)
+    mb = round(sum(r["_r_mb"]    for r in group), 1)
     yp0 = min((r["_r_yp0"] for r in group if r["_r_yp0"]), default=None)
     yp1 = max((r["_r_yp1"] for r in group if r["_r_yp1"]), default=None)
     yd0 = min((r["_r_yd0"] for r in group if r["_r_yd0"]), default=None)
@@ -2283,10 +2320,11 @@ def _make_subtotal_row(label: str, group: list, row_type: str) -> dict:
         "_zeitraum_plan": _yr(yp0, yp1),
         "_zeitraum_done": _yr(yd0, yd1),
         "_laufend":       "",
-        "_spieler":       f"{dp} / {tp}",
-        "_spieler_pct":   f"{round(dp / tp * 100, 1)} %" if tp else "—",
+        "_fide_aktiv":    fa if fa else "—",
         "_mb":            mb,
         "_row_type":      row_type,
+        # Rohwert für verschachtelte Summierung
+        "_r_fide_aktiv":  fa,
     }
 
 

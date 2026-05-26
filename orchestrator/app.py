@@ -574,6 +574,9 @@ def query_completed() -> list[dict]:
                            WHEN 101 THEN 'DC-UK'
                            WHEN 102 THEN 'DC-US'
                            WHEN 103 THEN 'DC-HK'
+                           WHEN 104 THEN 'DC-ES'
+                           WHEN 105 THEN 'DC-MX'
+                           WHEN 106 THEN 'DC-AE'
                            ELSE 'DC'
                        END
                    WHEN r.thread_slot IS NOT NULL THEN 'T' || (r.thread_slot + 1)

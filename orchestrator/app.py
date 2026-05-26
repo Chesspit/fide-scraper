@@ -2464,7 +2464,7 @@ def refresh_bericht(_, active_tab):
     _ordered_dc  = ["DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK", "DC-ES", "DC-MX", "DC-AE"]
 
     present_labels = {d["slot_label"] for d in data}
-    res_labels = [l for l in _ordered_res if l in present_labels]
+    res_labels = _ordered_res                                # immer T1–T4 anzeigen
     dc_labels  = [l for l in _ordered_dc  if l in present_labels]
 
     all_data_labels = res_labels + dc_labels
@@ -2492,10 +2492,10 @@ def refresh_bericht(_, active_tab):
     for l in dc_labels:
         table_cols.append({"name": [DET, DC, l],  "id": l})
 
-    table_cols.append({"name": [GSM, RES, "MB"],  "id": "_res_mb"})
     table_cols.append({"name": [GSM, RES, "%"],   "id": "_res_pct"})
-    table_cols.append({"name": [GSM, DC,  "MB"],  "id": "_dc_mb"})
+    table_cols.append({"name": [GSM, RES, "MB"],  "id": "_res_mb"})
     table_cols.append({"name": [GSM, DC,  "%"],   "id": "_dc_pct"})
+    table_cols.append({"name": [GSM, DC,  "MB"],  "id": "_dc_mb"})
     table_cols.append({"name": [GSM, "Total", "MB"], "id": "_total"})
 
     # ── Zeilen befüllen ────────────────────────────────────────────────────
@@ -2525,23 +2525,23 @@ def refresh_bericht(_, active_tab):
          "width": "105px", "minWidth": "105px", "maxWidth": "105px",
          "fontSize": "0.78rem", "color": "#555"},
 
-        # Residential-Subtotals: blau, Trennlinie links
-        {"if": {"column_id": "_res_mb"},
-         "fontWeight": "700", "color": "#0D47A1",
-         "backgroundColor": "#DDEEFF",
-         "borderLeft": "3px solid #90CAF9"},
+        # Residential-Subtotals: blau, Trennlinie links am %-Block-Start
         {"if": {"column_id": "_res_pct"},
          "fontWeight": "500", "color": "#0D47A1",
-         "backgroundColor": "#EAF4FF"},
+         "backgroundColor": "#EAF4FF",
+         "borderLeft": "3px solid #90CAF9"},
+        {"if": {"column_id": "_res_mb"},
+         "fontWeight": "700", "color": "#0D47A1",
+         "backgroundColor": "#DDEEFF"},
 
-        # DC-Subtotals: orange, Trennlinie links
-        {"if": {"column_id": "_dc_mb"},
-         "fontWeight": "700", "color": "#BF360C",
-         "backgroundColor": "#FFE0D0",
-         "borderLeft": "3px solid #FFAB91"},
+        # DC-Subtotals: orange, Trennlinie links am %-Block-Start
         {"if": {"column_id": "_dc_pct"},
          "fontWeight": "500", "color": "#BF360C",
-         "backgroundColor": "#FFF0EA"},
+         "backgroundColor": "#FFF0EA",
+         "borderLeft": "3px solid #FFAB91"},
+        {"if": {"column_id": "_dc_mb"},
+         "fontWeight": "700", "color": "#BF360C",
+         "backgroundColor": "#FFE0D0"},
 
         # Gesamt Total: fett blau, starke Trennlinie links
         {"if": {"column_id": "_total"},
@@ -2556,7 +2556,7 @@ def refresh_bericht(_, active_tab):
              "borderLeft": "3px solid #CFD8DC"}
         )
     # Trennlinie am Anfang des Gesamt-Blocks (erste Res-Subtotal-Spalte)
-    # wird bereits durch _res_mb borderLeft abgedeckt
+    # wird bereits durch _res_pct borderLeft abgedeckt
 
     table = dash_table.DataTable(
         data=table_rows,
@@ -2587,8 +2587,8 @@ def refresh_bericht(_, active_tab):
             # Subtotal-Spalten behalten ihre Farbe in ungeraden Zeilen
             *[{"if": {"row_index": "odd", "column_id": cid}, "backgroundColor": bg}
               for cid, bg in [
-                  ("_res_mb",  "#DDEEFF"), ("_res_pct", "#EAF4FF"),
-                  ("_dc_mb",   "#FFE0D0"), ("_dc_pct",  "#FFF0EA"),
+                  ("_res_pct", "#EAF4FF"), ("_res_mb",  "#DDEEFF"),
+                  ("_dc_pct",  "#FFF0EA"), ("_dc_mb",   "#FFE0D0"),
               ]],
         ],
         style_as_list_view=True,

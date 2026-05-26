@@ -2363,7 +2363,13 @@ def _b2_build_table_data(raw_rows: list, expand_state: dict) -> list:
             if not sg_is_open:
                 continue
 
-            for r in sg_rows:
+            # Innerhalb der Gruppe: absteigend nach Gruppen-Prozent sortieren
+            sorted_rows = sorted(
+                sg_rows,
+                key=lambda r: r["_r_done_g"] / r["_r_total_g"] if r["_r_total_g"] else 0,
+                reverse=True,
+            )
+            for r in sorted_rows:
                 row = dict(r)
                 row["_fed"]    = f"      {r['_fed']}"
                 row["_sg_key"] = ""

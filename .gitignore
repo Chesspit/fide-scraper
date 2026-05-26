@@ -25,3 +25,13 @@ notebooks/*.csv
 orchestrator/scraper.db
 orchestrator/worker_state.json
 orchestrator/__pycache__/
+
+# Frontend-Caches (zur Laufzeit generiert)
+frontend/*.parquet
+
+# Screenshots + Playwright-Temp
+*.png
+.playwright-mcp/
+
+# Frontend-Daten-Export
+frontend_data/

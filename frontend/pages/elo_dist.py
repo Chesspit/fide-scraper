@@ -11,7 +11,7 @@ from data import HIGHLIGHT_COLORS, MAX_HIGHLIGHTS
 from data_percentiles import SCOPES, load_percentiles
 from data_player_history import load_player_history, load_player_meta
 
-dash.register_page(__name__, path="/dist", name="ELO-Verteilung", title="FIDE | ELO-Verteilung")
+dash.register_page(__name__, path="/dist", name="ELO-Verteilung", title="ELO-Einsichten | ELO-Verteilung", order=2)
 
 # (p_lo_col, p_hi_col, fillcolor, hover_label)
 _BANDS = [

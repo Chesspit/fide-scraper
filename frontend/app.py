@@ -1,4 +1,4 @@
-"""FIDE Dashboard — Dash multi-page app."""
+"""ELO-Einsichten — Dash multi-page app."""
 import dash
 import dash_bootstrap_components as dbc
 from dash import html, dcc
@@ -9,7 +9,45 @@ app = dash.Dash(
     external_stylesheets=[dbc.themes.BOOTSTRAP],
     suppress_callback_exceptions=True,
 )
-app.title = "FIDE Analytics"
+app.title = "ELO-Einsichten"
+
+# Seiten-Gruppen (anhand order-Wert aus register_page)
+# Aktiv: order 1–9  |  Test: order 10+
+_AKTIV_PATHS = {"/c", "/dist", "/player-profile"}
+_TEST_PATHS  = {"/games", "/titles"}
+
+
+def _nav_group(label: str, paths: set) -> html.Span:
+    """Gibt eine Navbar-Gruppe mit Label + Links zurück."""
+    pages = sorted(
+        [p for p in dash.page_registry.values() if p["path"] in paths],
+        key=lambda p: p.get("order", 99),
+    )
+    links = [
+        dbc.NavItem(
+            dcc.Link(p["name"], href=p["path"], className="nav-link")
+        )
+        for p in pages
+    ]
+    return html.Span(
+        [
+            html.Span(
+                label,
+                style={
+                    "color": "rgba(255,255,255,0.45)",
+                    "fontSize": "0.72rem",
+                    "letterSpacing": "0.08em",
+                    "textTransform": "uppercase",
+                    "marginRight": "4px",
+                    "marginLeft": "16px",
+                    "whiteSpace": "nowrap",
+                },
+            ),
+            dbc.Nav(links, navbar=True, style={"display": "inline-flex"}),
+        ],
+        style={"display": "inline-flex", "alignItems": "center"},
+    )
+
 
 app.layout = html.Div(
     [
@@ -18,22 +56,28 @@ app.layout = html.Div(
         dbc.Navbar(
             dbc.Container(
                 [
-                    html.Span("FIDE Analytics", className="navbar-brand mb-0 h1"),
-                    dbc.Nav(
-                        [
-                            dbc.NavItem(
-                                dcc.Link(
-                                    page["name"],
-                                    href=page["path"],
-                                    className="nav-link",
-                                )
-                            )
-                            for page in dash.page_registry.values()
-                        ],
-                        navbar=True,
+                    # Brand
+                    html.Span(
+                        [html.Span("ELO-Einsichten"), html.Span(" 🇩🇪", style={"fontSize": "1.1rem"})],
+                        className="navbar-brand mb-0 h1",
+                        style={"marginRight": "24px"},
                     ),
+                    # Aktiv-Gruppe
+                    _nav_group("Aktiv", _AKTIV_PATHS),
+                    # Trennstrich
+                    html.Span(
+                        "|",
+                        style={
+                            "color": "rgba(255,255,255,0.25)",
+                            "margin": "0 8px",
+                            "fontSize": "1.1rem",
+                        },
+                    ),
+                    # Test-Gruppe
+                    _nav_group("Test", _TEST_PATHS),
                 ],
                 fluid=True,
+                style={"display": "flex", "alignItems": "center", "flexWrap": "wrap"},
             ),
             color="dark",
             dark=True,

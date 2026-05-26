@@ -10,7 +10,7 @@ import pandas as pd
 from data_titles import load_title_evolution
 from data_population import FIDE_TO_ISO3, load_population, get_pop_lookup
 
-dash.register_page(__name__, path="/titles", name="GM/IM Entwicklung", title="FIDE | Titel-Entwicklung")
+dash.register_page(__name__, path="/titles", name="GM/IM Entwicklung", title="ELO-Einsichten | GM/IM Entwicklung", order=11)
 
 TOP_N = 20
 

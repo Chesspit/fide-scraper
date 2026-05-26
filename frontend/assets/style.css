@@ -20,6 +20,13 @@ body {
     display: none !important;
 }
 
+/* Slider: numerisches Eingabefeld rechts ausblenden */
+#gd-year-slider input[type=number],
+#gd-year-slider .rc-slider-input,
+#gd-year-slider .dash-slider-input {
+    display: none !important;
+}
+
 .chart-info {
     background: #f0f4f8;
     border-left: 3px solid #aab8c8;

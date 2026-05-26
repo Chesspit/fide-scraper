@@ -16,8 +16,11 @@ dash.register_page(
     __name__,
     path="/player-profile",
     name="Spieler-Steckbrief",
-    title="FIDE | Spieler-Steckbrief",
+    title="ELO-Einsichten | Spieler-Steckbrief",
+    order=3,
 )
+
+DEFAULT_FIDE_ID = 46616543  # Gukesh D (Weltmeister 2024)
 
 # ---------------------------------------------------------------------------
 # Farben
@@ -69,6 +72,24 @@ CLR_LABELS = ["Weiß", "Schwarz"]
 # ---------------------------------------------------------------------------
 def _db():
     return psycopg2.connect(os.getenv("DATABASE_URL", "postgresql://fide:nimzo194.@localhost:5434/fidedb"))
+
+
+def _default_player_option() -> list[dict]:
+    """Gibt den Default-Spieler als initiale Dropdown-Option zurück."""
+    try:
+        conn = _db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT fide_id, name, federation, std_rating FROM players WHERE fide_id = %s",
+                (DEFAULT_FIDE_ID,),
+            )
+            row = cur.fetchone()
+        conn.close()
+        if row:
+            return [{"label": f"{row[1]} ({row[2]}, {row[3]})", "value": row[0]}]
+    except Exception:
+        pass
+    return []
 
 
 def search_players(q: str) -> list[dict]:
@@ -321,8 +342,8 @@ layout = html.Div(
                         id="pp-search-dd",
                         placeholder="Name oder FIDE-ID (min. 2 Zeichen)…",
                         searchable=True,
-                        options=[],
-                        value=None,
+                        options=_default_player_option(),
+                        value=DEFAULT_FIDE_ID,
                         clearable=True,
                         style={"fontSize": "13px", "minWidth": "340px"},
                     ),
@@ -490,7 +511,7 @@ def update_search_options(q):
     prevent_initial_call=False,
 )
 def load_player_data(n_clicks, fide_id_val):
-    fide_id = int(fide_id_val) if fide_id_val else 4631234
+    fide_id = int(fide_id_val) if fide_id_val else DEFAULT_FIDE_ID
 
     player = load_player(fide_id)
     if not player:

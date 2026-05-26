@@ -13,8 +13,11 @@ dash.register_page(
     __name__,
     path="/games",
     name="Partien-Detail",
-    title="FIDE | Partien-Detail",
+    title="ELO-Einsichten | Partien-Detail",
+    order=10,
 )
+
+DEFAULT_FIDE_ID = 46616543  # Gukesh D (Weltmeister 2024)
 
 # ---------------------------------------------------------------------------
 # Farben (konsistent mit player_profile)
@@ -43,6 +46,24 @@ def _db():
     return psycopg2.connect(
         os.getenv("DATABASE_URL", "postgresql://fide:nimzo194.@localhost:5434/fidedb")
     )
+
+
+def _default_player_option() -> list[dict]:
+    """Gibt den Default-Spieler als initiale Dropdown-Option zurück."""
+    try:
+        conn = _db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT fide_id, name, federation, std_rating FROM players WHERE fide_id = %s",
+                (DEFAULT_FIDE_ID,),
+            )
+            row = cur.fetchone()
+        conn.close()
+        if row:
+            return [{"label": f"{row[1]} ({row[2]}, {row[3]})", "value": row[0]}]
+    except Exception:
+        pass
+    return []
 
 
 def search_players(q: str) -> list[dict]:
@@ -144,8 +165,8 @@ def prepare_rows(games: list[dict]) -> list[dict]:
             "Eig. Rating":    g["eigenes_rating"] or "–",
             "Farbe":          fmt_color(g["color"]),
             "Gegner":         g["opponent_name"] or "–",
-            "Titel":          g["opponent_title"] or "–",
-            "G.":             "♀" if sex == "F" else ("♂" if sex == "M" else "–"),
+            "Titel":          g["opponent_title"] or "",          # leer wenn kein Titel
+            "G.":             "F" if sex == "F" else ("M" if sex == "M" else ""),
             "Gegner-Rating":  g["opponent_rating"] or "–",
             "Föd.":           str(g["opponent_federation"]).strip() if g["opponent_federation"] else "–",
             "Ergebnis":       result_str,
@@ -163,60 +184,79 @@ def prepare_rows(games: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 layout = dbc.Container(fluid=True, style={"backgroundColor": C_BG, "minHeight": "100vh", "padding": "20px"}, children=[
 
-    # Spieler-Suche
-    html.Div(style=CARD, children=[
-        dbc.Row([
-            dbc.Col([
-                html.Label("Spieler suchen", style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "4px"}),
-                dcc.Dropdown(
-                    id="gd-player-dd",
-                    placeholder="Name oder FIDE-ID eingeben…",
-                    options=[],
-                    value=None,
-                    clearable=True,
-                    searchable=True,
-                    style={"fontSize": "0.9rem"},
-                ),
-            ], md=5),
-            dbc.Col([
-                html.Label("Ergebnis", style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "4px"}),
-                dcc.Dropdown(
-                    id="gd-result-filter",
-                    options=[
-                        {"label": "Alle",        "value": "alle"},
-                        {"label": "Sieg",        "value": "Sieg"},
-                        {"label": "Remis",       "value": "Remis"},
-                        {"label": "Niederlage",  "value": "Niederlage"},
-                    ],
-                    value="alle", clearable=False,
-                    style={"fontSize": "0.9rem"},
-                ),
-            ], md=2),
-            dbc.Col([
-                html.Label("Farbe", style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "4px"}),
-                dcc.Dropdown(
-                    id="gd-color-filter",
-                    options=[
-                        {"label": "Beide",    "value": "beide"},
-                        {"label": "Weiß",     "value": "Weiß"},
-                        {"label": "Schwarz",  "value": "Schwarz"},
-                    ],
-                    value="beide", clearable=False,
-                    style={"fontSize": "0.9rem"},
-                ),
-            ], md=2),
-            dbc.Col([
-                html.Label("Zeitraum", style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "4px"}),
-                dcc.RangeSlider(
+    # ── Filter-Zeile: Dropdowns (links) + Zeitraum-Box (rechts) ─────────
+    dbc.Row([
+        # Linke Box: Spieler + Ergebnis + Farbe
+        dbc.Col(
+            html.Div(style=CARD, children=[
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Spieler", style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "4px"}),
+                        dcc.Dropdown(
+                            id="gd-player-dd",
+                            placeholder="Name oder FIDE-ID…",
+                            options=_default_player_option(),
+                            value=DEFAULT_FIDE_ID,
+                            clearable=True,
+                            searchable=True,
+                            style={"fontSize": "0.9rem"},
+                        ),
+                    ], md=8),
+                    dbc.Col([
+                        html.Label("Ergebnis", style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "4px"}),
+                        dcc.Dropdown(
+                            id="gd-result-filter",
+                            options=[
+                                {"label": "Alle",        "value": "alle"},
+                                {"label": "Sieg",        "value": "Sieg"},
+                                {"label": "Remis",       "value": "Remis"},
+                                {"label": "Niederlage",  "value": "Niederlage"},
+                            ],
+                            value="alle", clearable=False,
+                            style={"fontSize": "0.9rem"},
+                        ),
+                    ], md=2),
+                    dbc.Col([
+                        html.Label("Farbe", style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "4px"}),
+                        dcc.Dropdown(
+                            id="gd-color-filter",
+                            options=[
+                                {"label": "Beide",    "value": "beide"},
+                                {"label": "Weiß",     "value": "Weiß"},
+                                {"label": "Schwarz",  "value": "Schwarz"},
+                            ],
+                            value="beide", clearable=False,
+                            style={"fontSize": "0.9rem"},
+                        ),
+                    ], md=2),
+                ], className="g-2 align-items-end"),
+            ]),
+        md=6),
+        # Rechte Box: Zeitraum-Slider (eigene Karte)
+        dbc.Col(
+            html.Div(style=CARD, children=[
+                html.Div("Zeitraum", style={
+                    "fontSize": "0.85rem", "fontWeight": "600",
+                    "color": C_MUTED, "marginBottom": "10px",
+                }),
+                dcc.Slider(
                     id="gd-year-slider",
-                    min=2009, max=2026, step=1,
-                    value=[2012, 2026],
-                    marks={y: str(y) for y in range(2009, 2027, 3)},
-                    tooltip={"placement": "bottom", "always_visible": False},
+                    min=2008, max=2026, step=1,
+                    value=2008,
+                    marks={
+                        2008: "2008",
+                        2010: "2010",
+                        2015: "2015",
+                        2020: "2020",
+                        2025: "2025",
+                        2026: "2026",
+                    },
+                    tooltip={"always_visible": False},
+                    included=True,
                 ),
-            ], md=3),
-        ], className="g-3 align-items-end"),
-    ]),
+            ]),
+        md=6),
+    ], className="g-3 mb-0"),
 
     # Kennzahlen
     html.Div(id="gd-stats-row", style={"marginBottom": "12px"}),
@@ -251,11 +291,11 @@ def update_player_options(search):
     Input("gd-result-filter", "value"),
     Input("gd-color-filter",  "value"),
     Input("gd-year-slider",   "value"),
-    prevent_initial_call=True,
+    prevent_initial_call=False,
 )
-def update_table(fide_id, result_filter, color_filter, year_range):
+def update_table(fide_id, result_filter, color_filter, year_from):
     if not fide_id:
-        return html.Div(), html.P("Bitte Spieler auswählen.", style={"color": C_MUTED, "fontSize": "0.9rem"})
+        fide_id = DEFAULT_FIDE_ID
 
     games = load_games(int(fide_id))
     if not games:
@@ -264,8 +304,8 @@ def update_table(fide_id, result_filter, color_filter, year_range):
     rows = prepare_rows(games)
 
     # Filter
-    y_from, y_to = year_range
-    rows = [r for r in rows if y_from <= int(r["Periode"][:4]) <= y_to]
+    y_from = int(year_from) if year_from else 2008
+    rows = [r for r in rows if int(r["Periode"][:4]) >= y_from]
     if result_filter != "alle":
         rows = [r for r in rows if r["Ergebnis"] == result_filter]
     if color_filter != "beide":
@@ -283,16 +323,18 @@ def update_table(fide_id, result_filter, color_filter, year_range):
     def stat_card(label, value, color=C_TEXT):
         return dbc.Col(html.Div(style={**CARD, "textAlign": "center", "padding": "10px"}, children=[
             html.Div(str(value), style={"fontSize": "1.4rem", "fontWeight": "bold", "color": color}),
-            html.Div(label, style={"fontSize": "0.78rem", "color": C_MUTED}),
+            html.Div(label, style={"fontSize": "0.72rem", "color": C_MUTED, "lineHeight": "1.3"}),
         ]), xs=6, md=2)
 
     stats = dbc.Row([
-        stat_card("Partien", n),
+        stat_card("Partien",     n),
         stat_card("Siege",       wins,   "#4CAF50"),
         stat_card("Remis",       draws,  "#888"),
         stat_card("Niederlagen", losses, "#E24B4A"),
-        stat_card("Ø Δ Rating",  f"{avg_chg:+.2f}", "#4CAF50" if avg_chg >= 0 else "#E24B4A"),
-        stat_card("Σ Δ Rating",  f"{total_chg:+.1f}", "#4CAF50" if total_chg >= 0 else "#E24B4A"),
+        stat_card("Δ Rating pro Partie (im Durchschnitt)",
+                  f"{avg_chg:+.2f}", "#4CAF50" if avg_chg >= 0 else "#E24B4A"),
+        stat_card("Δ Rating über den Zeitraum (Summe)",
+                  f"{total_chg:+.1f}", "#4CAF50" if total_chg >= 0 else "#E24B4A"),
     ], className="g-2")
 
     # Tabelle vorbereiten (interne Felder entfernen)
@@ -300,19 +342,41 @@ def update_table(fide_id, result_filter, color_filter, year_range):
                     "Gegner-Rating", "Föd.", "Ergebnis", "Δ Rating", "Erw. Score", "Turnier"]
     table_rows = [{k: r[k] for k in display_cols} for r in rows]
 
+    # 2-zeilige Spaltenköpfe — Zeile 1 = Kontext, Zeile 2 = Hauptname
+    # Keine Sortierung
+    columns_def = [
+        {"name": ["",          "Monat"],    "id": "Periode",       "sortable": False},
+        {"name": ["",          "Rating"],   "id": "Eig. Rating",   "sortable": False},
+        {"name": ["",          "Farbe"],    "id": "Farbe",         "sortable": False},
+        {"name": ["",          "Gegner"],   "id": "Gegner",        "sortable": False},
+        {"name": ["",          "Titel"],    "id": "Titel",         "sortable": False},
+        {"name": ["",          "Sex"],      "id": "G.",            "sortable": False},
+        {"name": ["Rating",    "Gegner"],   "id": "Gegner-Rating", "sortable": False},
+        {"name": ["",          "Föd."],     "id": "Föd.",          "sortable": False},
+        {"name": ["",          "Ergebnis"], "id": "Ergebnis",      "sortable": False},
+        {"name": ["",          "Δ Rating"], "id": "Δ Rating",      "sortable": False},
+        {"name": ["Erwartete", "Score"],    "id": "Erw. Score",    "sortable": False},
+        {"name": ["",          "Turnier"],  "id": "Turnier",       "sortable": False},
+    ]
+
     table = dash_table.DataTable(
         data=table_rows,
-        columns=[{"name": c, "id": c} for c in display_cols],
+        columns=columns_def,
+        merge_duplicate_headers=False,
         page_size=50,
         page_action="native",
-        sort_action="native",
-        filter_action="native",
+        sort_action="none",
+        filter_action="none",
         style_table={"overflowX": "auto"},
         style_header={
             "backgroundColor": "#F0F0F0",
             "fontWeight": "bold",
-            "fontSize": "0.82rem",
-            "borderBottom": f"2px solid {C_BORDER}",
+            "fontSize": "0.80rem",
+            "borderBottom": f"1px solid {C_BORDER}",
+            "whiteSpace": "normal",
+            "height": "auto",
+            "textAlign": "center",
+            "padding": "3px 8px",
         },
         style_cell={
             "fontSize": "0.82rem",

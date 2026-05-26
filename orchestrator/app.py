@@ -2493,8 +2493,8 @@ def refresh_bericht(_, active_tab):
         table_cols.append({"name": [DET, DC, l],  "id": l})
 
     table_cols.append({"name": [GSM, RES, "%"],   "id": "_res_pct"})
-    table_cols.append({"name": [GSM, RES, "MB"],  "id": "_res_mb"})
     table_cols.append({"name": [GSM, DC,  "%"],   "id": "_dc_pct"})
+    table_cols.append({"name": [GSM, RES, "MB"],  "id": "_res_mb"})
     table_cols.append({"name": [GSM, DC,  "MB"],  "id": "_dc_mb"})
     table_cols.append({"name": [GSM, "Total", "MB"], "id": "_total"})
 
@@ -2525,20 +2525,20 @@ def refresh_bericht(_, active_tab):
          "width": "105px", "minWidth": "105px", "maxWidth": "105px",
          "fontSize": "0.78rem", "color": "#555"},
 
-        # Residential-Subtotals: blau, Trennlinie links am %-Block-Start
+        # %-Block: Res % | DC % — Trennlinie links am Block-Start
         {"if": {"column_id": "_res_pct"},
          "fontWeight": "500", "color": "#0D47A1",
          "backgroundColor": "#EAF4FF",
          "borderLeft": "3px solid #90CAF9"},
-        {"if": {"column_id": "_res_mb"},
-         "fontWeight": "700", "color": "#0D47A1",
-         "backgroundColor": "#DDEEFF"},
-
-        # DC-Subtotals: orange, Trennlinie links am %-Block-Start
         {"if": {"column_id": "_dc_pct"},
          "fontWeight": "500", "color": "#BF360C",
-         "backgroundColor": "#FFF0EA",
-         "borderLeft": "3px solid #FFAB91"},
+         "backgroundColor": "#FFF0EA"},
+
+        # MB-Block: Res MB | DC MB — Trennlinie links am Block-Start
+        {"if": {"column_id": "_res_mb"},
+         "fontWeight": "700", "color": "#0D47A1",
+         "backgroundColor": "#DDEEFF",
+         "borderLeft": "3px solid #AAAAAA"},
         {"if": {"column_id": "_dc_mb"},
          "fontWeight": "700", "color": "#BF360C",
          "backgroundColor": "#FFE0D0"},

@@ -186,6 +186,24 @@ def _load_concurrency_config() -> dict:
         return {}
 
 
+def _read_dc_thread_enabled(dc_id: str) -> bool:
+    """Liest enabled-Flag eines DC-Threads live aus profiles.yaml.
+
+    Wird zwischen Gruppen geprüft — so greift der UI-Toggle sofort nach
+    Abschluss der aktuellen Gruppe, ohne einen Neustart zu benötigen.
+    Gibt True zurück falls die Datei nicht lesbar ist (safe default: weiterlaufen).
+    """
+    try:
+        with open(PROFILES_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        for t in data.get("concurrency", {}).get("datacenter_threads", []):
+            if t.get("id") == dc_id:
+                return bool(t.get("enabled", True))
+    except Exception:
+        pass
+    return True  # Im Fehlerfall: sicher weiterlaufen
+
+
 # ---------------------------------------------------------------------------
 # Player lookup
 # ---------------------------------------------------------------------------
@@ -856,6 +874,11 @@ def run_dc_slot(
                 )
                 stop_event.wait(timeout=min(secs, _DC_SLEEP_CHECK_INTERVAL))
                 continue
+
+            # Enabled-Check: sofort stoppen wenn Toggle in der UI auf False gesetzt wurde
+            if not _read_dc_thread_enabled(affinity):
+                logger.info("DC-Thread %s: in profiles.yaml deaktiviert — stoppe nach aktueller Gruppe", label)
+                break
 
             profile = pm_local.pick_fuzzy(override=profile_name)
             group   = qm_local.get_next_group(dc_affinity=affinity)

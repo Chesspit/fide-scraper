@@ -1295,7 +1295,7 @@ _B2_COLS = [
     {"name": ["Zeitraum", "Geplant"],       "id": "_zeitraum_plan"},
     {"name": ["Zeitraum", "Gescraped"],     "id": "_zeitraum_done"},
     {"name": ["Zeitraum", "Laufend"],       "id": "_laufend"},
-    {"name": ["Spieler",  "FIDE aktiv"],    "id": "_fide_aktiv"},
+    {"name": ["Spieler",  "Gescraped"],     "id": "_fide_aktiv"},
     {"name": ["",         "MB"],            "id": "_mb"},
 ]
 _B2_GRP_STARTS = ["_gruppen", "_zeitraum_plan", "_fide_aktiv", "_mb"]
@@ -2191,8 +2191,9 @@ _pg_aktiv_cache_ts: float = 0.0
 _PG_AKTIV_TTL = 300.0   # 5 Min — selten nötig, PG nicht belasten
 
 
-def _query_pg_active_players() -> dict[str, int]:
-    """Zählt active=TRUE Spieler pro Föderation aus PostgreSQL (gecacht, 5 Min TTL).
+def _query_pg_scraped_players() -> dict[str, int]:
+    """Zählt distinct gescrapte Spieler (scrape_periods.status='ok') pro Föderation
+    aus PostgreSQL (gecacht, 5 Min TTL).
 
     Liefert {} wenn PG nicht erreichbar — Dashboard läuft weiter mit '—'-Werten.
     """
@@ -2205,10 +2206,12 @@ def _query_pg_active_players() -> dict[str, int]:
         pg = psycopg2.connect(get_database_url(), connect_timeout=5)
         cur = pg.cursor()
         cur.execute("""
-            SELECT federation, COUNT(*) AS n
-            FROM   players
-            WHERE  active = TRUE AND federation IS NOT NULL
-            GROUP  BY federation
+            SELECT p.federation, COUNT(DISTINCT sp.fide_id) AS n
+            FROM   scrape_periods sp
+            JOIN   players p ON p.fide_id = sp.fide_id
+            WHERE  sp.status = 'ok'
+              AND  p.federation IS NOT NULL
+            GROUP  BY p.federation
         """)
         result = {row[0]: row[1] for row in cur.fetchall()}
         pg.close()
@@ -2217,7 +2220,7 @@ def _query_pg_active_players() -> dict[str, int]:
         return result
     except Exception as exc:
         import logging
-        logging.getLogger(__name__).warning("PG active-players query failed: %s", exc)
+        logging.getLogger(__name__).warning("PG scraped-players query failed: %s", exc)
         return _pg_aktiv_cache   # stale cache ist besser als nichts
 
 
@@ -2263,7 +2266,7 @@ def _query_laender_data() -> list[dict]:
         if y0 is None: return "—"
         return str(y0) if y0 == y1 else f"{y0} – {y1}"
 
-    pg_aktiv = _query_pg_active_players()   # {federation: active_count}
+    pg_aktiv = _query_pg_scraped_players()   # {federation: scraped_player_count}
 
     result = []
     for r in rows:

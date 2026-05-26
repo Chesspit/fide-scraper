@@ -1306,8 +1306,8 @@ app.layout = dbc.Container(fluid=True, children=[
         dbc.Tab(tab_heatmap,  label="⚙️ Steuerung",        tab_id="tab-heatmap"),
         dbc.Tab(tab_queue,    label="📋 Queue",             tab_id="tab-queue"),
         dbc.Tab(tab_completed,label="✅ Abgeschlossen",     tab_id="tab-completed"),
-        dbc.Tab(tab_bericht,  label="📊 Bericht",           tab_id="tab-bericht"),
-        dbc.Tab(tab_bericht2, label="🗺 Bericht 2",          tab_id="tab-bericht2"),
+        dbc.Tab(tab_bericht,  label="📊 Bericht Scraper",    tab_id="tab-bericht"),
+        dbc.Tab(tab_bericht2, label="🗺 Bericht Länder",     tab_id="tab-bericht2"),
     ], id="main-tabs", active_tab="tab-heatmap"),
 ], style={"backgroundColor": "#F8F9FA", "minHeight": "100vh", "paddingBottom": "40px"})
 
@@ -2093,11 +2093,17 @@ def _query_laender_data() -> list[dict]:
         """
         SELECT
             sg.federation,
-            COUNT(sg.id)                                         AS total_groups,
-            SUM(CASE WHEN sg.status = 'done' THEN 1 ELSE 0 END) AS done_groups,
-            MIN(sg.year)                                         AS year_from,
-            MAX(sg.year)                                         AS year_to,
-            COALESCE(SUM(sr.mb_per_group), 0.0)                  AS total_mb
+            COUNT(sg.id)                                                          AS total_groups,
+            SUM(CASE WHEN sg.status = 'done'    THEN 1 ELSE 0 END)               AS done_groups,
+            SUM(CASE WHEN sg.status = 'running' THEN 1 ELSE 0 END)               AS running_groups,
+            MIN(sg.year)                                                          AS year_plan_from,
+            MAX(sg.year)                                                          AS year_plan_to,
+            MIN(CASE WHEN sg.status = 'done'    THEN sg.year ELSE NULL END)      AS year_done_from,
+            MAX(CASE WHEN sg.status = 'done'    THEN sg.year ELSE NULL END)      AS year_done_to,
+            MIN(CASE WHEN sg.status = 'running' THEN sg.year ELSE NULL END)      AS year_running,
+            SUM(CASE WHEN sg.status = 'done'    THEN sg.player_count ELSE 0 END) AS done_players,
+            SUM(sg.player_count)                                                  AS total_players,
+            COALESCE(SUM(sr.mb_per_group), 0.0)                                  AS total_mb
         FROM scrape_groups sg
         LEFT JOIN (
             SELECT group_id, SUM(mb_downloaded) AS mb_per_group
@@ -2113,13 +2119,38 @@ def _query_laender_data() -> list[dict]:
     conn.close()
     result = []
     for r in rows:
-        y0, y1 = r["year_from"], r["year_to"]
-        zeitraum = str(y0) if y0 == y1 else f"{y0} – {y1}"
+        total_g  = r["total_groups"]  or 1
+        done_g   = r["done_groups"]   or 0
+        total_p  = r["total_players"] or 0
+        done_p   = r["done_players"]  or 0
+
+        # Geplanter Zeitraum
+        yp0, yp1 = r["year_plan_from"], r["year_plan_to"]
+        zeitraum_plan = str(yp0) if yp0 == yp1 else f"{yp0} – {yp1}"
+
+        # Gescrapeter Zeitraum (nur done-Gruppen)
+        yd0, yd1 = r["year_done_from"], r["year_done_to"]
+        if yd0 is None:
+            zeitraum_done = "—"
+        elif yd0 == yd1:
+            zeitraum_done = str(yd0)
+        else:
+            zeitraum_done = f"{yd0} – {yd1}"
+
+        # Laufendes Jahr (running-Gruppen), leer wenn keines
+        yr = r["year_running"]
+        laufend = str(yr) if yr is not None else ""
+
         result.append({
-            "_fed":      r["federation"] or "—",
-            "_gruppen":  f"{r['done_groups']} / {r['total_groups']}",
-            "_zeitraum": zeitraum,
-            "_mb":       round(r["total_mb"], 1),
+            "_fed":           r["federation"] or "—",
+            "_gruppen":       f"{done_g} / {total_g}",
+            "_gruppen_pct":   f"{round(done_g / total_g * 100, 1)} %" if total_g else "—",
+            "_zeitraum_plan": zeitraum_plan,
+            "_zeitraum_done": zeitraum_done,
+            "_laufend":       laufend,
+            "_spieler":       f"{done_p} / {total_p}",
+            "_spieler_pct":   f"{round(done_p / total_p * 100, 1)} %" if total_p else "—",
+            "_mb":            round(r["total_mb"], 1),
         })
     return result
 
@@ -2309,17 +2340,25 @@ def refresh_bericht2(_, active_tab):
                       style={"color": "#888", "fontSize": "0.9rem"})
 
     columns = [
-        {"name": "Föd.",     "id": "_fed"},
-        {"name": "Gruppen",  "id": "_gruppen"},
-        {"name": "Zeitraum", "id": "_zeitraum"},
-        {"name": "MB",       "id": "_mb"},
+        {"name": ["",         "Föd."],          "id": "_fed"},
+        {"name": ["Gruppen",  "Abs."],           "id": "_gruppen"},
+        {"name": ["Gruppen",  "%"],              "id": "_gruppen_pct"},
+        {"name": ["Zeitraum", "Geplant"],        "id": "_zeitraum_plan"},
+        {"name": ["Zeitraum", "Gescraped"],      "id": "_zeitraum_done"},
+        {"name": ["Zeitraum", "Laufend"],        "id": "_laufend"},
+        {"name": ["Spieler",  "Abs."],           "id": "_spieler"},
+        {"name": ["Spieler",  "%"],              "id": "_spieler_pct"},
+        {"name": ["",         "MB"],             "id": "_mb"},
     ]
+
+    _right = ["_gruppen", "_gruppen_pct", "_spieler", "_spieler_pct", "_mb"]
 
     table = dash_table.DataTable(
         data=rows,
         columns=columns,
+        merge_duplicate_headers=True,
         sort_action="native",
-        page_size=100,
+        page_size=150,
         style_table={"overflowX": "auto"},
         style_cell={
             "backgroundColor": "#FFFFFF",
@@ -2327,22 +2366,43 @@ def refresh_bericht2(_, active_tab):
             "border": "1px solid #dee2e6",
             "fontFamily": "monospace",
             "fontSize": "13px",
-            "padding": "6px 12px",
+            "padding": "5px 10px",
             "textAlign": "left",
+            "whiteSpace": "nowrap",
         },
         style_cell_conditional=[
-            {"if": {"column_id": "_mb"},      "textAlign": "right"},
-            {"if": {"column_id": "_gruppen"}, "textAlign": "right"},
+            {"if": {"column_id": c}, "textAlign": "right"} for c in _right
         ],
         style_header={
-            "backgroundColor": "#f8f9fa",
+            "backgroundColor": "#f0f4f8",
             "fontWeight": "bold",
-            "color": "#555",
+            "color": "#444",
             "border": "1px solid #dee2e6",
             "fontSize": "12px",
+            "textAlign": "center",
         },
         style_data_conditional=[
+            # Zebra-Streifen
             {"if": {"row_index": "odd"}, "backgroundColor": "#f9fbfd"},
+            # Laufend-Spalte: gelb-orange wenn befüllt
+            {
+                "if": {
+                    "filter_query": '{_laufend} != ""',
+                    "column_id": "_laufend",
+                },
+                "backgroundColor": "#FFF3CD",
+                "color": "#856404",
+                "fontWeight": "600",
+            },
+            # Gruppen-Spalte: grün wenn 100 %
+            {
+                "if": {
+                    "filter_query": '{_gruppen_pct} = "100.0 %"',
+                    "column_id": "_gruppen_pct",
+                },
+                "color": "#198754",
+                "fontWeight": "600",
+            },
         ],
         style_as_list_view=True,
     )

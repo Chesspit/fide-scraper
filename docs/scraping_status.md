@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-25 17:15 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-05-26 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -79,23 +79,23 @@ bash scripts/run_female_chain.sh female_2000_02
 | | |
 |---|---|
 | Dashboard | **https://scelo.chesspit.net** (BasicAuth) |
-| Modus | **bis zu 10 Threads (2 Residential + 8 DC)** |
+| Modus | **bis zu 10 Threads (2 Residential + 8 DC); aktuell 8 aktiv (DC-DE + DC-UK disabled)** |
 | DC-Modus | Individuelle Von/Bis-Zeit pro Karte (Ortszeit, Timezone-basiert) |
 
 ### Alle Threads
 
-| Thread | Typ | Profil | Föderationen | Timezone |
-|--------|-----|--------|--------------|----------|
-| T0 | Residential | semi_aggressive | DACH (Priority) | — |
-| T1 | Residential | normal | DACH (Priority) | — |
-| DC-DE (Slot 99) | Datacenter | semi_conservative | POL, UKR, LAT, LIT, EST, CZE, SVK, FID | Europe/Berlin |
-| DC-IN (Slot 100) | Datacenter | semi_conservative | IND, IRI | Asia/Kolkata |
-| DC-UK (Slot 101) | Datacenter | semi_conservative | ENG, SCO, WLS, IRL, NIR, DEN, NOR, SWE, FIN, ISL | Europe/London |
-| DC-US (Slot 102) | Datacenter | semi_conservative | USA, CAN | America/New_York |
-| DC-HK (Slot 103) | Datacenter | semi_conservative | CHN, VIE + Ozeanien | Asia/Hong_Kong |
-| DC-ES (Slot 104) | Datacenter | semi_conservative | ESP, ITA, POR, AND, GIB | Europe/Madrid |
-| DC-MX (Slot 105) | Datacenter | semi_conservative | FRA, BEL, NED, LUX | America/Mexico_City |
-| DC-AE (Slot 106) | Datacenter | semi_conservative | SRB, CRO, BIH, MKD, MNE, SLO, KOS, ALB, GRE, TUR | Asia/Dubai |
+| Thread | Typ | Profil | Föderationen | Timezone | Status |
+|--------|-----|--------|--------------|----------|--------|
+| T1 | Residential | semi_aggressive | DACH (Priority) | — | ✅ aktiv |
+| T2 | Residential | normal | DACH (Priority) | — | ✅ aktiv |
+| DC-DE (Slot 99) | Datacenter | semi_conservative | POL, UKR, LAT, LIT, EST, CZE, SVK, FID | Europe/Berlin | ⏸ disabled |
+| DC-IN (Slot 100) | Datacenter | semi_conservative | IND, IRI | Asia/Kolkata | ✅ aktiv |
+| DC-UK (Slot 101) | Datacenter | semi_conservative | ENG, SCO, WLS, IRL, NIR, DEN, NOR, SWE, FIN, ISL | Europe/London | ⏸ disabled |
+| DC-US (Slot 102) | Datacenter | semi_conservative | USA, CAN | America/New_York | ✅ aktiv |
+| DC-HK (Slot 103) | Datacenter | semi_conservative | CHN, VIE + Ozeanien | Asia/Hong_Kong | ✅ aktiv |
+| DC-ES (Slot 104) | Datacenter | semi_conservative | ESP, ITA, POR, AND, GIB | Europe/Madrid | ✅ aktiv |
+| DC-MX (Slot 105) | Datacenter | semi_conservative | FRA, BEL, NED, LUX | America/Mexico_City | ✅ aktiv |
+| DC-AE (Slot 106) | Datacenter | semi_conservative | SRB, CRO, BIH, MKD, MNE, SLO, KOS, ALB, GRE, TUR | Asia/Dubai | ✅ aktiv |
 
 ### Residential Queue-Strategie (T0/T1)
 
@@ -149,6 +149,20 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 | Spieler-Steckbrief | Aktiv | `/player-profile` | Profil + Rating-History + Spielstatistiken |
 | Partien-Detail | Test | `/games` | Alle Partien eines Spielers, filterbar |
 | GM/IM Entwicklung | Test | `/titles` | Zeitreihe der Titelträger |
+
+---
+
+## Änderungen Session 2026-05-26
+
+### VPS Orchestrator
+| Was | Details |
+|-----|---------|
+| **Bericht Länder-Tab** ✅ | Neuer Tab „🗺 Bericht Länder": hierarchische DataTable Welt → Kontinent → „In Arbeit"/„Ohne Daten" → Land; Gruppen-% + Spieler (gescraped/aktiv aus PostgreSQL); aufklappbar [+]/[−]; Auto-Refresh 300 s |
+| **Bericht Scraper-Tab** ✅ | T1–T4 immer anzeigen (auch ohne Daten); Gesamt-Spalten neu: `%_Res | %_DC | MB_Res | MB_DC | Total` |
+| **DC enabled-Flag Fix** ✅ | `run_dc_slot()` prüft `enabled` zwischen Gruppen; Toggle wirkt ohne Worker-Neustart (Commit `aec6f39`) |
+| **Worker Restart Bug Fix** ✅ | Atomische `worker_state.json`-Writes + 1 s Startup-Grace; verhindert Sofort-Stopp von DC-Threads nach Neustart (Commit `92dd9a0`) |
+| **profiles.yaml in git** ✅ | VPS-Version mit allen 8 DC-Threads nach git committed (Commit `68c0778`); war vorher nicht versioniert |
+| **DC-DE + DC-UK** | `enabled: false` (manuell deaktiviert via Dashboard) |
 
 ---
 

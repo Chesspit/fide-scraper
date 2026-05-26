@@ -1,6 +1,6 @@
 # FIDE Scraper — Projektdokumentation
 
-Stand: 22. Mai 2026 (Abend)
+Stand: 26. Mai 2026
 
 ---
 
@@ -419,7 +419,7 @@ python3 -m scripts.quality_check --report-only
 
 ---
 
-## 7. Scraping Orchestrator (deployed 2026-05-09, 7-Thread-Setup ab 2026-05-22)
+## 7. Scraping Orchestrator (deployed 2026-05-09, 10-Thread-Setup ab 2026-05-25)
 
 Ein eigenständiges Tool zur Verwaltung des globalen Scrapings via ProxyJet-Proxy.
 
@@ -427,41 +427,47 @@ Ein eigenständiges Tool zur Verwaltung des globalen Scrapings via ProxyJet-Prox
 
 ```
 orchestrator/
-├── app.py              ← Dash-Dashboard (5 Tabs: Übersicht / Übersicht Land / Steuerung / Queue / Abgeschlossen)
+├── app.py              ← Dash-Dashboard (7 Tabs, s. 7.5)
 ├── worker.py           ← Worker: Residential-Slots + DC-Threads unabhängig
 ├── queue_manager.py    ← SQLite-Queue, thread_affinity-Filter, Optimistic Locking
 ├── proxy_manager.py    ← ProxyJet Proxy (host_override + password_env pro DC-Thread)
 ├── profile_manager.py  ← Scrape-Profile + Fuzzy-Auswahl
 ├── generate_groups.py  ← 24.588 Gruppen (Föd. × Jahr × ELO-Band) generieren
 ├── setup_db.py         ← SQLite-Schema (inkl. thread_affinity-Spalte)
-├── profiles.yaml       ← Profile + worker_slots + datacenter_threads (schreibbar via Dashboard)
+├── profiles.yaml       ← Profile + worker_slots + datacenter_threads (in git, Bind-Mount)
+├── assets/bericht2.css ← Hover-CSS für Bericht-Länder-Tabelle
 ├── Dockerfile, docker-compose.yml, requirements.txt
 ```
 
-### 7.2 Thread-Architektur (ab 2026-05-22)
+### 7.2 Thread-Architektur (ab 2026-05-25)
 
-**7 parallele Threads** — 2 Residential + 5 Datacenter:
+**Bis zu 10 parallele Threads** — 2 Residential + 8 Datacenter:
 
 ```yaml
 concurrency:
   worker_slots:                  # Residential: unabhängiges enabled-Flag pro Slot
-    - {slot: 0, enabled: true, profile: semi_aggressive}   # T1
-    - {slot: 1, enabled: true, profile: normal}            # T2
+    - {slot: 0, enabled: true, profile: semi_aggressive}    # T1
+    - {slot: 1, enabled: true, profile: normal}             # T2
     - {slot: 2, enabled: false, profile: semi_conservative} # T3 (bereit)
     - {slot: 3, enabled: false, profile: semi_aggressive}   # T4 (bereit)
-  dc_mode: auto                  # auto = Timezone-basiert | individual = 24/7
-  dc_active_hours: [7, 23]       # Gilt für alle DC-Threads im auto-Modus
-  datacenter_threads:            # 5 DC-Threads mit eigenem Host/Credentials/Timezone
-    - {id: dc_de, slot: 99,  host: proxy-jet.io,    timezone: Europe/Berlin, federations: [POL,UKR,...]}
-    - {id: dc_in, slot: 100, host: in.proxy-jet.io, timezone: Asia/Kolkata,  federations: [IND,IRI]}
-    - {id: dc_uk, slot: 101, host: eu.proxy-jet.io, timezone: Europe/London, federations: [ENG,NOR,...]}
-    - {id: dc_us, slot: 102, host: ca.proxy-jet.io, timezone: America/New_York, federations: [USA,CAN,MEX]}
-    - {id: dc_hk, slot: 103, host: in.proxy-jet.io, timezone: Asia/Hong_Kong,  federations: [CHN,VIE,...]}
+  datacenter_threads:            # 8 DC-Threads mit eigenem Host/Credentials/Timezone
+    - {id: dc_de, slot: 99,  host: proxy-jet.io,    timezone: Europe/Berlin,     federations: [POL,UKR,LAT,LIT,EST,CZE,SVK,FID]}
+    - {id: dc_in, slot: 100, host: in.proxy-jet.io, timezone: Asia/Kolkata,      federations: [IND,IRI]}
+    - {id: dc_uk, slot: 101, host: eu.proxy-jet.io, timezone: Europe/London,     federations: [ENG,SCO,WLS,IRL,NIR,DEN,NOR,SWE,FIN,ISL]}
+    - {id: dc_us, slot: 102, host: ca.proxy-jet.io, timezone: America/New_York,  federations: [USA,CAN]}
+    - {id: dc_hk, slot: 103, host: in.proxy-jet.io, timezone: Asia/Hong_Kong,    federations: [CHN,VIE,...Ozeanien]}
+    - {id: dc_es, slot: 104, host: es.proxy-jet.io, timezone: Europe/Madrid,     federations: [ESP,ITA,POR,AND,GIB]}
+    - {id: dc_mx, slot: 105, host: mx.proxy-jet.io, timezone: America/Mexico_City, federations: [FRA,BEL,NED,LUX]}
+    - {id: dc_ae, slot: 106, host: ae.proxy-jet.io, timezone: Asia/Dubai,        federations: [SRB,CRO,BIH,MKD,MNE,SLO,KOS,ALB,GRE,TUR]}
 ```
 
 **thread_affinity:** Jede SQLite-Gruppe ist einem DC-Thread zugewiesen (`dc_de`, `dc_in`, ...) oder
 residential (`NULL`). DC-Threads claimen nur ihre eigenen Gruppen; Residential-Threads claimen
 nur `thread_affinity IS NULL`.
+
+**profiles.yaml** ist als Bind-Mount auf VPS eingebunden (`/opt/fide-scraper/orchestrator/profiles.yaml`).
+UI-Toggle-Änderungen schreiben direkt in diese Datei und bleiben über Rebuilds erhalten.
+Die Datei ist in git versioniert — nach strukturellen Änderungen VPS-Version committen.
 
 ### 7.3 DC-Modi
 
@@ -488,26 +494,31 @@ https://scelo.chesspit.net   (BasicAuth: peter / persönliches PW)
 
 | Tab | Inhalt |
 |---|---|
-| **🌍 Übersicht** | Föderations-Completion-Heatmap (ELO < 2300, alle Föderationen) |
+| **🌍 Übersicht** | Föderations-Completion-Heatmap (ELO < 2300, alle Föderationen inkl. DC-ES/MX/AE) |
 | **🗺️ Übersicht Land** | Federation×Jahr-Heatmap mit Click-to-Detail-Modal |
-| **⚙️ Steuerung** | Metric-Cards; Residential-Karten (T1–T4 mit Toggle+Profil); DC-Karten (Toggle+Modus+Zeiten); Start/Stop/Neustart |
-| **📋 Queue** | Pending-Gruppen; Thread-Spalte (▶ DC-IN = läuft, DC-IN = zugewiesen); Kategorie-Filter (Datacenter/Residential/Mac Mini/Raspi); DC-Sub-Dropdown |
+| **⚙️ Steuerung** | Metric-Cards; Residential-Karten (T1–T4 mit Toggle+Profil); DC-Karten (8× Toggle+Modus+Zeiten); Start/Stop/Neustart |
+| **📋 Queue** | Pending-Gruppen; Thread-Spalte; Kategorie-Filter; DC-Sub-Dropdown |
 | **✅ Abgeschlossen** | Erledigte Gruppen mit Statistiken + Thread (T1–T4/DC-XX) |
+| **📊 Bericht Scraper** | Tägliches Datenvolumen pro Thread (T1–T4 + 8 DC-Slots); Zwischensummen Residential/DC als `% | MB`; Total-MB |
+| **🗺 Bericht Länder** | Hierarchische Ländertabelle: Welt → Kontinent → „In Arbeit"/„Ohne Daten" → Land; Gruppen-%, Zeitraum, Spieler (gescraped/aktiv); aufklappbar per [+]/[−] |
 
 ### 7.6 Features
 
 | Feature | Details |
 |---|---|
 | 24.588 Gruppen | Föd. × Jahr (2009–2026) × ELO-Band in SQLite |
-| thread_affinity | DC-Thread-Zuweisung pro Gruppe (dc_de/in/uk/us/hk oder NULL) |
-| 5 DC-Threads | Eigener Host, Credentials, Timezone, Föderationen je Thread |
+| thread_affinity | DC-Thread-Zuweisung pro Gruppe (dc_de/in/uk/us/hk/es/mx/ae oder NULL) |
+| 8 DC-Threads | Eigener Host, Credentials, Timezone, Föderationen je Thread |
 | DC Auto-Modus | Alle Threads mit Credentials starten, Timezone entscheidet Aktivität |
 | DC Individuell-Modus | Nur enabled=true Threads, 24/7, kein Timezone-Check |
+| DC enabled-Flag live | `run_dc_slot()` prüft `enabled` zwischen Gruppen — Toggle wirkt ohne Neustart |
 | Residential-Toggles | T1–T4 unabhängig ein/ausschaltbar (wie DC-Threads) |
 | 🔄 Neustart-Alert | Zeigt aktive Konfiguration (N× Residential, DC-Threads, Modus+Zeiten) |
 | DACH-Priorisierung | T1/T2 nur DACH 2020–2026; andere Föderationen auf P500000+ |
 | Pre-Filter | ~55% skip-Rate via TXT-Snapshot (num_games=0) |
-| Thread-Spalte | T1–T4 / DC-DE/IN/UK/US/HK in Queue + Abgeschlossen |
+| Thread-Spalte | T1–T4 / DC-DE/IN/UK/US/HK/ES/MX/AE in Queue + Abgeschlossen |
+| Atomische State-Writes | `worker_state.json` via `.tmp`-Rename (kein Truncation-Window bei Neustarts) |
+| Startup-Grace | DC-Threads warten 1 s bei leerem State-File — verhindert Sofort-Stopp nach Neustart |
 
 ---
 
@@ -541,12 +552,13 @@ Enthält zusätzlich QC-Zellen: Vergleich `Σ rating_change_weighted` mit tatsä
 
 | Aufgabe | Priorität | Status |
 |---|---|---|
-| VPS Stabilität beobachten (7 Threads) | Hoch | 🔄 läuft seit 2026-05-22 |
-| Historische 2010–2012 Gruppen (P13–P33) | Hoch | 🔄 läuft über T1/T2 Residential |
+| female_XX-Gruppen (1800–2199, 3.952 Spielerinnen) | Hoch | 🔄 Mac Mini Chain läuft (female_2000_03+) |
+| VPS 10-Thread-Betrieb beobachten | Hoch | 🔄 läuft seit 2026-05-25 (DC-DE+UK disabled) |
 | DACH 2020–2026 via T1/T2 | Hoch | 🔄 läuft (GER 2026 → DACH 2025–2020) |
-| DC-Threads Föderations-Queue füllen | Mittel | 🔄 läuft (2026→2009, ELO DESC) |
-| hist_2010/2011/2012 Gruppen (pre-2012) | Mittel | 🔄 über VPS Residential P13–P33 |
-| resolve_opponents nach Backfills | Mittel | ⬜ lokal |
+| DC-Threads Föderations-Queue füllen | Mittel | 🔄 6 DC-Threads aktiv (2026→2009) |
+| PostgreSQL-Backup einrichten | Mittel | ⬜ aktuell kein externes Backup |
+| Orchestrator Auto-Retry | Mittel | ⬜ failed-Gruppen nach X h → pending (max. 3×) |
+| resolve_opponents nach Backfills | Mittel | ⬜ lokal, nach female_XX abgeschlossen |
 | Notebooks 01–09 ausführen | Mittel | ⬜ Daten bereit |
 | Parquet-Export aktualisieren | Niedrig | ⬜ nach grösserem Backfill |
 | female_top/male_control Update | Niedrig | ⬜ (inaktive Spieler, wenig Mehrwert) |

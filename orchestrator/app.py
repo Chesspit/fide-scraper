@@ -1285,6 +1285,13 @@ tab_bericht = dbc.Container(fluid=True, children=[
     html.Div(id="bericht-table"),
 ], className="py-3")
 
+tab_bericht2 = dbc.Container(fluid=True, children=[
+    dcc.Interval(id="interval-bericht2", interval=60_000, n_intervals=0),
+    dbc.Row(dbc.Col(html.H5("Länder-Übersicht — VPS Scraping",
+                            className="text-secondary fw-bold my-3"))),
+    html.Div(id="bericht2-table"),
+], className="py-3")
+
 # ---------------------------------------------------------------------------
 # Main layout
 # ---------------------------------------------------------------------------
@@ -1300,6 +1307,7 @@ app.layout = dbc.Container(fluid=True, children=[
         dbc.Tab(tab_queue,    label="📋 Queue",             tab_id="tab-queue"),
         dbc.Tab(tab_completed,label="✅ Abgeschlossen",     tab_id="tab-completed"),
         dbc.Tab(tab_bericht,  label="📊 Bericht",           tab_id="tab-bericht"),
+        dbc.Tab(tab_bericht2, label="🗺 Bericht 2",          tab_id="tab-bericht2"),
     ], id="main-tabs", active_tab="tab-heatmap"),
 ], style={"backgroundColor": "#F8F9FA", "minHeight": "100vh", "paddingBottom": "40px"})
 
@@ -2073,6 +2081,49 @@ def _query_bericht_data() -> list[dict]:
     return result
 
 
+def _query_laender_data() -> list[dict]:
+    """Aggregiert scrape_groups + scrape_runs nach Föderation (VPS-Sicht).
+
+    Gibt Liste von Dicts zurück mit Schlüsseln:
+        _fed, _gruppen, _zeitraum, _mb
+    Sortiert nach MB absteigend.
+    """
+    conn = get_conn()
+    rows = conn.execute(
+        """
+        SELECT
+            sg.federation,
+            COUNT(sg.id)                                         AS total_groups,
+            SUM(CASE WHEN sg.status = 'done' THEN 1 ELSE 0 END) AS done_groups,
+            MIN(sg.year)                                         AS year_from,
+            MAX(sg.year)                                         AS year_to,
+            COALESCE(SUM(sr.mb_per_group), 0.0)                  AS total_mb
+        FROM scrape_groups sg
+        LEFT JOIN (
+            SELECT group_id, SUM(mb_downloaded) AS mb_per_group
+            FROM   scrape_runs
+            WHERE  mb_downloaded > 0
+            GROUP  BY group_id
+        ) sr ON sr.group_id = sg.id
+        GROUP BY sg.federation
+        HAVING COUNT(sg.id) > 0
+        ORDER BY total_mb DESC
+        """
+    ).fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        y0, y1 = r["year_from"], r["year_to"]
+        zeitraum = str(y0) if y0 == y1 else f"{y0} – {y1}"
+        result.append({
+            "_fed":      r["federation"] or "—",
+            "_gruppen":  f"{r['done_groups']} / {r['total_groups']}",
+            "_zeitraum": zeitraum,
+            "_mb":       round(r["total_mb"], 1),
+        })
+    return result
+
+
 @app.callback(
     Output("bericht-table", "children"),
     Input("interval-bericht", "n_intervals"),
@@ -2228,6 +2279,76 @@ def refresh_bericht(_, active_tab):
 
     return html.Div([
         html.H6("Tagesdetails (MB je Thread)",
+                className="text-secondary mt-3 mb-2",
+                style={"fontSize": "0.85rem", "fontWeight": "600"}),
+        html.Div(style={
+            "backgroundColor": "#FFFFFF",
+            "border": "1px solid #E0E0E0",
+            "borderRadius": "6px",
+            "padding": "12px 16px",
+        }, children=[table]),
+    ])
+
+
+# ===========================================================================
+# Callbacks — Tab 7 (Bericht 2 — Länder-Übersicht)
+# ===========================================================================
+
+@app.callback(
+    Output("bericht2-table", "children"),
+    Input("interval-bericht2", "n_intervals"),
+    Input("main-tabs", "active_tab"),
+)
+def refresh_bericht2(_, active_tab):
+    if active_tab != "tab-bericht2":
+        return dash.no_update
+
+    rows = _query_laender_data()
+    if not rows:
+        return html.P("Noch keine Daten vorhanden.",
+                      style={"color": "#888", "fontSize": "0.9rem"})
+
+    columns = [
+        {"name": "Föd.",     "id": "_fed"},
+        {"name": "Gruppen",  "id": "_gruppen"},
+        {"name": "Zeitraum", "id": "_zeitraum"},
+        {"name": "MB",       "id": "_mb"},
+    ]
+
+    table = dash_table.DataTable(
+        data=rows,
+        columns=columns,
+        sort_action="native",
+        page_size=100,
+        style_table={"overflowX": "auto"},
+        style_cell={
+            "backgroundColor": "#FFFFFF",
+            "color": "#333",
+            "border": "1px solid #dee2e6",
+            "fontFamily": "monospace",
+            "fontSize": "13px",
+            "padding": "6px 12px",
+            "textAlign": "left",
+        },
+        style_cell_conditional=[
+            {"if": {"column_id": "_mb"},      "textAlign": "right"},
+            {"if": {"column_id": "_gruppen"}, "textAlign": "right"},
+        ],
+        style_header={
+            "backgroundColor": "#f8f9fa",
+            "fontWeight": "bold",
+            "color": "#555",
+            "border": "1px solid #dee2e6",
+            "fontSize": "12px",
+        },
+        style_data_conditional=[
+            {"if": {"row_index": "odd"}, "backgroundColor": "#f9fbfd"},
+        ],
+        style_as_list_view=True,
+    )
+
+    return html.Div([
+        html.H6("Föderationen nach gescraptem Datenvolumen (VPS)",
                 className="text-secondary mt-3 mb-2",
                 style={"fontSize": "0.85rem", "fontWeight": "600"}),
         html.Div(style={

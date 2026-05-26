@@ -1,193 +1,251 @@
 active_profile: normal
-
-# Parallelität: wie viele Threads gleichzeitig je eine eigene Gruppe scrapen.
-# max_workers: 1 = sequentiell (bisheriges Verhalten), 2–4 = parallel.
-# worker_profiles: Profil je Thread-Slot (Index 0, 1, 2, 3).
-# Erster Test: max_workers=2; auf 4 hochsetzen sobald stabil.
 concurrency:
-  # worker_slots: unabhängiges enabled-Flag + Profil pro Slot (ersetzt max_workers)
-  worker_slots:
-    - slot: 0
-      enabled: true
-      profile: semi_aggressive
-      max_hours: null
-    - slot: 1
-      enabled: true
-      profile: normal
-      max_hours: null
-    - slot: 2
-      enabled: false
-      profile: semi_conservative
-      max_hours: null
-    - slot: 3
-      enabled: false
-      profile: semi_aggressive
-      max_hours: null
-  # max_workers + worker_profiles: Backward-Compat (wird beim Start migriert)
+  datacenter_threads:
+  - active_hours:
+    - 7
+    - 23
+    enabled: false
+    federations:
+    - POL
+    - UKR
+    - LAT
+    - LIT
+    - LTU
+    - EST
+    - CZE
+    - SVK
+    - FID
+    host: proxy-jet.io
+    id: dc_de
+    label: DC-DE
+    max_hours: null
+    password_env: PROXYJET_PASSWORD
+    port: 1010
+    profile: semi_conservative
+    slot: 99
+    timezone: Europe/Berlin
+    username_env: PROXYJET_DC_USERNAME
+  - active_hours:
+    - 7
+    - 23
+    enabled: true
+    federations:
+    - IND
+    - IRI
+    host: in.proxy-jet.io
+    id: dc_in
+    label: DC-IN
+    max_hours: null
+    password_env: PROXYJET_DC_IN_PASSWORD
+    port: 1010
+    profile: semi_conservative
+    slot: 100
+    timezone: Asia/Kolkata
+    username_env: PROXYJET_DC_IN_USERNAME
+  - active_hours:
+    - 8
+    - 21
+    enabled: false
+    federations:
+    - ENG
+    - SCO
+    - WLS
+    - IRL
+    - NIR
+    - DEN
+    - NOR
+    - SWE
+    - FIN
+    - ISL
+    host: eu.proxy-jet.io
+    id: dc_uk
+    label: DC-UK
+    max_hours: null
+    password_env: PROXYJET_DC_UK_PASSWORD
+    port: 1010
+    profile: semi_conservative
+    slot: 101
+    timezone: Europe/London
+    username_env: PROXYJET_DC_UK_USERNAME
+  - active_hours:
+    - 7
+    - 23
+    enabled: true
+    federations:
+    - USA
+    - CAN
+    host: ca.proxy-jet.io
+    id: dc_us
+    label: DC-US
+    max_hours: null
+    password_env: PROXYJET_DC_US_PASSWORD
+    port: 1010
+    profile: semi_conservative
+    slot: 102
+    timezone: America/New_York
+    username_env: PROXYJET_DC_US_USERNAME
+  - active_hours:
+    - 7
+    - 23
+    enabled: true
+    federations:
+    - CHN
+    - VIE
+    - AUS
+    - NZL
+    - FIJ
+    - VAN
+    - PLW
+    - SOL
+    - KIR
+    - PNG
+    - MHL
+    - TUV
+    - NAU
+    - SAM
+    - TON
+    - FSM
+    host: in.proxy-jet.io
+    id: dc_hk
+    label: DC-HK
+    max_hours: null
+    password_env: PROXYJET_DC_HK_PASSWORD
+    port: 1010
+    profile: semi_conservative
+    slot: 103
+    timezone: Asia/Hong_Kong
+    username_env: PROXYJET_DC_HK_USERNAME
+  - active_hours:
+    - 8
+    - 22
+    enabled: true
+    federations:
+    - ESP
+    - ITA
+    - POR
+    - AND
+    - GIB
+    host: eu.proxy-jet.io
+    id: dc_es
+    label: DC-ES
+    max_hours: null
+    password_env: PROXYJET_DC_ES_PASSWORD
+    port: 1010
+    profile: semi_conservative
+    slot: 104
+    timezone: Europe/Madrid
+    username_env: PROXYJET_DC_ES_USERNAME
+  - active_hours:
+    - 10
+    - 22
+    enabled: true
+    federations:
+    - FRA
+    - BEL
+    - NED
+    - LUX
+    host: ca.proxy-jet.io
+    id: dc_mx
+    label: DC-MX
+    max_hours: null
+    password_env: PROXYJET_DC_MX_PASSWORD
+    port: 1010
+    profile: semi_conservative
+    slot: 105
+    timezone: America/Mexico_City
+    username_env: PROXYJET_DC_MX_USERNAME
+  - active_hours:
+    - 7
+    - 23
+    enabled: true
+    federations:
+    - SRB
+    - CRO
+    - BIH
+    - MKD
+    - MNE
+    - SLO
+    - KOS
+    - ALB
+    - GRE
+    - TUR
+    host: in.proxy-jet.io
+    id: dc_ae
+    label: DC-AE
+    max_hours: null
+    password_env: PROXYJET_DC_AE_PASSWORD
+    port: 1010
+    profile: semi_conservative
+    slot: 106
+    timezone: Asia/Dubai
+    username_env: PROXYJET_DC_AE_USERNAME
   max_workers: 2
   worker_profiles:
-    - semi_aggressive
-    - normal
-    - semi_conservative
-    - semi_aggressive
-  # Datacenter-Threads: je 1 pro Land, mit eigenem ProxyJet-Host + Credentials
-  # active_hours pro Thread = individuelle Start/Endzeit (Ortszeit, basierend auf timezone)
-  datacenter_threads:
-    - id: dc_de
-      enabled: true
-      label: DC-DE
-      slot: 99
-      host: proxy-jet.io
-      port: 1010
-      username_env: PROXYJET_DC_USERNAME
-      password_env: PROXYJET_PASSWORD
-      timezone: Europe/Berlin
-      active_hours: [7, 23]
-      profile: semi_conservative
-      max_hours: null
-      federations: [POL, UKR, LAT, LIT, LTU, EST, CZE, SVK, FID]
-    - id: dc_in
-      enabled: false
-      label: DC-IN
-      slot: 100
-      host: in.proxy-jet.io
-      port: 1010
-      username_env: PROXYJET_DC_IN_USERNAME
-      password_env: PROXYJET_DC_IN_PASSWORD
-      timezone: Asia/Kolkata
-      active_hours: [7, 23]
-      profile: semi_conservative
-      max_hours: null
-      federations: [IND, IRI]
-    - id: dc_uk
-      enabled: false
-      label: DC-UK
-      slot: 101
-      host: eu.proxy-jet.io
-      port: 1010
-      username_env: PROXYJET_DC_UK_USERNAME
-      password_env: PROXYJET_DC_UK_PASSWORD
-      timezone: Europe/London
-      active_hours: [7, 23]
-      profile: semi_conservative
-      max_hours: null
-      federations: [ENG, SCO, WLS, IRL, NIR, DEN, NOR, SWE, FIN, ISL]
-    - id: dc_us
-      enabled: false
-      label: DC-US
-      slot: 102
-      host: ca.proxy-jet.io
-      port: 1010
-      username_env: PROXYJET_DC_US_USERNAME
-      password_env: PROXYJET_DC_US_PASSWORD
-      timezone: America/New_York
-      active_hours: [7, 23]
-      profile: semi_conservative
-      max_hours: null
-      federations: [USA, CAN]
-    - id: dc_hk
-      enabled: false
-      label: DC-HK
-      slot: 103
-      host: in.proxy-jet.io
-      port: 1010
-      username_env: PROXYJET_DC_HK_USERNAME
-      password_env: PROXYJET_DC_HK_PASSWORD
-      timezone: Asia/Hong_Kong
-      active_hours: [7, 23]
-      profile: semi_conservative
-      max_hours: null
-      federations: [CHN, VIE, AUS, NZL, FIJ, VAN, PLW, SOL, KIR, PNG, MHL, TUV, NAU, SAM, TON, FSM]
-    # ── Neue Datacenter-Scraper: ES / MX / AE ────────────────────────────────
-    - id: dc_es
-      enabled: false
-      label: DC-ES
-      slot: 104
-      host: eu.proxy-jet.io
-      port: 1010
-      username_env: PROXYJET_DC_ES_USERNAME
-      password_env: PROXYJET_DC_ES_PASSWORD
-      timezone: Europe/Madrid
-      active_hours: [7, 23]
-      profile: semi_conservative
-      max_hours: null
-      federations: [ESP, ITA, POR, AND, GIB]
-    - id: dc_mx
-      enabled: false
-      label: DC-MX
-      slot: 105
-      host: ca.proxy-jet.io
-      port: 1010
-      username_env: PROXYJET_DC_MX_USERNAME
-      password_env: PROXYJET_DC_MX_PASSWORD
-      timezone: America/Mexico_City
-      active_hours: [8, 22]
-      profile: semi_conservative
-      max_hours: null
-      federations: [FRA, BEL, NED, LUX]
-    - id: dc_ae
-      enabled: false
-      label: DC-AE
-      slot: 106
-      host: in.proxy-jet.io
-      port: 1010
-      username_env: PROXYJET_DC_AE_USERNAME
-      password_env: PROXYJET_DC_AE_PASSWORD
-      timezone: Asia/Dubai
-      active_hours: [7, 23]
-      profile: semi_conservative
-      max_hours: null
-      federations: [SRB, CRO, BIH, MKD, MNE, SLO, KOS, ALB, GRE, TUR]
-
-# Fuzzy-Profilauswahl: Gewichtung für zufällige Profilwahl pro Gruppe
-# Worker wählt bei jedem Gruppen-Start zufällig (gewichtet) — kein erkennbares Muster
-# aggressive + conservative: Gewicht 0 — nur zur Referenz, nicht mehr im Einsatz
+  - semi_aggressive
+  - normal
+  - semi_conservative
+  - semi_aggressive
+  worker_slots:
+  - enabled: false
+    max_hours: null
+    profile: semi_aggressive
+    slot: 0
+  - enabled: true
+    max_hours: null
+    profile: normal
+    slot: 1
+  - enabled: true
+    max_hours: null
+    profile: semi_conservative
+    slot: 2
+  - enabled: false
+    max_hours: null
+    profile: semi_aggressive
+    slot: 3
 fuzzy_weights:
-  aggressive:        0
-  semi_aggressive:  60
-  normal:           40
-  semi_conservative:  0
-  conservative:      0
+  aggressive: 0
+  conservative: 0
+  normal: 40
+  semi_aggressive: 60
+  semi_conservative: 0
 profiles:
-  # --- Referenz-Profile (nicht mehr im Einsatz) ---
   aggressive:
     base_wait_seconds: 1.0
-    min_wait_seconds: 0.7
-    jitter: 0.30
-    timeout_seconds: 10
-    max_retries: 2
     cooldown_on_429: 30
+    jitter: 0.3
+    max_retries: 2
+    min_wait_seconds: 0.7
+    timeout_seconds: 10
     use_proxy: false
   conservative:
     base_wait_seconds: 8.0
-    min_wait_seconds: 4.0
-    jitter: 0.50
-    timeout_seconds: 30
-    max_retries: 5
     cooldown_on_429: 120
-    use_proxy: true
-  # --- Aktive Profile ---
-  semi_aggressive:
-    base_wait_seconds: 2.0
-    min_wait_seconds: 1.1
-    jitter: 0.35
-    timeout_seconds: 15
-    max_retries: 2
-    cooldown_on_429: 45
+    jitter: 0.5
+    max_retries: 5
+    min_wait_seconds: 4.0
+    timeout_seconds: 30
     use_proxy: true
   normal:
     base_wait_seconds: 3.0
-    min_wait_seconds: 1.5
-    jitter: 0.40
-    timeout_seconds: 20
-    max_retries: 3
     cooldown_on_429: 60
+    jitter: 0.4
+    max_retries: 3
+    min_wait_seconds: 1.5
+    timeout_seconds: 20
+    use_proxy: true
+  semi_aggressive:
+    base_wait_seconds: 2.0
+    cooldown_on_429: 45
+    jitter: 0.35
+    max_retries: 2
+    min_wait_seconds: 1.1
+    timeout_seconds: 15
     use_proxy: true
   semi_conservative:
     base_wait_seconds: 5.5
-    min_wait_seconds: 2.7
-    jitter: 0.45
-    timeout_seconds: 25
-    max_retries: 4
     cooldown_on_429: 90
+    jitter: 0.45
+    max_retries: 4
+    min_wait_seconds: 2.7
+    timeout_seconds: 25
     use_proxy: true

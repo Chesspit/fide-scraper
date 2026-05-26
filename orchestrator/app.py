@@ -1311,12 +1311,12 @@ _B2_SDC = [
     {"if": {"filter_query": '{_row_type} = "continent"'},
      "backgroundColor": "#e8f0fe", "fontWeight": "bold", "color": "#1a3a6b",
      "borderTop": "2px solid #adb5bd"},
-    # Subgruppe ⏳ ausstehend — gelb-beige; klickbar
-    {"if": {"filter_query": '{_row_type} = "subgroup_pend"'},
-     "backgroundColor": "#fff8e8", "fontWeight": "600", "color": "#7c5e00"},
-    # Subgruppe ✅ vollständig — grün-weiss; klickbar
-    {"if": {"filter_query": '{_row_type} = "subgroup_done"'},
+    # Subgruppe ✅ Gescraped — grün-weiss; klickbar
+    {"if": {"filter_query": '{_row_type} = "subgroup_scraped"'},
      "backgroundColor": "#f0fdf4", "fontWeight": "600", "color": "#198754"},
+    # Subgruppe — Ohne Daten — hellgrau; klickbar
+    {"if": {"filter_query": '{_row_type} = "subgroup_nodata"'},
+     "backgroundColor": "#f5f5f5", "fontWeight": "600", "color": "#777"},
     # Laufend-Spalte: orange wenn befüllt
     {"if": {"filter_query": '{_laufend} != ""', "column_id": "_laufend"},
      "backgroundColor": "#FFF3CD", "color": "#856404", "fontWeight": "600"},
@@ -1352,22 +1352,23 @@ tab_bericht2 = dbc.Container(fluid=True, children=[
                 "color":           "#333",
                 "border":          "1px solid #dee2e6",
                 "fontFamily":      "monospace",
-                "fontSize":        "13px",
-                "padding":         "5px 10px",
+                "fontSize":        "15px",
+                "padding":         "10px 14px",
                 "textAlign":       "center",
                 "whiteSpace":      "nowrap",
             },
             style_cell_conditional=[
                 *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"}
                   for c in _B2_GRP_STARTS],
-                # Föd.-Spalte linksbündig (enthält Einrückung + ▶/▼)
+                # Föd.-Spalte linksbündig (enthält Einrückung + [+]/[−])
                 {"if": {"column_id": "_fed"}, "textAlign": "left",
-                 "minWidth": "160px", "maxWidth": "260px"},
+                 "minWidth": "200px", "maxWidth": "320px"},
             ],
             style_header={
                 "fontWeight": "bold", "color": "#444",
-                "border": "1px solid #dee2e6", "fontSize": "12px",
+                "border": "1px solid #dee2e6", "fontSize": "13px",
                 "textAlign": "center", "backgroundColor": "#f0f4f8",
+                "padding": "10px 14px",
             },
             style_header_conditional=[
                 *[{"if": {"column_id": c}, "backgroundColor": "#dbeafe"}
@@ -2224,12 +2225,13 @@ def _query_laender_data() -> list[dict]:
 
     result = []
     for r in rows:
-        total_g = r["total_groups"] or 1
-        done_g  = r["done_groups"]  or 0
-        total_p = r["total_players"] or 0
-        done_p  = r["done_players"]  or 0
-        mb      = round(r["total_mb"], 1)
-        laufend = str(r["year_running"]) if r["year_running"] is not None else ""
+        total_g   = r["total_groups"]   or 1
+        done_g    = r["done_groups"]    or 0
+        running_g = r["running_groups"] or 0
+        total_p   = r["total_players"]  or 0
+        done_p    = r["done_players"]   or 0
+        mb        = round(r["total_mb"], 1)
+        laufend   = str(r["year_running"]) if r["year_running"] is not None else ""
 
         result.append({
             "_fed":           r["federation"] or "—",
@@ -2242,9 +2244,10 @@ def _query_laender_data() -> list[dict]:
             "_spieler_pct":   f"{round(done_p / total_p * 100, 1)} %" if total_p else "—",
             "_mb":            mb,
             "_row_type":      "country",
-            # Rohwerte für Summen (nicht in columns → unsichtbar in Tabelle)
+            # Rohwerte für Summen / Subgruppen (nicht in columns → unsichtbar)
             "_continent":     r["continent"] or "—",
             "_r_done_g":      done_g,
+            "_r_running_g":   running_g,
             "_r_total_g":     total_g,
             "_r_done_p":      done_p,
             "_r_total_p":     total_p,
@@ -2317,8 +2320,8 @@ def _b2_build_table_data(raw_rows: list, expand_state: dict) -> list:
             [r for r in raw_rows if r["_continent"] == cont],
             key=lambda r: r["_fed"],
         )
-        is_open   = cont in expanded_conts
-        icon      = "▼" if is_open else "▶"
+        is_open  = cont in expanded_conts
+        icon     = "[−]" if is_open else "[+]"
 
         cont_sum = _make_subtotal_row(f"{icon} {cont}", cont_rows, "continent")
         cont_sum["_continent"] = cont
@@ -2328,21 +2331,23 @@ def _b2_build_table_data(raw_rows: list, expand_state: dict) -> list:
         if not is_open:
             continue
 
-        done_rows = [r for r in cont_rows
-                     if r["_r_total_g"] > 0 and r["_r_done_g"] == r["_r_total_g"]]
-        pend_rows = [r for r in cont_rows
-                     if r["_r_done_g"] < r["_r_total_g"]]
+        # Gescraped: mind. 1 Gruppe done ODER gerade running
+        scraped_rows = [r for r in cont_rows
+                        if r["_r_done_g"] > 0 or r["_r_running_g"] > 0]
+        # Ohne Daten: kein einziger done/running-Lauf
+        nodata_rows  = [r for r in cont_rows
+                        if r["_r_done_g"] == 0 and r["_r_running_g"] == 0]
 
         for sg_type, sg_rows, sg_icon, sg_label in [
-            ("pend", pend_rows, "⏳", "Ausstehend / teilweise"),
-            ("done", done_rows, "✅", "Vollständig gescraped"),
+            ("scraped", scraped_rows, "✅", "Gescraped"),
+            ("nodata",  nodata_rows,  "○",  "Ohne Daten"),
         ]:
             if not sg_rows:
                 continue
             sg_key     = f"{cont}/{sg_type}"
-            # Ausstehend: standardmäßig auf; Vollständig: standardmäßig zu
-            sg_is_open = expanded_sgs.get(sg_key, sg_type == "pend")
-            sg_icon2   = "▼" if sg_is_open else "▶"
+            # Gescraped: standardmäßig auf; Ohne Daten: standardmäßig zu
+            sg_is_open = expanded_sgs.get(sg_key, sg_type == "scraped")
+            sg_icon2   = "[−]" if sg_is_open else "[+]"
 
             sg_sum = _make_subtotal_row(
                 f"  {sg_icon2} {sg_icon} {sg_label} ({len(sg_rows)})",
@@ -2358,7 +2363,7 @@ def _b2_build_table_data(raw_rows: list, expand_state: dict) -> list:
 
             for r in sg_rows:
                 row = dict(r)
-                row["_fed"]    = f"    {r['_fed']}"
+                row["_fed"]    = f"      {r['_fed']}"
                 row["_sg_key"] = ""
                 table_data.append(row)
 
@@ -2597,12 +2602,12 @@ def toggle_bericht2_expand(active_cell, table_data, expand_state):
             conts.append(cont)
         return state, None
 
-    if row_type in ("subgroup_pend", "subgroup_done"):
+    if row_type in ("subgroup_scraped", "subgroup_nodata"):
         sg_key = clicked.get("_sg_key", "")
         if not sg_key:
             return dash.no_update, None
         sgs     = state.setdefault("subgroups", {})
-        default = sg_key.endswith("/pend")   # pend = standard auf
+        default = sg_key.endswith("/scraped")   # scraped = standard auf, nodata = zu
         sgs[sg_key] = not sgs.get(sg_key, default)
         return state, None
 

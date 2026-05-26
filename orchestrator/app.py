@@ -1287,10 +1287,108 @@ tab_bericht = dbc.Container(fluid=True, children=[
     html.Div(id="bericht-table"),
 ], className="py-3")
 
+# ── Bericht-Länder: statische Spalten & Styling ─────────────────────────────
+_B2_COLS = [
+    {"name": ["",         "Föd."],      "id": "_fed"},
+    {"name": ["Gruppen",  "Abs."],      "id": "_gruppen"},
+    {"name": ["Gruppen",  "%"],         "id": "_gruppen_pct"},
+    {"name": ["Zeitraum", "Geplant"],   "id": "_zeitraum_plan"},
+    {"name": ["Zeitraum", "Gescraped"], "id": "_zeitraum_done"},
+    {"name": ["Zeitraum", "Laufend"],   "id": "_laufend"},
+    {"name": ["Spieler",  "Abs."],      "id": "_spieler"},
+    {"name": ["Spieler",  "%"],         "id": "_spieler_pct"},
+    {"name": ["",         "MB"],        "id": "_mb"},
+]
+_B2_GRP_STARTS = ["_gruppen", "_zeitraum_plan", "_spieler", "_mb"]
+_B2_SDC = [
+    # Zebra nur für country-Zeilen
+    {"if": {"row_index": "odd", "filter_query": '{_row_type} = "country"'},
+     "backgroundColor": "#f9fbfd"},
+    # 🌍 Welt — dunkelgrau, fett
+    {"if": {"filter_query": '{_row_type} = "world"'},
+     "backgroundColor": "#dee2e6", "fontWeight": "bold", "color": "#212529"},
+    # Kontinent — hellblau, fett, Trennlinie oben; klickbar
+    {"if": {"filter_query": '{_row_type} = "continent"'},
+     "backgroundColor": "#e8f0fe", "fontWeight": "bold", "color": "#1a3a6b",
+     "borderTop": "2px solid #adb5bd"},
+    # Subgruppe ⏳ ausstehend — gelb-beige; klickbar
+    {"if": {"filter_query": '{_row_type} = "subgroup_pend"'},
+     "backgroundColor": "#fff8e8", "fontWeight": "600", "color": "#7c5e00"},
+    # Subgruppe ✅ vollständig — grün-weiss; klickbar
+    {"if": {"filter_query": '{_row_type} = "subgroup_done"'},
+     "backgroundColor": "#f0fdf4", "fontWeight": "600", "color": "#198754"},
+    # Laufend-Spalte: orange wenn befüllt
+    {"if": {"filter_query": '{_laufend} != ""', "column_id": "_laufend"},
+     "backgroundColor": "#FFF3CD", "color": "#856404", "fontWeight": "600"},
+    # Gruppen %: grün wenn 100 %
+    {"if": {"filter_query": '{_gruppen_pct} = "100.0 %"', "column_id": "_gruppen_pct"},
+     "color": "#198754", "fontWeight": "600"},
+]
+
 tab_bericht2 = dbc.Container(fluid=True, children=[
-    # 5-Minuten-Intervall: vermeidet zu häufiges Accordion-Reset durch Neurendering
     dcc.Interval(id="interval-bericht2", interval=300_000, n_intervals=0),
-    html.Div(id="bericht2-table"),
+    # Expand-State: welche Kontinente/Subgruppen aufgeklappt sind
+    dcc.Store(id="bericht2-expand-state",
+              data={"continents": ["Europe"], "subgroups": {}}),
+    # Rohdaten-Cache: wird vom Interval befüllt
+    dcc.Store(id="bericht2-raw-data", data=[]),
+    html.P(
+        [html.B("Klick auf Kontinent- oder Untergruppen-Zeile"), " klappt sie auf/zu.  "
+         "Zeitraum Gescraped = Jahres-Range der 'done'-Gruppen im VPS-Orchestrator "
+         "(Mac-Mini-Backfills fließen hier nicht ein)."],
+        style={"fontSize": "11px", "color": "#777", "marginBottom": "8px"},
+    ),
+    html.Div(
+        dash_table.DataTable(
+            id="bericht2-datatable",
+            columns=_B2_COLS,
+            data=[],
+            merge_duplicate_headers=True,
+            sort_action="none",
+            page_size=500,
+            style_table={"overflowX": "auto"},
+            style_cell={
+                "backgroundColor": "#FFFFFF",
+                "color":           "#333",
+                "border":          "1px solid #dee2e6",
+                "fontFamily":      "monospace",
+                "fontSize":        "13px",
+                "padding":         "5px 10px",
+                "textAlign":       "center",
+                "whiteSpace":      "nowrap",
+            },
+            style_cell_conditional=[
+                *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"}
+                  for c in _B2_GRP_STARTS],
+                # Föd.-Spalte linksbündig (enthält Einrückung + ▶/▼)
+                {"if": {"column_id": "_fed"}, "textAlign": "left",
+                 "minWidth": "160px", "maxWidth": "260px"},
+            ],
+            style_header={
+                "fontWeight": "bold", "color": "#444",
+                "border": "1px solid #dee2e6", "fontSize": "12px",
+                "textAlign": "center", "backgroundColor": "#f0f4f8",
+            },
+            style_header_conditional=[
+                *[{"if": {"column_id": c}, "backgroundColor": "#dbeafe"}
+                  for c in ["_gruppen", "_gruppen_pct"]],
+                *[{"if": {"column_id": c}, "backgroundColor": "#fef9c3"}
+                  for c in ["_zeitraum_plan", "_zeitraum_done", "_laufend"]],
+                *[{"if": {"column_id": c}, "backgroundColor": "#dcfce7"}
+                  for c in ["_spieler", "_spieler_pct"]],
+                *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"}
+                  for c in _B2_GRP_STARTS],
+            ],
+            style_data_conditional=_B2_SDC,
+            style_as_list_view=True,
+        ),
+        style={
+            "backgroundColor": "#FFFFFF",
+            "border":          "1px solid #E0E0E0",
+            "borderRadius":    "6px",
+            "padding":         "12px 16px",
+        },
+    ),
 ], className="py-3")
 
 # ---------------------------------------------------------------------------
@@ -2187,97 +2285,84 @@ def _make_subtotal_row(label: str, group: list, row_type: str) -> dict:
     }
 
 
-def _bericht2_stats_bar(row: dict, bg: str = "#f0f4f8") -> html.Div:
-    """Kompakte Statistik-Leiste für eine Zusammenfassungszeile (Welt / Kontinent)."""
-    chips = [
-        ("Gruppen",   f"{row['_gruppen']} ({row['_gruppen_pct']})"),
-        ("Gescraped", row["_zeitraum_done"]),
-        ("Spieler",   f"{row['_spieler']} ({row['_spieler_pct']})"),
-        ("MB",        str(row["_mb"])),
-    ]
-    return html.Div(
-        [html.Span([
-            html.Span(lbl + ": ",
-                      style={"color": "#666", "fontSize": "12px", "fontWeight": "400"}),
-            html.Span(val,
-                      style={"fontWeight": "700", "fontSize": "12px",
-                             "color": "#222", "marginRight": "24px"}),
-        ]) for lbl, val in chips],
-        style={
-            "backgroundColor": bg,
-            "padding": "6px 12px",
-            "borderRadius": "4px",
-            "marginBottom": "8px",
-            "display":      "flex",
-            "flexWrap":     "wrap",
-            "alignItems":   "center",
-        }
+def _b2_build_table_data(raw_rows: list, expand_state: dict) -> list:
+    """Baut die Tabellenzeilen für Bericht Länder inkl. Auf-/Zuklapp-Logik.
+
+    Zeilen-Hierarchie:
+      world        — immer sichtbar  (🌍 Welt)
+      continent    — immer sichtbar; Klick in _fed → Auf-/Zuklappen
+      subgroup_*   — nur wenn Kontinent expandiert; Klick → Auf-/Zuklappen
+      country      — nur wenn Kontinent UND Subgruppe expandiert
+
+    Expand-State (dcc.Store "bericht2-expand-state"):
+      continents: list[str]          — z.B. ["Europe"]
+      subgroups:  dict[str, bool]    — z.B. {"Europe/pend": True, "Europe/done": False}
+    """
+    expanded_conts = set(expand_state.get("continents", ["Europe"]))
+    expanded_sgs   = expand_state.get("subgroups", {})
+
+    all_conts = sorted(
+        set(r["_continent"] for r in raw_rows),
+        key=lambda c: (0 if c == "Europe" else 1, c),
     )
 
+    # Welt-Zeile (immer oben)
+    welt = _make_subtotal_row("🌍 Welt", raw_rows, "world")
+    welt["_continent"] = ""
+    welt["_sg_key"]    = ""
+    table_data = [welt]
 
-def _bericht2_country_table(country_rows: list) -> dash_table.DataTable:
-    """DataTable für eine Gruppe von Länder-Zeilen (reine country-rows, keine Summen)."""
-    columns = [
-        {"name": ["",         "Föd."],      "id": "_fed"},
-        {"name": ["Gruppen",  "Abs."],      "id": "_gruppen"},
-        {"name": ["Gruppen",  "%"],         "id": "_gruppen_pct"},
-        {"name": ["Zeitraum", "Geplant"],   "id": "_zeitraum_plan"},
-        {"name": ["Zeitraum", "Gescraped"], "id": "_zeitraum_done"},
-        {"name": ["Zeitraum", "Laufend"],   "id": "_laufend"},
-        {"name": ["Spieler",  "Abs."],      "id": "_spieler"},
-        {"name": ["Spieler",  "%"],         "id": "_spieler_pct"},
-        {"name": ["",         "MB"],        "id": "_mb"},
-    ]
-    _grp_gruppen = ["_gruppen", "_gruppen_pct"]
-    _grp_zeit    = ["_zeitraum_plan", "_zeitraum_done", "_laufend"]
-    _grp_spieler = ["_spieler", "_spieler_pct"]
-    _grp_starts  = ["_gruppen", "_zeitraum_plan", "_spieler", "_mb"]
+    for cont in all_conts:
+        cont_rows = sorted(
+            [r for r in raw_rows if r["_continent"] == cont],
+            key=lambda r: r["_fed"],
+        )
+        is_open   = cont in expanded_conts
+        icon      = "▼" if is_open else "▶"
 
-    return dash_table.DataTable(
-        data=country_rows,
-        columns=columns,
-        merge_duplicate_headers=True,
-        sort_action="none",
-        page_size=300,
-        style_table={"overflowX": "auto"},
-        style_cell={
-            "backgroundColor": "#FFFFFF",
-            "color":           "#333",
-            "border":          "1px solid #dee2e6",
-            "fontFamily":      "monospace",
-            "fontSize":        "13px",
-            "padding":         "5px 10px",
-            "textAlign":       "center",
-            "whiteSpace":      "nowrap",
-        },
-        style_cell_conditional=[
-            *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"}
-              for c in _grp_starts],
-        ],
-        style_header={
-            "fontWeight":       "bold",
-            "color":            "#444",
-            "border":           "1px solid #dee2e6",
-            "fontSize":         "12px",
-            "textAlign":        "center",
-            "backgroundColor":  "#f0f4f8",
-        },
-        style_header_conditional=[
-            *[{"if": {"column_id": c}, "backgroundColor": "#dbeafe"} for c in _grp_gruppen],
-            *[{"if": {"column_id": c}, "backgroundColor": "#fef9c3"} for c in _grp_zeit],
-            *[{"if": {"column_id": c}, "backgroundColor": "#dcfce7"} for c in _grp_spieler],
-            *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"} for c in _grp_starts],
-        ],
-        style_data_conditional=[
-            {"if": {"row_index": "odd"}, "backgroundColor": "#f9fbfd"},
-            {"if": {"filter_query": '{_laufend} != ""', "column_id": "_laufend"},
-             "backgroundColor": "#FFF3CD", "color": "#856404", "fontWeight": "600"},
-            {"if": {"filter_query": '{_gruppen_pct} = "100.0 %"',
-                    "column_id": "_gruppen_pct"},
-             "color": "#198754", "fontWeight": "600"},
-        ],
-        style_as_list_view=True,
-    )
+        cont_sum = _make_subtotal_row(f"{icon} {cont}", cont_rows, "continent")
+        cont_sum["_continent"] = cont
+        cont_sum["_sg_key"]    = ""
+        table_data.append(cont_sum)
+
+        if not is_open:
+            continue
+
+        done_rows = [r for r in cont_rows
+                     if r["_r_total_g"] > 0 and r["_r_done_g"] == r["_r_total_g"]]
+        pend_rows = [r for r in cont_rows
+                     if r["_r_done_g"] < r["_r_total_g"]]
+
+        for sg_type, sg_rows, sg_icon, sg_label in [
+            ("pend", pend_rows, "⏳", "Ausstehend / teilweise"),
+            ("done", done_rows, "✅", "Vollständig gescraped"),
+        ]:
+            if not sg_rows:
+                continue
+            sg_key     = f"{cont}/{sg_type}"
+            # Ausstehend: standardmäßig auf; Vollständig: standardmäßig zu
+            sg_is_open = expanded_sgs.get(sg_key, sg_type == "pend")
+            sg_icon2   = "▼" if sg_is_open else "▶"
+
+            sg_sum = _make_subtotal_row(
+                f"  {sg_icon2} {sg_icon} {sg_label} ({len(sg_rows)})",
+                sg_rows,
+                f"subgroup_{sg_type}",
+            )
+            sg_sum["_continent"] = cont
+            sg_sum["_sg_key"]    = sg_key
+            table_data.append(sg_sum)
+
+            if not sg_is_open:
+                continue
+
+            for r in sg_rows:
+                row = dict(r)
+                row["_fed"]    = f"    {r['_fed']}"
+                row["_sg_key"] = ""
+                table_data.append(row)
+
+    return table_data
 
 
 @app.callback(
@@ -2447,104 +2532,81 @@ def refresh_bericht(_, active_tab):
 
 
 # ===========================================================================
-# Callbacks — Tab 7 (Bericht 2 — Länder-Übersicht)
+# Callbacks — Tab 7 (Bericht Länder)
 # ===========================================================================
 
 @app.callback(
-    Output("bericht2-table", "children"),
+    Output("bericht2-raw-data", "data"),
     Input("interval-bericht2", "n_intervals"),
     Input("main-tabs", "active_tab"),
 )
-def refresh_bericht2(_, active_tab):
+def update_bericht2_raw(_, active_tab):
+    """Lädt Rohdaten aus SQLite in den Store (alle 5 Min oder bei Tab-Wechsel)."""
     if active_tab != "tab-bericht2":
         return dash.no_update
+    return _query_laender_data()
 
-    rows = _query_laender_data()
-    if not rows:
-        return html.P("Noch keine Daten vorhanden.",
-                      style={"color": "#888", "fontSize": "0.9rem"})
 
-    # ── Welt-Gesamtsummary ────────────────────────────────────────────────
-    welt_sum = _make_subtotal_row("🌍 Welt", rows, "world")
+@app.callback(
+    Output("bericht2-datatable", "data"),
+    Input("bericht2-raw-data", "data"),
+    Input("bericht2-expand-state", "data"),
+)
+def render_bericht2_table(raw_rows, expand_state):
+    """Rendert Tabellenzeilen basierend auf Rohdaten + Expand-State."""
+    if not raw_rows:
+        return []
+    return _b2_build_table_data(raw_rows, expand_state or {})
 
-    # ── Kontinente: Europe zuerst, dann alphabetisch ──────────────────────
-    all_conts = sorted(
-        set(r["_continent"] for r in rows),
-        key=lambda c: (0 if c == "Europe" else 1, c),
-    )
 
-    cont_accordion_items = []
-    for cont in all_conts:
-        cont_rows = sorted(
-            [r for r in rows if r["_continent"] == cont],
-            key=lambda r: r["_fed"],
-        )
-        cont_sum = _make_subtotal_row(cont, cont_rows, "continent")
+@app.callback(
+    Output("bericht2-expand-state", "data"),
+    Output("bericht2-datatable",    "active_cell"),
+    Input("bericht2-datatable",     "active_cell"),
+    State("bericht2-datatable",     "data"),
+    State("bericht2-expand-state",  "data"),
+    prevent_initial_call=True,
+)
+def toggle_bericht2_expand(active_cell, table_data, expand_state):
+    """Klappt Kontinent- oder Subgruppen-Zeile auf/zu bei Klick in der Föd.-Spalte."""
+    import copy
 
-        # Untergruppen: vollständig gescraped vs. ausstehend/teilweise
-        done_rows = [r for r in cont_rows
-                     if r["_r_total_g"] > 0 and r["_r_done_g"] == r["_r_total_g"]]
-        pend_rows = [r for r in cont_rows
-                     if r["_r_done_g"] < r["_r_total_g"]]
+    if not active_cell or not table_data:
+        return dash.no_update, None
 
-        sub_items = []
-        if pend_rows:
-            sub_items.append(dbc.AccordionItem(
-                _bericht2_country_table(pend_rows),
-                title=f"⏳ Ausstehend / teilweise ({len(pend_rows)} Länder)",
-                item_id=f"pend-{cont}",
-            ))
-        if done_rows:
-            sub_items.append(dbc.AccordionItem(
-                _bericht2_country_table(done_rows),
-                title=f"✅ Vollständig gescraped ({len(done_rows)} Länder)",
-                item_id=f"done-{cont}",
-            ))
+    row_idx = active_cell.get("row", -1)
+    col_id  = active_cell.get("column_id", "")
 
-        # Sub-Accordion: Ausstehend defaultmäßig offen, Vollständig zugeklappt
-        default_sub = [f"pend-{cont}"] if pend_rows else ([f"done-{cont}"] if done_rows else [])
-        sub_acc = dbc.Accordion(
-            sub_items,
-            always_open=True,
-            active_item=default_sub,
-        ) if sub_items else html.P("Keine Länder.", style={"color": "#888"})
+    # Nur Klicks in der Föd.-Spalte auswerten
+    if col_id != "_fed" or row_idx < 0 or row_idx >= len(table_data):
+        return dash.no_update, None
 
-        # Kontinent-Header: Name + kompakte Kennzahlen
-        cont_title_text = (
-            f"{cont}  ·  {cont_sum['_gruppen']} Gruppen  ·  "
-            f"{cont_sum['_spieler_pct']}  ·  {cont_sum['_mb']} MB"
-        )
+    clicked  = table_data[row_idx]
+    row_type = clicked.get("_row_type", "")
 
-        cont_accordion_items.append(dbc.AccordionItem(
-            [_bericht2_stats_bar(cont_sum, bg="#e8f0fe"), sub_acc],
-            title=cont_title_text,
-            item_id=f"cont-{cont}",
-        ))
+    state = copy.deepcopy(expand_state) or {"continents": ["Europe"], "subgroups": {}}
 
-    # Kontinent-Accordion: Europa standardmäßig offen
-    default_conts = (["cont-Europe"] if "Europe" in all_conts
-                     else ([f"cont-{all_conts[0]}"] if all_conts else []))
+    if row_type == "continent":
+        cont  = clicked.get("_continent", "")
+        if not cont:
+            return dash.no_update, None
+        conts = state.setdefault("continents", [])
+        if cont in conts:
+            conts.remove(cont)
+        else:
+            conts.append(cont)
+        return state, None
 
-    return html.Div([
-        html.H6("Föderationen nach Kontinent — VPS Scraping",
-                className="text-secondary mt-2 mb-3",
-                style={"fontSize": "0.85rem", "fontWeight": "600"}),
-        html.Div([
-            html.Span("ℹ️ Zeitraum Gescraped: ",
-                      style={"fontWeight": "600", "fontSize": "11px", "color": "#555"}),
-            html.Span(
-                "Jahres-Range der Gruppen mit status='done' im VPS-Orchestrator "
-                "(scrape_groups). Mac-Mini-Backfills fließen hier nicht ein.",
-                style={"fontSize": "11px", "color": "#888"},
-            ),
-        ], style={"marginBottom": "10px"}),
-        _bericht2_stats_bar(welt_sum, bg="#dee2e6"),
-        dbc.Accordion(
-            cont_accordion_items,
-            always_open=True,
-            active_item=default_conts,
-        ),
-    ])
+    if row_type in ("subgroup_pend", "subgroup_done"):
+        sg_key = clicked.get("_sg_key", "")
+        if not sg_key:
+            return dash.no_update, None
+        sgs     = state.setdefault("subgroups", {})
+        default = sg_key.endswith("/pend")   # pend = standard auf
+        sgs[sg_key] = not sgs.get(sg_key, default)
+        return state, None
+
+    return dash.no_update, None
 
 
 # ---------------------------------------------------------------------------

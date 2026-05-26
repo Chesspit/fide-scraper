@@ -91,6 +91,20 @@ _state_lock = threading.Lock()
 # State file helpers
 # ---------------------------------------------------------------------------
 
+def _write_state_atomic(data: dict) -> None:
+    """Write state dict to worker_state.json via a temp file + atomic rename.
+
+    Path.write_text() truncates the file before writing; any concurrent read
+    during that window sees an empty file and falls back to {"command": "stopped"},
+    which can cause freshly-started threads to stop immediately. Using rename(2)
+    (atomic on POSIX) eliminates that window entirely.
+    """
+    content = json.dumps(data, indent=2)
+    tmp = WORKER_STATE_PATH.with_suffix(".tmp")
+    tmp.write_text(content)
+    tmp.replace(WORKER_STATE_PATH)  # atomic on POSIX
+
+
 def read_worker_state() -> dict:
     """Return the full worker_state.json as a dict."""
     try:
@@ -107,6 +121,7 @@ def read_command() -> str:
 def write_state(command: str | None = None, **extra) -> None:
     """Update worker_state.json, preserving existing keys (partial update).
     Thread-safe: acquires _state_lock before read-modify-write.
+    Uses atomic rename to avoid truncation-window race with concurrent readers.
     """
     with _state_lock:
         try:
@@ -118,7 +133,7 @@ def write_state(command: str | None = None, **extra) -> None:
         for k, v in extra.items():
             if v is not None or k in data:
                 data[k] = v
-        WORKER_STATE_PATH.write_text(json.dumps(data, indent=2))
+        _write_state_atomic(data)
 
 
 def _update_thread_slot(slot: int, **kwargs) -> None:
@@ -135,7 +150,7 @@ def _update_thread_slot(slot: int, **kwargs) -> None:
             threads.append(entry)
         entry.update(kwargs)
         data["threads"] = sorted(threads, key=lambda t: t.get("slot", 0))
-        WORKER_STATE_PATH.write_text(json.dumps(data, indent=2))
+        _write_state_atomic(data)
 
 
 def _clear_thread_slot(slot: int) -> None:
@@ -146,7 +161,7 @@ def _clear_thread_slot(slot: int) -> None:
         except Exception:
             data = {}
         data["threads"] = [t for t in data.get("threads", []) if t.get("slot") != slot]
-        WORKER_STATE_PATH.write_text(json.dumps(data, indent=2))
+        _write_state_atomic(data)
 
 
 def _increment_global_stats(mb_group: float) -> None:
@@ -158,7 +173,7 @@ def _increment_global_stats(mb_group: float) -> None:
             data = {}
         data["groups_done"] = data.get("groups_done", 0) + 1
         data["mb_downloaded"] = round(data.get("mb_downloaded", 0.0) + mb_group, 2)
-        WORKER_STATE_PATH.write_text(json.dumps(data, indent=2))
+        _write_state_atomic(data)
 
 
 def _load_concurrency_config() -> dict:
@@ -459,14 +474,29 @@ def run_slot(
     try:
         pg_conn = get_connection()
 
+        # Startup grace: on first loop iteration a transient "stopped" (e.g. from a
+        # truncation-window race or a stale state from the previous container run)
+        # should not kill the thread immediately.  We retry once after 1 s.
+        _startup_grace = True
+
         while not stop_event.is_set():
             state = read_worker_state()
             cmd = state.get("command", "stopped")
 
             if cmd in ("stopped", "restart"):
+                if _startup_grace:
+                    logger.warning(
+                        "Thread %d: '%s' beim Start — warte 1 s und prüfe nochmal",
+                        slot, cmd,
+                    )
+                    time.sleep(1)
+                    _startup_grace = False
+                    continue
                 logger.info("Thread %d: %s-Befehl empfangen", slot, cmd)
                 stop_event.set()
                 break
+
+            _startup_grace = False  # once we see "run", grace period is over
 
             if cmd == "pause":
                 time.sleep(_PAUSE_POLL_INTERVAL)
@@ -759,14 +789,29 @@ def run_dc_slot(
     try:
         pg_conn = get_connection()
 
+        # Startup grace: on first loop iteration a transient "stopped" (e.g. from a
+        # truncation-window race or a stale state from the previous container run)
+        # should not kill the thread immediately.  We retry once after 1 s.
+        _startup_grace = True
+
         while not stop_event.is_set():
             state = read_worker_state()
             cmd   = state.get("command", "stopped")
 
             if cmd in ("stopped", "restart"):
+                if _startup_grace:
+                    logger.warning(
+                        "DC-Thread %s: '%s' beim Start — warte 1 s und prüfe nochmal",
+                        label, cmd,
+                    )
+                    time.sleep(1)
+                    _startup_grace = False
+                    continue
                 logger.info("DC-Thread %s: %s-Befehl empfangen", label, cmd)
                 stop_event.set()
                 break
+
+            _startup_grace = False  # once we see "run", grace period is over
 
             if cmd == "pause":
                 time.sleep(_PAUSE_POLL_INTERVAL)

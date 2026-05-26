@@ -1253,6 +1253,18 @@ _REPORT_SLOT_LABELS = {
     109: "DC-??3",
 }
 _RESIDENTIAL_SLOTS = {0, 1, 2, 3}   # alle niedrigen Slots = Residential
+
+_DE_MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
+              "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
+
+def _fmt_day_de(day_str: str) -> str:
+    """'2026-05-26' → '26 Mai 2026'"""
+    try:
+        y, m, d = day_str.split("-")
+        return f"{int(d)} {_DE_MONTHS[int(m)-1]} {y}"
+    except Exception:
+        return day_str
+
 _REPORT_COLORS = {
     "T0":    "#1565C0",
     "T1":    "#42A5F5",
@@ -2081,9 +2093,7 @@ def refresh_bericht(_, active_tab):
 
     # Residential: alle Slots in _RESIDENTIAL_SLOTS, Canonical-Reihenfolge
     _ordered_res = ["T0", "T1", "T2", "T3"]
-    # DC: Bestehende + 3 fixe Platzhalter-Spalten (immer sichtbar)
     _ordered_dc  = ["DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK", "DC-ES", "DC-MX", "DC-AE"]
-    _DC_SPARE    = [("_dc_sp1", "(frei 1)"), ("_dc_sp2", "(frei 2)"), ("_dc_sp3", "(frei 3)")]
 
     present_labels = {d["slot_label"] for d in data}
     res_labels = [l for l in _ordered_res if l in present_labels]
@@ -2097,34 +2107,33 @@ def refresh_bericht(_, active_tab):
         if d["slot_label"] in pivot:
             pivot[d["slot_label"]][d["day"]] = d["mb"]
 
-    # ── 2-zeilige Spaltenköpfe ────────────────────────────────────────────
-    # Zeile 1 = Gruppe ("Residential" / "Datacenter" / ""),
-    # Zeile 2 = einzelner Spaltenname.
-    # merge_duplicate_headers=True fasst gleiche Gruppenzeilen zusammen.
-    GRP_RES = "Residential"
-    GRP_DC  = "Datacenter"
+    # ── 3-stufige Spaltenköpfe ─────────────────────────────────────────────
+    # Ebene 1: "" | "Details" | "Gesamt"
+    # Ebene 2: "" | "Residential" / "Datacenter" | "Residential" / "Datacenter" / "Total"
+    # Ebene 3: Spaltenname
+    # merge_duplicate_headers=True fasst benachbarte gleiche Einträge je Ebene zusammen.
+    DET = "Details"
+    GSM = "Gesamt"
+    RES = "Residential"
+    DC  = "Datacenter"
 
-    table_cols = [{"name": ["", "Datum"], "id": "_day"}]
+    table_cols = [{"name": ["", "", "Datum"], "id": "_day"}]
 
     for l in res_labels:
-        table_cols.append({"name": [GRP_RES, l],  "id": l})
-    table_cols.append({"name": [GRP_RES, "MB"],   "id": "_res_mb"})
-    table_cols.append({"name": [GRP_RES, "%"],     "id": "_res_pct"})
-
+        table_cols.append({"name": [DET, RES, l], "id": l})
     for l in dc_labels:
-        table_cols.append({"name": [GRP_DC, l],   "id": l})
-    # 3 fixe Platzhalter-Spalten
-    for spare_id, spare_name in _DC_SPARE:
-        table_cols.append({"name": [GRP_DC, spare_name], "id": spare_id})
-    table_cols.append({"name": [GRP_DC, "MB"],    "id": "_dc_mb"})
-    table_cols.append({"name": [GRP_DC, "%"],      "id": "_dc_pct"})
+        table_cols.append({"name": [DET, DC, l],  "id": l})
 
-    table_cols.append({"name": ["", "Gesamt"],     "id": "_total"})
+    table_cols.append({"name": [GSM, RES, "MB"],  "id": "_res_mb"})
+    table_cols.append({"name": [GSM, RES, "%"],   "id": "_res_pct"})
+    table_cols.append({"name": [GSM, DC,  "MB"],  "id": "_dc_mb"})
+    table_cols.append({"name": [GSM, DC,  "%"],   "id": "_dc_pct"})
+    table_cols.append({"name": [GSM, "Total", "MB"], "id": "_total"})
 
     # ── Zeilen befüllen ────────────────────────────────────────────────────
     table_rows = []
     for day in reversed(all_days):
-        row: dict[str, str] = {"_day": day}
+        row: dict[str, str] = {"_day": _fmt_day_de(day)}
         res_sum = sum(pivot[l].get(day, 0.0) for l in res_labels)
         dc_sum  = sum(pivot[l].get(day, 0.0) for l in dc_labels)
         total   = res_sum + dc_sum
@@ -2133,10 +2142,6 @@ def refresh_bericht(_, active_tab):
             mb = pivot[l].get(day, 0.0)
             row[l] = f"{mb:.1f}" if mb else "–"
 
-        # Platzhalter immer leer
-        for spare_id, _ in _DC_SPARE:
-            row[spare_id] = "–"
-
         row["_res_mb"]  = f"{res_sum:.1f}" if res_sum else "–"
         row["_res_pct"] = f"{res_sum / total * 100:.0f} %" if total else "–"
         row["_dc_mb"]   = f"{dc_sum:.1f}"  if dc_sum  else "–"
@@ -2144,18 +2149,15 @@ def refresh_bericht(_, active_tab):
         row["_total"]   = f"{total:.1f}"   if total   else "–"
         table_rows.append(row)
 
-    # ── IDs aller Spaltengruppen (für Styling) ────────────────────────────
-    _spare_ids = [sp[0] for sp in _DC_SPARE]
-
-    # style_cell_conditional: Zentrierung für alle; Sonderbehandlung für Subtotals
+    # ── Spalten-Styling ────────────────────────────────────────────────────
     style_cell_cond = [
-        # Datum: kleiner, zentriert
+        # Datum: breit genug für "26 Mai 2026" in einer Zeile
         {"if": {"column_id": "_day"},
          "textAlign": "center", "fontWeight": "600",
-         "width": "80px", "minWidth": "80px", "maxWidth": "80px",
+         "width": "105px", "minWidth": "105px", "maxWidth": "105px",
          "fontSize": "0.78rem", "color": "#555"},
 
-        # Residential-Subtotals: blau mit linker Trennlinie
+        # Residential-Subtotals: blau, Trennlinie links
         {"if": {"column_id": "_res_mb"},
          "fontWeight": "700", "color": "#0D47A1",
          "backgroundColor": "#DDEEFF",
@@ -2164,8 +2166,7 @@ def refresh_bericht(_, active_tab):
          "fontWeight": "500", "color": "#0D47A1",
          "backgroundColor": "#EAF4FF"},
 
-        # DC-Einzelspalten: erste DC-Spalte mit Trennlinie (ergibt sich aus borderLeft
-        # bei _dc_mb — die Trennlinie zum Subtotal setzen wir explicit)
+        # DC-Subtotals: orange, Trennlinie links
         {"if": {"column_id": "_dc_mb"},
          "fontWeight": "700", "color": "#BF360C",
          "backgroundColor": "#FFE0D0",
@@ -2174,24 +2175,20 @@ def refresh_bericht(_, active_tab):
          "fontWeight": "500", "color": "#BF360C",
          "backgroundColor": "#FFF0EA"},
 
-        # Platzhalter: gedimmt
-        *[{"if": {"column_id": sid},
-           "color": "#BDBDBD", "fontStyle": "italic",
-           "backgroundColor": "#FAFAFA"}
-          for sid in _spare_ids],
-
-        # Gesamt: fett blau, starke linke Trennlinie
+        # Gesamt Total: fett blau, starke Trennlinie links
         {"if": {"column_id": "_total"},
          "fontWeight": "700", "color": "#1565C0",
          "borderLeft": "3px solid #42A5F5"},
     ]
 
-    # Erste echte DC-Spalte: linke Trennlinie (Residential / DC Grenze)
+    # Trennlinie zwischen Details-Residential und Details-Datacenter
     if dc_labels:
         style_cell_cond.append(
             {"if": {"column_id": dc_labels[0]},
              "borderLeft": "3px solid #CFD8DC"}
         )
+    # Trennlinie am Anfang des Gesamt-Blocks (erste Res-Subtotal-Spalte)
+    # wird bereits durch _res_mb borderLeft abgedeckt
 
     table = dash_table.DataTable(
         data=table_rows,
@@ -2212,9 +2209,9 @@ def refresh_bericht(_, active_tab):
         style_cell={
             "fontSize":   "0.82rem",
             "padding":    "4px 8px",
-            "textAlign":  "center",   # alle Zellen zentriert
+            "textAlign":  "center",
             "color":      "#333",
-            "whiteSpace": "normal",
+            "whiteSpace": "nowrap",
         },
         style_cell_conditional=style_cell_cond,
         style_data_conditional=[

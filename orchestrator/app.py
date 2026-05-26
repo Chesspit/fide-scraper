@@ -1288,9 +1288,8 @@ tab_bericht = dbc.Container(fluid=True, children=[
 ], className="py-3")
 
 tab_bericht2 = dbc.Container(fluid=True, children=[
-    dcc.Interval(id="interval-bericht2", interval=60_000, n_intervals=0),
-    dbc.Row(dbc.Col(html.H5("Länder-Übersicht — VPS Scraping",
-                            className="text-secondary fw-bold my-3"))),
+    # 5-Minuten-Intervall: vermeidet zu häufiges Accordion-Reset durch Neurendering
+    dcc.Interval(id="interval-bericht2", interval=300_000, n_intervals=0),
     html.Div(id="bericht2-table"),
 ], className="py-3")
 
@@ -2188,6 +2187,99 @@ def _make_subtotal_row(label: str, group: list, row_type: str) -> dict:
     }
 
 
+def _bericht2_stats_bar(row: dict, bg: str = "#f0f4f8") -> html.Div:
+    """Kompakte Statistik-Leiste für eine Zusammenfassungszeile (Welt / Kontinent)."""
+    chips = [
+        ("Gruppen",   f"{row['_gruppen']} ({row['_gruppen_pct']})"),
+        ("Gescraped", row["_zeitraum_done"]),
+        ("Spieler",   f"{row['_spieler']} ({row['_spieler_pct']})"),
+        ("MB",        str(row["_mb"])),
+    ]
+    return html.Div(
+        [html.Span([
+            html.Span(lbl + ": ",
+                      style={"color": "#666", "fontSize": "12px", "fontWeight": "400"}),
+            html.Span(val,
+                      style={"fontWeight": "700", "fontSize": "12px",
+                             "color": "#222", "marginRight": "24px"}),
+        ]) for lbl, val in chips],
+        style={
+            "backgroundColor": bg,
+            "padding": "6px 12px",
+            "borderRadius": "4px",
+            "marginBottom": "8px",
+            "display":      "flex",
+            "flexWrap":     "wrap",
+            "alignItems":   "center",
+        }
+    )
+
+
+def _bericht2_country_table(country_rows: list) -> dash_table.DataTable:
+    """DataTable für eine Gruppe von Länder-Zeilen (reine country-rows, keine Summen)."""
+    columns = [
+        {"name": ["",         "Föd."],      "id": "_fed"},
+        {"name": ["Gruppen",  "Abs."],      "id": "_gruppen"},
+        {"name": ["Gruppen",  "%"],         "id": "_gruppen_pct"},
+        {"name": ["Zeitraum", "Geplant"],   "id": "_zeitraum_plan"},
+        {"name": ["Zeitraum", "Gescraped"], "id": "_zeitraum_done"},
+        {"name": ["Zeitraum", "Laufend"],   "id": "_laufend"},
+        {"name": ["Spieler",  "Abs."],      "id": "_spieler"},
+        {"name": ["Spieler",  "%"],         "id": "_spieler_pct"},
+        {"name": ["",         "MB"],        "id": "_mb"},
+    ]
+    _grp_gruppen = ["_gruppen", "_gruppen_pct"]
+    _grp_zeit    = ["_zeitraum_plan", "_zeitraum_done", "_laufend"]
+    _grp_spieler = ["_spieler", "_spieler_pct"]
+    _grp_starts  = ["_gruppen", "_zeitraum_plan", "_spieler", "_mb"]
+
+    return dash_table.DataTable(
+        data=country_rows,
+        columns=columns,
+        merge_duplicate_headers=True,
+        sort_action="none",
+        page_size=300,
+        style_table={"overflowX": "auto"},
+        style_cell={
+            "backgroundColor": "#FFFFFF",
+            "color":           "#333",
+            "border":          "1px solid #dee2e6",
+            "fontFamily":      "monospace",
+            "fontSize":        "13px",
+            "padding":         "5px 10px",
+            "textAlign":       "center",
+            "whiteSpace":      "nowrap",
+        },
+        style_cell_conditional=[
+            *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"}
+              for c in _grp_starts],
+        ],
+        style_header={
+            "fontWeight":       "bold",
+            "color":            "#444",
+            "border":           "1px solid #dee2e6",
+            "fontSize":         "12px",
+            "textAlign":        "center",
+            "backgroundColor":  "#f0f4f8",
+        },
+        style_header_conditional=[
+            *[{"if": {"column_id": c}, "backgroundColor": "#dbeafe"} for c in _grp_gruppen],
+            *[{"if": {"column_id": c}, "backgroundColor": "#fef9c3"} for c in _grp_zeit],
+            *[{"if": {"column_id": c}, "backgroundColor": "#dcfce7"} for c in _grp_spieler],
+            *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"} for c in _grp_starts],
+        ],
+        style_data_conditional=[
+            {"if": {"row_index": "odd"}, "backgroundColor": "#f9fbfd"},
+            {"if": {"filter_query": '{_laufend} != ""', "column_id": "_laufend"},
+             "backgroundColor": "#FFF3CD", "color": "#856404", "fontWeight": "600"},
+            {"if": {"filter_query": '{_gruppen_pct} = "100.0 %"',
+                    "column_id": "_gruppen_pct"},
+             "color": "#198754", "fontWeight": "600"},
+        ],
+        style_as_list_view=True,
+    )
+
+
 @app.callback(
     Output("bericht-table", "children"),
     Input("interval-bericht", "n_intervals"),
@@ -2367,120 +2459,91 @@ def refresh_bericht2(_, active_tab):
     if active_tab != "tab-bericht2":
         return dash.no_update
 
-    from itertools import groupby
-
     rows = _query_laender_data()
     if not rows:
         return html.P("Noch keine Daten vorhanden.",
                       style={"color": "#888", "fontSize": "0.9rem"})
 
-    # ── Kontinent-Sortierung: Europe zuerst, dann alphabetisch ─────────────
-    def _cont_key(r):
-        c = r["_continent"]
-        return (0, c) if c == "Europe" else (1, c)
+    # ── Welt-Gesamtsummary ────────────────────────────────────────────────
+    welt_sum = _make_subtotal_row("🌍 Welt", rows, "world")
 
-    rows_sorted = sorted(rows, key=lambda r: (_cont_key(r), r["_fed"]))
-
-    # ── Tabellenaufbau: Welt → [Kontinent-Zeile → Länder] ──────────────────
-    welt_row  = _make_subtotal_row("🌍 Welt", rows, "world")
-    table_data = [welt_row]
-
-    for continent, grp in groupby(rows_sorted, key=lambda r: r["_continent"]):
-        grp_list = list(grp)
-        table_data.append(_make_subtotal_row(continent, grp_list, "continent"))
-        table_data.extend(grp_list)
-
-    # ── Spaltendefinition ──────────────────────────────────────────────────
-    columns = [
-        {"name": ["",         "Föd."],      "id": "_fed"},
-        {"name": ["Gruppen",  "Abs."],      "id": "_gruppen"},
-        {"name": ["Gruppen",  "%"],         "id": "_gruppen_pct"},
-        {"name": ["Zeitraum", "Geplant"],   "id": "_zeitraum_plan"},
-        {"name": ["Zeitraum", "Gescraped"], "id": "_zeitraum_done"},
-        {"name": ["Zeitraum", "Laufend"],   "id": "_laufend"},
-        {"name": ["Spieler",  "Abs."],      "id": "_spieler"},
-        {"name": ["Spieler",  "%"],         "id": "_spieler_pct"},
-        {"name": ["",         "MB"],        "id": "_mb"},
-    ]
-
-    _grp_gruppen = ["_gruppen", "_gruppen_pct"]
-    _grp_zeit    = ["_zeitraum_plan", "_zeitraum_done", "_laufend"]
-    _grp_spieler = ["_spieler", "_spieler_pct"]
-    _grp_starts  = ["_gruppen", "_zeitraum_plan", "_spieler", "_mb"]
-
-    table = dash_table.DataTable(
-        data=table_data,
-        columns=columns,
-        merge_duplicate_headers=True,
-        sort_action="none",
-        page_size=300,
-        style_table={"overflowX": "auto"},
-        style_cell={
-            "backgroundColor": "#FFFFFF",
-            "color": "#333",
-            "border": "1px solid #dee2e6",
-            "fontFamily": "monospace",
-            "fontSize": "13px",
-            "padding": "5px 10px",
-            "textAlign": "center",
-            "whiteSpace": "nowrap",
-        },
-        style_cell_conditional=[
-            *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"} for c in _grp_starts],
-        ],
-        style_header={
-            "fontWeight": "bold",
-            "color": "#444",
-            "border": "1px solid #dee2e6",
-            "fontSize": "12px",
-            "textAlign": "center",
-            "backgroundColor": "#f0f4f8",
-        },
-        style_header_conditional=[
-            *[{"if": {"column_id": c}, "backgroundColor": "#dbeafe"} for c in _grp_gruppen],
-            *[{"if": {"column_id": c}, "backgroundColor": "#fef9c3"} for c in _grp_zeit],
-            *[{"if": {"column_id": c}, "backgroundColor": "#dcfce7"} for c in _grp_spieler],
-            *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"} for c in _grp_starts],
-        ],
-        style_data_conditional=[
-            # Zebra-Streifen nur für Länder-Zeilen
-            {"if": {"filter_query": '{_row_type} = "country"', "row_index": "odd"},
-             "backgroundColor": "#f9fbfd"},
-            # Welt-Zeile: dunkelgrau, fett, untere Trennlinie
-            {"if": {"filter_query": '{_row_type} = "world"'},
-             "backgroundColor": "#dee2e6",
-             "fontWeight": "bold",
-             "color": "#212529",
-             "borderBottom": "2px solid #6c757d"},
-            # Kontinent-Zeilen: hellblau, fett, obere Trennlinie
-            {"if": {"filter_query": '{_row_type} = "continent"'},
-             "backgroundColor": "#e8f0fe",
-             "fontWeight": "bold",
-             "color": "#1a3a6b",
-             "borderTop": "2px solid #adb5bd"},
-            # Laufend-Spalte: gelb-orange wenn befüllt
-            {"if": {"filter_query": '{_laufend} != ""', "column_id": "_laufend"},
-             "backgroundColor": "#FFF3CD",
-             "color": "#856404",
-             "fontWeight": "600"},
-            # Gruppen %-Spalte: grün wenn 100 %
-            {"if": {"filter_query": '{_gruppen_pct} = "100.0 %"', "column_id": "_gruppen_pct"},
-             "color": "#198754",
-             "fontWeight": "600"},
-        ],
-        style_as_list_view=True,
+    # ── Kontinente: Europe zuerst, dann alphabetisch ──────────────────────
+    all_conts = sorted(
+        set(r["_continent"] for r in rows),
+        key=lambda c: (0 if c == "Europe" else 1, c),
     )
+
+    cont_accordion_items = []
+    for cont in all_conts:
+        cont_rows = sorted(
+            [r for r in rows if r["_continent"] == cont],
+            key=lambda r: r["_fed"],
+        )
+        cont_sum = _make_subtotal_row(cont, cont_rows, "continent")
+
+        # Untergruppen: vollständig gescraped vs. ausstehend/teilweise
+        done_rows = [r for r in cont_rows
+                     if r["_r_total_g"] > 0 and r["_r_done_g"] == r["_r_total_g"]]
+        pend_rows = [r for r in cont_rows
+                     if r["_r_done_g"] < r["_r_total_g"]]
+
+        sub_items = []
+        if pend_rows:
+            sub_items.append(dbc.AccordionItem(
+                _bericht2_country_table(pend_rows),
+                title=f"⏳ Ausstehend / teilweise ({len(pend_rows)} Länder)",
+                item_id=f"pend-{cont}",
+            ))
+        if done_rows:
+            sub_items.append(dbc.AccordionItem(
+                _bericht2_country_table(done_rows),
+                title=f"✅ Vollständig gescraped ({len(done_rows)} Länder)",
+                item_id=f"done-{cont}",
+            ))
+
+        # Sub-Accordion: Ausstehend defaultmäßig offen, Vollständig zugeklappt
+        default_sub = [f"pend-{cont}"] if pend_rows else ([f"done-{cont}"] if done_rows else [])
+        sub_acc = dbc.Accordion(
+            sub_items,
+            always_open=True,
+            active_item=default_sub,
+        ) if sub_items else html.P("Keine Länder.", style={"color": "#888"})
+
+        # Kontinent-Header: Name + kompakte Kennzahlen
+        cont_title_text = (
+            f"{cont}  ·  {cont_sum['_gruppen']} Gruppen  ·  "
+            f"{cont_sum['_spieler_pct']}  ·  {cont_sum['_mb']} MB"
+        )
+
+        cont_accordion_items.append(dbc.AccordionItem(
+            [_bericht2_stats_bar(cont_sum, bg="#e8f0fe"), sub_acc],
+            title=cont_title_text,
+            item_id=f"cont-{cont}",
+        ))
+
+    # Kontinent-Accordion: Europa standardmäßig offen
+    default_conts = (["cont-Europe"] if "Europe" in all_conts
+                     else ([f"cont-{all_conts[0]}"] if all_conts else []))
 
     return html.Div([
         html.H6("Föderationen nach Kontinent — VPS Scraping",
-                className="text-secondary mt-3 mb-2",
+                className="text-secondary mt-2 mb-3",
                 style={"fontSize": "0.85rem", "fontWeight": "600"}),
-        html.Div(style={
-            "backgroundColor": "#FFFFFF",
-            "border": "1px solid #E0E0E0",
-            "borderRadius": "6px",
-            "padding": "12px 16px",
-        }, children=[table]),
+        html.Div([
+            html.Span("ℹ️ Zeitraum Gescraped: ",
+                      style={"fontWeight": "600", "fontSize": "11px", "color": "#555"}),
+            html.Span(
+                "Jahres-Range der Gruppen mit status='done' im VPS-Orchestrator "
+                "(scrape_groups). Mac-Mini-Backfills fließen hier nicht ein.",
+                style={"fontSize": "11px", "color": "#888"},
+            ),
+        ], style={"marginBottom": "10px"}),
+        _bericht2_stats_bar(welt_sum, bg="#dee2e6"),
+        dbc.Accordion(
+            cont_accordion_items,
+            always_open=True,
+            active_item=default_conts,
+        ),
     ])
 
 

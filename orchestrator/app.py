@@ -2086,15 +2086,16 @@ def _query_bericht_data() -> list[dict]:
 def _query_laender_data() -> list[dict]:
     """Aggregiert scrape_groups + scrape_runs nach Föderation (VPS-Sicht).
 
-    Gibt Liste von Dicts zurück mit Schlüsseln:
-        _fed, _gruppen, _zeitraum, _mb
-    Sortiert nach MB absteigend.
+    Datenquelle: SQLite scrape_groups/scrape_runs des VPS-Orchestrators.
+    Mac-Mini-Backfills (global_XX, female) schreiben nur nach PostgreSQL
+    und tauchen hier NICHT auf — alle Werte sind rein VPS-basiert.
     """
     conn = get_conn()
     rows = conn.execute(
         """
         SELECT
             sg.federation,
+            MAX(sg.continent)                                                     AS continent,
             COUNT(sg.id)                                                          AS total_groups,
             SUM(CASE WHEN sg.status = 'done'    THEN 1 ELSE 0 END)               AS done_groups,
             SUM(CASE WHEN sg.status = 'running' THEN 1 ELSE 0 END)               AS running_groups,
@@ -2115,57 +2116,76 @@ def _query_laender_data() -> list[dict]:
         ) sr ON sr.group_id = sg.id
         GROUP BY sg.federation
         HAVING COUNT(sg.id) > 0
-        ORDER BY total_mb DESC
+        ORDER BY continent, sg.federation
         """
     ).fetchall()
     conn.close()
+
+    def _yrng(y0, y1):
+        if y0 is None: return "—"
+        return str(y0) if y0 == y1 else f"{y0} – {y1}"
+
     result = []
     for r in rows:
-        total_g  = r["total_groups"]  or 1
-        done_g   = r["done_groups"]   or 0
-        total_p  = r["total_players"] or 0
-        done_p   = r["done_players"]  or 0
+        total_g = r["total_groups"] or 1
+        done_g  = r["done_groups"]  or 0
+        total_p = r["total_players"] or 0
+        done_p  = r["done_players"]  or 0
+        mb      = round(r["total_mb"], 1)
+        laufend = str(r["year_running"]) if r["year_running"] is not None else ""
 
-        # Geplanter Zeitraum
-        yp0, yp1 = r["year_plan_from"], r["year_plan_to"]
-        zeitraum_plan = str(yp0) if yp0 == yp1 else f"{yp0} – {yp1}"
-
-        # Gescrapeter Zeitraum (nur done-Gruppen)
-        yd0, yd1 = r["year_done_from"], r["year_done_to"]
-        if yd0 is None:
-            zeitraum_done = "—"
-        elif yd0 == yd1:
-            zeitraum_done = str(yd0)
-        else:
-            zeitraum_done = f"{yd0} – {yd1}"
-
-        # Laufendes Jahr (running-Gruppen), leer wenn keines
-        yr = r["year_running"]
-        laufend = str(yr) if yr is not None else ""
-
-        mb = round(r["total_mb"], 1)
         result.append({
             "_fed":           r["federation"] or "—",
             "_gruppen":       f"{done_g} / {total_g}",
             "_gruppen_pct":   f"{round(done_g / total_g * 100, 1)} %" if total_g else "—",
-            "_zeitraum_plan": zeitraum_plan,
-            "_zeitraum_done": zeitraum_done,
+            "_zeitraum_plan": _yrng(r["year_plan_from"], r["year_plan_to"]),
+            "_zeitraum_done": _yrng(r["year_done_from"], r["year_done_to"]),
             "_laufend":       laufend,
             "_spieler":       f"{done_p} / {total_p}",
             "_spieler_pct":   f"{round(done_p / total_p * 100, 1)} %" if total_p else "—",
             "_mb":            mb,
-            # Rohwerte für Summenzeile (nicht in columns → unsichtbar)
-            "_r_done_g":  done_g,
-            "_r_total_g": total_g,
-            "_r_done_p":  done_p,
-            "_r_total_p": total_p,
-            "_r_yp0":     r["year_plan_from"],
-            "_r_yp1":     r["year_plan_to"],
-            "_r_yd0":     r["year_done_from"],
-            "_r_yd1":     r["year_done_to"],
-            "_r_mb":      mb,
+            "_row_type":      "country",
+            # Rohwerte für Summen (nicht in columns → unsichtbar in Tabelle)
+            "_continent":     r["continent"] or "—",
+            "_r_done_g":      done_g,
+            "_r_total_g":     total_g,
+            "_r_done_p":      done_p,
+            "_r_total_p":     total_p,
+            "_r_yp0":         r["year_plan_from"],
+            "_r_yp1":         r["year_plan_to"],
+            "_r_yd0":         r["year_done_from"],
+            "_r_yd1":         r["year_done_to"],
+            "_r_mb":          mb,
         })
     return result
+
+
+def _make_subtotal_row(label: str, group: list, row_type: str) -> dict:
+    """Baut eine Summenzeile (Kontinent oder Welt) aus einer Gruppe von Länder-Zeilen."""
+    dg = sum(r["_r_done_g"]  for r in group)
+    tg = sum(r["_r_total_g"] for r in group)
+    dp = sum(r["_r_done_p"]  for r in group)
+    tp = sum(r["_r_total_p"] for r in group)
+    mb = round(sum(r["_r_mb"] for r in group), 1)
+    yp0 = min((r["_r_yp0"] for r in group if r["_r_yp0"]), default=None)
+    yp1 = max((r["_r_yp1"] for r in group if r["_r_yp1"]), default=None)
+    yd0 = min((r["_r_yd0"] for r in group if r["_r_yd0"]), default=None)
+    yd1 = max((r["_r_yd1"] for r in group if r["_r_yd1"]), default=None)
+    def _yr(y0, y1):
+        if y0 is None: return "—"
+        return str(y0) if y0 == y1 else f"{y0} – {y1}"
+    return {
+        "_fed":           label,
+        "_gruppen":       f"{dg} / {tg}",
+        "_gruppen_pct":   f"{round(dg / tg * 100, 1)} %" if tg else "—",
+        "_zeitraum_plan": _yr(yp0, yp1),
+        "_zeitraum_done": _yr(yd0, yd1),
+        "_laufend":       "",
+        "_spieler":       f"{dp} / {tp}",
+        "_spieler_pct":   f"{round(dp / tp * 100, 1)} %" if tp else "—",
+        "_mb":            mb,
+        "_row_type":      row_type,
+    }
 
 
 @app.callback(
@@ -2347,34 +2367,28 @@ def refresh_bericht2(_, active_tab):
     if active_tab != "tab-bericht2":
         return dash.no_update
 
+    from itertools import groupby
+
     rows = _query_laender_data()
     if not rows:
         return html.P("Noch keine Daten vorhanden.",
                       style={"color": "#888", "fontSize": "0.9rem"})
 
-    # ── Summenzeile berechnen ──────────────────────────────────────────────
-    s_done_g  = sum(r["_r_done_g"]  for r in rows)
-    s_total_g = sum(r["_r_total_g"] for r in rows)
-    s_done_p  = sum(r["_r_done_p"]  for r in rows)
-    s_total_p = sum(r["_r_total_p"] for r in rows)
-    s_mb      = round(sum(r["_r_mb"] for r in rows), 1)
-    yp0_all   = min((r["_r_yp0"] for r in rows if r["_r_yp0"]), default=None)
-    yp1_all   = max((r["_r_yp1"] for r in rows if r["_r_yp1"]), default=None)
-    yd0_all   = min((r["_r_yd0"] for r in rows if r["_r_yd0"]), default=None)
-    yd1_all   = max((r["_r_yd1"] for r in rows if r["_r_yd1"]), default=None)
+    # ── Kontinent-Sortierung: Europe zuerst, dann alphabetisch ─────────────
+    def _cont_key(r):
+        c = r["_continent"]
+        return (0, c) if c == "Europe" else (1, c)
 
-    total_row = {
-        "_fed":           "∑ Gesamt",
-        "_gruppen":       f"{s_done_g} / {s_total_g}",
-        "_gruppen_pct":   f"{round(s_done_g / s_total_g * 100, 1)} %" if s_total_g else "—",
-        "_zeitraum_plan": (f"{yp0_all} – {yp1_all}" if yp0_all != yp1_all else str(yp0_all)) if yp0_all else "—",
-        "_zeitraum_done": (f"{yd0_all} – {yd1_all}" if yd0_all != yd1_all else str(yd0_all)) if yd0_all else "—",
-        "_laufend":       "",
-        "_spieler":       f"{s_done_p} / {s_total_p}",
-        "_spieler_pct":   f"{round(s_done_p / s_total_p * 100, 1)} %" if s_total_p else "—",
-        "_mb":            s_mb,
-    }
-    table_data = [total_row] + rows   # Summe ganz oben
+    rows_sorted = sorted(rows, key=lambda r: (_cont_key(r), r["_fed"]))
+
+    # ── Tabellenaufbau: Welt → [Kontinent-Zeile → Länder] ──────────────────
+    welt_row  = _make_subtotal_row("🌍 Welt", rows, "world")
+    table_data = [welt_row]
+
+    for continent, grp in groupby(rows_sorted, key=lambda r: r["_continent"]):
+        grp_list = list(grp)
+        table_data.append(_make_subtotal_row(continent, grp_list, "continent"))
+        table_data.extend(grp_list)
 
     # ── Spaltendefinition ──────────────────────────────────────────────────
     columns = [
@@ -2389,11 +2403,9 @@ def refresh_bericht2(_, active_tab):
         {"name": ["",         "MB"],        "id": "_mb"},
     ]
 
-    _right       = ["_gruppen", "_gruppen_pct", "_spieler", "_spieler_pct", "_mb"]
     _grp_gruppen = ["_gruppen", "_gruppen_pct"]
     _grp_zeit    = ["_zeitraum_plan", "_zeitraum_done", "_laufend"]
     _grp_spieler = ["_spieler", "_spieler_pct"]
-    # Erste Spalte jeder Gruppe bekommt eine dickere linke Trennlinie
     _grp_starts  = ["_gruppen", "_zeitraum_plan", "_spieler", "_mb"]
 
     table = dash_table.DataTable(
@@ -2401,7 +2413,7 @@ def refresh_bericht2(_, active_tab):
         columns=columns,
         merge_duplicate_headers=True,
         sort_action="none",
-        page_size=200,
+        page_size=300,
         style_table={"overflowX": "auto"},
         style_cell={
             "backgroundColor": "#FFFFFF",
@@ -2410,13 +2422,10 @@ def refresh_bericht2(_, active_tab):
             "fontFamily": "monospace",
             "fontSize": "13px",
             "padding": "5px 10px",
-            "textAlign": "center",   # Standard: zentriert (unter Spaltenköpfen)
+            "textAlign": "center",
             "whiteSpace": "nowrap",
         },
         style_cell_conditional=[
-            # Föd.-Spalte bleibt linksbündig
-            {"if": {"column_id": "_fed"}, "textAlign": "left"},
-            # Gruppentrennlinien (linke Borderlinie, dicker)
             *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"} for c in _grp_starts],
         ],
         style_header={
@@ -2428,43 +2437,42 @@ def refresh_bericht2(_, active_tab):
             "backgroundColor": "#f0f4f8",
         },
         style_header_conditional=[
-            # Gruppenfarben in der Header-Zeile
-            *[{"if": {"column_id": c}, "backgroundColor": "#dbeafe"} for c in _grp_gruppen],  # blau
-            *[{"if": {"column_id": c}, "backgroundColor": "#fef9c3"} for c in _grp_zeit],      # gelb
-            *[{"if": {"column_id": c}, "backgroundColor": "#dcfce7"} for c in _grp_spieler],   # grün
-            # Gruppentrennlinien auch im Header
+            *[{"if": {"column_id": c}, "backgroundColor": "#dbeafe"} for c in _grp_gruppen],
+            *[{"if": {"column_id": c}, "backgroundColor": "#fef9c3"} for c in _grp_zeit],
+            *[{"if": {"column_id": c}, "backgroundColor": "#dcfce7"} for c in _grp_spieler],
             *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"} for c in _grp_starts],
         ],
         style_data_conditional=[
-            # Zebra-Streifen (nicht für Summenzeile)
-            {"if": {"row_index": "odd"}, "backgroundColor": "#f9fbfd"},
-            # Summenzeile: fett, grauer Hintergrund, obere Trennlinie
-            {
-                "if": {"filter_query": '{_fed} = "∑ Gesamt"'},
-                "backgroundColor": "#e9ecef",
-                "fontWeight": "bold",
-                "color": "#212529",
-                "borderBottom": "2px solid #6c757d",
-            },
+            # Zebra-Streifen nur für Länder-Zeilen
+            {"if": {"filter_query": '{_row_type} = "country"', "row_index": "odd"},
+             "backgroundColor": "#f9fbfd"},
+            # Welt-Zeile: dunkelgrau, fett, untere Trennlinie
+            {"if": {"filter_query": '{_row_type} = "world"'},
+             "backgroundColor": "#dee2e6",
+             "fontWeight": "bold",
+             "color": "#212529",
+             "borderBottom": "2px solid #6c757d"},
+            # Kontinent-Zeilen: hellblau, fett, obere Trennlinie
+            {"if": {"filter_query": '{_row_type} = "continent"'},
+             "backgroundColor": "#e8f0fe",
+             "fontWeight": "bold",
+             "color": "#1a3a6b",
+             "borderTop": "2px solid #adb5bd"},
             # Laufend-Spalte: gelb-orange wenn befüllt
-            {
-                "if": {"filter_query": '{_laufend} != ""', "column_id": "_laufend"},
-                "backgroundColor": "#FFF3CD",
-                "color": "#856404",
-                "fontWeight": "600",
-            },
+            {"if": {"filter_query": '{_laufend} != ""', "column_id": "_laufend"},
+             "backgroundColor": "#FFF3CD",
+             "color": "#856404",
+             "fontWeight": "600"},
             # Gruppen %-Spalte: grün wenn 100 %
-            {
-                "if": {"filter_query": '{_gruppen_pct} = "100.0 %"', "column_id": "_gruppen_pct"},
-                "color": "#198754",
-                "fontWeight": "600",
-            },
+            {"if": {"filter_query": '{_gruppen_pct} = "100.0 %"', "column_id": "_gruppen_pct"},
+             "color": "#198754",
+             "fontWeight": "600"},
         ],
         style_as_list_view=True,
     )
 
     return html.Div([
-        html.H6("Föderationen nach gescraptem Datenvolumen (VPS)",
+        html.H6("Föderationen nach Kontinent — VPS Scraping",
                 className="text-secondary mt-3 mb-2",
                 style={"fontSize": "0.85rem", "fontWeight": "600"}),
         html.Div(style={

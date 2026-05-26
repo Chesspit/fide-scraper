@@ -2141,6 +2141,7 @@ def _query_laender_data() -> list[dict]:
         yr = r["year_running"]
         laufend = str(yr) if yr is not None else ""
 
+        mb = round(r["total_mb"], 1)
         result.append({
             "_fed":           r["federation"] or "—",
             "_gruppen":       f"{done_g} / {total_g}",
@@ -2150,7 +2151,17 @@ def _query_laender_data() -> list[dict]:
             "_laufend":       laufend,
             "_spieler":       f"{done_p} / {total_p}",
             "_spieler_pct":   f"{round(done_p / total_p * 100, 1)} %" if total_p else "—",
-            "_mb":            round(r["total_mb"], 1),
+            "_mb":            mb,
+            # Rohwerte für Summenzeile (nicht in columns → unsichtbar)
+            "_r_done_g":  done_g,
+            "_r_total_g": total_g,
+            "_r_done_p":  done_p,
+            "_r_total_p": total_p,
+            "_r_yp0":     r["year_plan_from"],
+            "_r_yp1":     r["year_plan_to"],
+            "_r_yd0":     r["year_done_from"],
+            "_r_yd1":     r["year_done_to"],
+            "_r_mb":      mb,
         })
     return result
 
@@ -2339,26 +2350,56 @@ def refresh_bericht2(_, active_tab):
         return html.P("Noch keine Daten vorhanden.",
                       style={"color": "#888", "fontSize": "0.9rem"})
 
+    # ── Summenzeile berechnen ──────────────────────────────────────────────
+    s_done_g  = sum(r["_r_done_g"]  for r in rows)
+    s_total_g = sum(r["_r_total_g"] for r in rows)
+    s_done_p  = sum(r["_r_done_p"]  for r in rows)
+    s_total_p = sum(r["_r_total_p"] for r in rows)
+    s_mb      = round(sum(r["_r_mb"] for r in rows), 1)
+    yp0_all   = min((r["_r_yp0"] for r in rows if r["_r_yp0"]), default=None)
+    yp1_all   = max((r["_r_yp1"] for r in rows if r["_r_yp1"]), default=None)
+    yd0_all   = min((r["_r_yd0"] for r in rows if r["_r_yd0"]), default=None)
+    yd1_all   = max((r["_r_yd1"] for r in rows if r["_r_yd1"]), default=None)
+
+    total_row = {
+        "_fed":           "∑ Gesamt",
+        "_gruppen":       f"{s_done_g} / {s_total_g}",
+        "_gruppen_pct":   f"{round(s_done_g / s_total_g * 100, 1)} %" if s_total_g else "—",
+        "_zeitraum_plan": (f"{yp0_all} – {yp1_all}" if yp0_all != yp1_all else str(yp0_all)) if yp0_all else "—",
+        "_zeitraum_done": (f"{yd0_all} – {yd1_all}" if yd0_all != yd1_all else str(yd0_all)) if yd0_all else "—",
+        "_laufend":       "",
+        "_spieler":       f"{s_done_p} / {s_total_p}",
+        "_spieler_pct":   f"{round(s_done_p / s_total_p * 100, 1)} %" if s_total_p else "—",
+        "_mb":            s_mb,
+    }
+    table_data = [total_row] + rows   # Summe ganz oben
+
+    # ── Spaltendefinition ──────────────────────────────────────────────────
     columns = [
-        {"name": ["",         "Föd."],          "id": "_fed"},
-        {"name": ["Gruppen",  "Abs."],           "id": "_gruppen"},
-        {"name": ["Gruppen",  "%"],              "id": "_gruppen_pct"},
-        {"name": ["Zeitraum", "Geplant"],        "id": "_zeitraum_plan"},
-        {"name": ["Zeitraum", "Gescraped"],      "id": "_zeitraum_done"},
-        {"name": ["Zeitraum", "Laufend"],        "id": "_laufend"},
-        {"name": ["Spieler",  "Abs."],           "id": "_spieler"},
-        {"name": ["Spieler",  "%"],              "id": "_spieler_pct"},
-        {"name": ["",         "MB"],             "id": "_mb"},
+        {"name": ["",         "Föd."],      "id": "_fed"},
+        {"name": ["Gruppen",  "Abs."],      "id": "_gruppen"},
+        {"name": ["Gruppen",  "%"],         "id": "_gruppen_pct"},
+        {"name": ["Zeitraum", "Geplant"],   "id": "_zeitraum_plan"},
+        {"name": ["Zeitraum", "Gescraped"], "id": "_zeitraum_done"},
+        {"name": ["Zeitraum", "Laufend"],   "id": "_laufend"},
+        {"name": ["Spieler",  "Abs."],      "id": "_spieler"},
+        {"name": ["Spieler",  "%"],         "id": "_spieler_pct"},
+        {"name": ["",         "MB"],        "id": "_mb"},
     ]
 
-    _right = ["_gruppen", "_gruppen_pct", "_spieler", "_spieler_pct", "_mb"]
+    _right       = ["_gruppen", "_gruppen_pct", "_spieler", "_spieler_pct", "_mb"]
+    _grp_gruppen = ["_gruppen", "_gruppen_pct"]
+    _grp_zeit    = ["_zeitraum_plan", "_zeitraum_done", "_laufend"]
+    _grp_spieler = ["_spieler", "_spieler_pct"]
+    # Erste Spalte jeder Gruppe bekommt eine dickere linke Trennlinie
+    _grp_starts  = ["_gruppen", "_zeitraum_plan", "_spieler", "_mb"]
 
     table = dash_table.DataTable(
-        data=rows,
+        data=table_data,
         columns=columns,
         merge_duplicate_headers=True,
-        sort_action="native",
-        page_size=150,
+        sort_action="none",
+        page_size=200,
         style_table={"overflowX": "auto"},
         style_cell={
             "backgroundColor": "#FFFFFF",
@@ -2371,35 +2412,48 @@ def refresh_bericht2(_, active_tab):
             "whiteSpace": "nowrap",
         },
         style_cell_conditional=[
-            {"if": {"column_id": c}, "textAlign": "right"} for c in _right
+            # Rechtsbündig für Zahlen-Spalten
+            *[{"if": {"column_id": c}, "textAlign": "right"} for c in _right],
+            # Gruppentrennlinien (linke Borderlinie, dicker)
+            *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"} for c in _grp_starts],
         ],
         style_header={
-            "backgroundColor": "#f0f4f8",
             "fontWeight": "bold",
             "color": "#444",
             "border": "1px solid #dee2e6",
             "fontSize": "12px",
             "textAlign": "center",
+            "backgroundColor": "#f0f4f8",
         },
+        style_header_conditional=[
+            # Gruppenfarben in der Header-Zeile
+            *[{"if": {"column_id": c}, "backgroundColor": "#dbeafe"} for c in _grp_gruppen],  # blau
+            *[{"if": {"column_id": c}, "backgroundColor": "#fef9c3"} for c in _grp_zeit],      # gelb
+            *[{"if": {"column_id": c}, "backgroundColor": "#dcfce7"} for c in _grp_spieler],   # grün
+            # Gruppentrennlinien auch im Header
+            *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"} for c in _grp_starts],
+        ],
         style_data_conditional=[
-            # Zebra-Streifen
+            # Zebra-Streifen (nicht für Summenzeile)
             {"if": {"row_index": "odd"}, "backgroundColor": "#f9fbfd"},
+            # Summenzeile: fett, grauer Hintergrund, obere Trennlinie
+            {
+                "if": {"filter_query": '{_fed} = "∑ Gesamt"'},
+                "backgroundColor": "#e9ecef",
+                "fontWeight": "bold",
+                "color": "#212529",
+                "borderBottom": "2px solid #6c757d",
+            },
             # Laufend-Spalte: gelb-orange wenn befüllt
             {
-                "if": {
-                    "filter_query": '{_laufend} != ""',
-                    "column_id": "_laufend",
-                },
+                "if": {"filter_query": '{_laufend} != ""', "column_id": "_laufend"},
                 "backgroundColor": "#FFF3CD",
                 "color": "#856404",
                 "fontWeight": "600",
             },
-            # Gruppen-Spalte: grün wenn 100 %
+            # Gruppen %-Spalte: grün wenn 100 %
             {
-                "if": {
-                    "filter_query": '{_gruppen_pct} = "100.0 %"',
-                    "column_id": "_gruppen_pct",
-                },
+                "if": {"filter_query": '{_gruppen_pct} = "100.0 %"', "column_id": "_gruppen_pct"},
                 "color": "#198754",
                 "fontWeight": "600",
             },

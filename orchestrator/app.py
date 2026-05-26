@@ -1307,16 +1307,18 @@ _B2_SDC = [
     # 🌍 Welt — dunkelgrau, fett
     {"if": {"filter_query": '{_row_type} = "world"'},
      "backgroundColor": "#dee2e6", "fontWeight": "bold", "color": "#212529"},
-    # Kontinent — hellblau, fett, Trennlinie oben; klickbar
+    # Kontinent — hellblau, fett, Trennlinie oben; cursor: pointer
     {"if": {"filter_query": '{_row_type} = "continent"'},
      "backgroundColor": "#e8f0fe", "fontWeight": "bold", "color": "#1a3a6b",
-     "borderTop": "2px solid #adb5bd"},
-    # Subgruppe ✅ Gescraped — grün-weiss; klickbar
+     "borderTop": "2px solid #adb5bd", "cursor": "pointer"},
+    # Subgruppe 🔄 In Arbeit — grün-weiss; cursor: pointer
     {"if": {"filter_query": '{_row_type} = "subgroup_scraped"'},
-     "backgroundColor": "#f0fdf4", "fontWeight": "600", "color": "#198754"},
-    # Subgruppe — Ohne Daten — hellgrau; klickbar
+     "backgroundColor": "#f0fdf4", "fontWeight": "600", "color": "#198754",
+     "cursor": "pointer"},
+    # Subgruppe ○ Ohne Daten — hellgrau; cursor: pointer
     {"if": {"filter_query": '{_row_type} = "subgroup_nodata"'},
-     "backgroundColor": "#f5f5f5", "fontWeight": "600", "color": "#777"},
+     "backgroundColor": "#f5f5f5", "fontWeight": "600", "color": "#777",
+     "cursor": "pointer"},
     # Laufend-Spalte: orange wenn befüllt
     {"if": {"filter_query": '{_laufend} != ""', "column_id": "_laufend"},
      "backgroundColor": "#FFF3CD", "color": "#856404", "fontWeight": "600"},
@@ -2339,7 +2341,7 @@ def _b2_build_table_data(raw_rows: list, expand_state: dict) -> list:
                         if r["_r_done_g"] == 0 and r["_r_running_g"] == 0]
 
         for sg_type, sg_rows, sg_icon, sg_label in [
-            ("scraped", scraped_rows, "✅", "Gescraped"),
+            ("scraped", scraped_rows, "🔄", "In Arbeit"),
             ("nodata",  nodata_rows,  "○",  "Ohne Daten"),
         ]:
             if not sg_rows:
@@ -2580,10 +2582,9 @@ def toggle_bericht2_expand(active_cell, table_data, expand_state):
         return dash.no_update, None
 
     row_idx = active_cell.get("row", -1)
-    col_id  = active_cell.get("column_id", "")
 
-    # Nur Klicks in der Föd.-Spalte auswerten
-    if col_id != "_fed" or row_idx < 0 or row_idx >= len(table_data):
+    # Jede Zelle der Zeile löst Toggle aus (nicht nur _fed)
+    if row_idx < 0 or row_idx >= len(table_data):
         return dash.no_update, None
 
     clicked  = table_data[row_idx]

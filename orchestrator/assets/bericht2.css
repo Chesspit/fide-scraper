@@ -1,0 +1,18 @@
+/* ── Bericht Länder: Hover-Feedback für klickbare Zeilen ──────────────────── */
+
+/* Generelles Hover-Highlight auf allen Zeilen der DataTable */
+#bericht2-datatable tbody tr:hover td {
+    filter: brightness(0.94);
+    transition: filter 0.1s ease;
+}
+
+/* Kontinent-Zeilen: stärkerer Hover + Pointer-Cursor */
+#bericht2-datatable tbody tr[class*="row"]:hover td[style*="e8f0fe"] {
+    filter: brightness(0.91);
+}
+
+/* Subgruppen-Zeilen: Hover-Feedback */
+#bericht2-datatable tbody tr:hover td[style*="f0fdf4"],
+#bericht2-datatable tbody tr:hover td[style*="f5f5f5"] {
+    filter: brightness(0.92);
+}

@@ -1233,13 +1233,13 @@ tab_completed = dbc.Container(fluid=True, children=[
 # ---------------------------------------------------------------------------
 
 # Slot → Label-Mapping (inkl. neue DC-Scraper).
-# Residential: Slots 0–3 (aktuell T0/T1; T2/T3 reserviert für weitere Scrapers)
+# Residential: Slots 0–3 → Anzeige als T1–T4 (1-basiert, wie in Steuerung)
 # Datacenter:  Slots 99+ (nach Bedarf erweiterbar)
 _REPORT_SLOT_LABELS = {
-    0:   "T0",
-    1:   "T1",
-    2:   "T2",      # reserviert für zukünftige Residential-Scrapers
-    3:   "T3",      # reserviert
+    0:   "T1",
+    1:   "T2",
+    2:   "T3",
+    3:   "T4",
     99:  "DC-DE",
     100: "DC-IN",
     101: "DC-UK",
@@ -1266,8 +1266,10 @@ def _fmt_day_de(day_str: str) -> str:
         return day_str
 
 _REPORT_COLORS = {
-    "T0":    "#1565C0",
-    "T1":    "#42A5F5",
+    "T1":    "#1565C0",
+    "T2":    "#42A5F5",
+    "T3":    "#26A69A",
+    "T4":    "#78909C",
     "DC-DE": "#E65100",
     "DC-IN": "#FF8F00",
     "DC-UK": "#2E7D32",
@@ -2185,7 +2187,7 @@ def refresh_bericht(_, active_tab):
     all_days = sorted({d["day"] for d in data})
 
     # Residential: alle Slots in _RESIDENTIAL_SLOTS, Canonical-Reihenfolge
-    _ordered_res = ["T0", "T1", "T2", "T3"]
+    _ordered_res = ["T1", "T2", "T3", "T4"]
     _ordered_dc  = ["DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK", "DC-ES", "DC-MX", "DC-AE"]
 
     present_labels = {d["slot_label"] for d in data}
@@ -2408,12 +2410,12 @@ def refresh_bericht2(_, active_tab):
             "fontFamily": "monospace",
             "fontSize": "13px",
             "padding": "5px 10px",
-            "textAlign": "left",
+            "textAlign": "center",   # Standard: zentriert (unter Spaltenköpfen)
             "whiteSpace": "nowrap",
         },
         style_cell_conditional=[
-            # Rechtsbündig für Zahlen-Spalten
-            *[{"if": {"column_id": c}, "textAlign": "right"} for c in _right],
+            # Föd.-Spalte bleibt linksbündig
+            {"if": {"column_id": "_fed"}, "textAlign": "left"},
             # Gruppentrennlinien (linke Borderlinie, dicker)
             *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"} for c in _grp_starts],
         ],

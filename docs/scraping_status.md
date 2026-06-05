@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-05-26 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-06-05 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -8,9 +8,9 @@ Stand: 2026-05-26 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **3.285.732+** |
-| Spieler mit ok-Daten | **28.728+** |
-| DB-Größe | **~7,2 GB (est.)** |
+| Partien gesamt | **6.030.128** |
+| Spieler mit ok-Daten | **121.096** |
+| DB-Größe | **~7,8 GB** |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ |
 
 ---
@@ -56,9 +56,10 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 | Bereich | Gruppen | Spielerinnen | ELO-Range | Status |
 |---------|--------:|-------------:|-----------|--------|
 | female_2100_01 – female_2100_06 | 6 | 395 | 2104–2199 | ✅ complete |
-| female_2000_01 | 1 | 66 | 2090–2103 | ✅ complete (seit 2026-05-25) |
-| female_2000_02 – female_2000_09 | 8 | 605 | 2004–2089 | 🔄 _02 läuft (~50%), _03–_09 pending |
-| female_1900_01 – female_1900_16 | 16 | 1.117 | 1903–2003 | ⏳ pending |
+| female_2000_01 – female_2000_09 | 9 | 626 | 2004–2103 | ✅ complete (seit 2026-06-03) |
+| female_1900_01 – female_1900_04 | 4 | 269 | 1967–2003 | ✅ complete |
+| female_1900_05 – female_1900_07 | 3 | 212 | 1940–1966 | 🔄 Chain läuft (Mac Mini, 05 aktiv) |
+| female_1900_08 – female_1900_16 | 9 | 656 | 1903–1939 | ⏳ pending |
 | female_1800_01 – female_1800_24 | 24 | 1.769 | 1800–1902 | ⏳ pending |
 | **Gesamt** | **55** | **3.952** | **1800–2199** | |
 
@@ -149,6 +150,17 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 | Spieler-Steckbrief | Aktiv | `/player-profile` | Profil + Rating-History + Spielstatistiken |
 | Partien-Detail | Test | `/games` | Alle Partien eines Spielers, filterbar |
 | GM/IM Entwicklung | Test | `/titles` | Zeitreihe der Titelträger |
+
+---
+
+## Änderungen Session 2026-06-05
+
+### Mac Mini
+| Was | Details |
+|-----|---------|
+| **female_2000_02 – _09** ✅ | 8 Gruppen, 561 Spielerinnen abgeschlossen (letzte: _09, 2026-06-03) |
+| **female_1900_01 – _04** ✅ | 4 Gruppen, 269 Spielerinnen abgeschlossen |
+| **female_1900_05 – _07** 🔄 | Chain gestartet: _05 läuft aktiv, _06 + _07 starten automatisch nach |
 
 ---
 

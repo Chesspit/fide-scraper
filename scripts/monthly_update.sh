@@ -24,23 +24,32 @@ print(date(y, m, 1))
 
 YEAR_MONTH="${NEW_PERIOD:0:7}"          # z.B. "2026-05"
 FROM_DATE="${NEW_PERIOD:0:4}-01-01"     # z.B. "2026-01-01" — fängt Lücken seit Jan auf
-TXT_FILE="$SCRIPT_DIR/data/players_list_foa_${YEAR_MONTH}.txt"
-ZIP_FILE="$SCRIPT_DIR/data/players_list_foa_${YEAR_MONTH}.zip"
 
 echo "$(date): ========================================"
 echo "$(date): Monatliches FIDE-Update: $NEW_PERIOD"
 echo "$(date): FROM=$FROM_DATE TO=$NEW_PERIOD"
 echo "$(date): ========================================"
 
-# --- Schritt 1: TXT-Datei prüfen ---
-if [ -f "$TXT_FILE" ]; then
-    IMPORT_FILE="$TXT_FILE"
-elif [ -f "$ZIP_FILE" ]; then
-    IMPORT_FILE="$ZIP_FILE"
-else
+# --- Schritt 1: TXT-Datei suchen (unterstützt alle FIDE-Namensformate) ---
+IMPORT_FILE=$(NEW_PERIOD="$NEW_PERIOD" SCRIPT_DIR="$SCRIPT_DIR" python3 - <<'PYEOF'
+import sys, os
+sys.path.insert(0, os.environ['SCRIPT_DIR'])
+from pathlib import Path
+from scripts.import_rating_snapshots import period_from_filename
+
+target = os.environ['NEW_PERIOD']   # z.B. "2026-05-01"
+data_dir = Path(os.environ['SCRIPT_DIR']) / 'data'
+for f in sorted(data_dir.glob('*.txt')) + sorted(data_dir.glob('*.zip')):
+    if period_from_filename(f) == target:
+        print(f)
+        sys.exit(0)
+sys.exit(1)
+PYEOF
+)
+
+if [ -z "$IMPORT_FILE" ]; then
     echo ""
-    echo "FEHLER: Keine TXT/ZIP-Datei gefunden für Monat $YEAR_MONTH."
-    echo "Erwartet: $TXT_FILE"
+    echo "FEHLER: Keine TXT/ZIP-Datei für Monat $NEW_PERIOD in data/ gefunden."
     echo "Herunterladen von: https://ratings.fide.com/download_lists.phtml"
     exit 1
 fi

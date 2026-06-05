@@ -45,8 +45,10 @@ logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
-CURRENT_PATTERN = re.compile(r"players_list_foa_(\d{4})-(\d{2})\.(?:txt|zip)$", re.IGNORECASE)
-FIDE_PATTERN    = re.compile(r"standard_([a-z]{3})(\d{2})frl\.(?:txt|zip)$", re.IGNORECASE)
+CURRENT_PATTERN  = re.compile(r"players_list_foa_(\d{4})-(\d{2})\.(?:txt|zip)$", re.IGNORECASE)
+FIDE_PATTERN     = re.compile(r"standard_([a-z]{3})(\d{2})frl\.(?:txt|zip)$", re.IGNORECASE)
+# New FIDE format since 2026-05: standard_rating_list_may26.zip
+FIDE_NEW_PATTERN = re.compile(r"standard_rating_list_([a-z]{3})(\d{2})\.(?:txt|zip)$", re.IGNORECASE)
 # Pre-2013 files lack the "standard_" prefix (e.g. sep09frl.zip, aug12frl.zip)
 FIDE_OLD_PATTERN = re.compile(r"^([a-z]{3})(\d{2})frl\.(?:txt|zip)$", re.IGNORECASE)
 
@@ -64,6 +66,13 @@ def period_from_filename(filepath: Path) -> str | None:
     if m:
         return f"{m.group(1)}-{m.group(2)}-01"
     m = FIDE_PATTERN.search(name)
+    if m:
+        month = MONTH_MAP.get(m.group(1).lower())
+        if not month:
+            return None
+        year = 2000 + int(m.group(2))
+        return f"{year}-{month}-01"
+    m = FIDE_NEW_PATTERN.search(name)
     if m:
         month = MONTH_MAP.get(m.group(1).lower())
         if not month:

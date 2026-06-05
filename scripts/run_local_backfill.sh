@@ -10,7 +10,7 @@ set -uo pipefail
 
 GROUP=${1:?Gruppenname angeben, z.B.: bash run_local_backfill.sh global_02}
 FROM=${2:-2013-01-01}
-TO=${3:-2026-03-01}
+TO=${3:-$(python3 -c "from datetime import date; t=date.today(); m=t.month-1 or 12; y=t.year if t.month>1 else t.year-1; print(date(y,m,1))")}
 DB_URL="postgresql://fide:nimzo194.@localhost:5434/fidedb"
 LOG="/tmp/backfill_${GROUP}_local.log"
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"

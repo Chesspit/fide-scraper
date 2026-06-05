@@ -11,7 +11,7 @@ set -uo pipefail
 
 START_GROUP="${1:-female_2000_01}"
 FROM="2010-01-01"
-TO="2026-04-01"
+TO=$(python3 -c "from datetime import date; t=date.today(); m=t.month-1 or 12; y=t.year if t.month>1 else t.year-1; print(date(y,m,1))")
 DB_URL="postgresql://fide:nimzo194.@localhost:5434/fidedb"
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CHAIN_LOG="/tmp/female_chain.log"

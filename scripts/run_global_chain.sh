@@ -11,7 +11,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
 FROM_DATE="2012-08-01"
-TO_DATE="2026-04-01"
+TO_DATE=$(python3 -c "from datetime import date; t=date.today(); m=t.month-1 or 12; y=t.year if t.month>1 else t.year-1; print(date(y,m,1))")
 
 GROUPS=(global_26b global_27a global_27b global_28a global_28b)
 

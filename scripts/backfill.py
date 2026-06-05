@@ -45,6 +45,8 @@ def main():
     parser.add_argument("--group", nargs="+", metavar="GROUP",
                         help="Only scrape specific groups: female_top male_control "
                              "elite_2600 female_2200 swiss_2026 (space-separated)")
+    parser.add_argument("--fide-ids-file", metavar="FILE",
+                        help="Datei mit einer FIDE-ID pro Zeile (Alternative zu --fide-ids)")
     parser.add_argument("--shard", metavar="N/M",
                         help="Process only shard N of M (e.g. --shard 1/2 or --shard 2/2). "
                              "Uses round-robin split so both shards finish at the same time. "
@@ -53,6 +55,11 @@ def main():
                         help="Scrape periods newest-first (2026-03 → from_date). "
                              "Useful to get recent data first and appear less suspicious to FIDE.")
     args = parser.parse_args()
+
+    if args.fide_ids_file:
+        with open(args.fide_ids_file) as f:
+            file_ids = [int(l.strip()) for l in f if l.strip()]
+        args.fide_ids = (args.fide_ids or []) + file_ids
 
     # Parse shard argument
     shard_n, shard_m = 1, 1

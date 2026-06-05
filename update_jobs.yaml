@@ -1,0 +1,16 @@
+jobs:
+  UP-ELO2300:
+    description: "Alle gescrapten Spieler mit ELO >= 2300 (alle Föderationen)"
+    filter: "p.std_rating >= 2300"
+
+  UP-FEMALE:
+    description: "Alle gescrapten Spielerinnen (alle ELO, alle Föderationen)"
+    filter: "p.sex = 'F'"
+
+  UP-GER:
+    description: "Alle gescrapten deutschen Spieler (GER)"
+    filter: "p.federation = 'GER'"
+
+  UP-DACH:
+    description: "Alle gescrapten Schweizer und Österreicher (SUI + AUT)"
+    filter: "p.federation IN ('SUI', 'AUT')"

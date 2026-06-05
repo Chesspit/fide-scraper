@@ -11,6 +11,7 @@ COPY orchestrator/ ./orchestrator/
 COPY scraper/     ./scraper/
 COPY scripts/     ./scripts/
 COPY config.yaml  .
+COPY update_jobs.yaml .
 
 # SQLite DB and worker_state.json live in /data (mounted volume)
 ENV ORCHESTRATOR_DATA_DIR=/data

@@ -20,11 +20,10 @@ JOB=${1:?Job-Name angeben (z.B. UP-GER)}
 
 # Proxy aus Env-Vars aufbauen
 if [ -n "${PROXYJET_USERNAME:-}" ] && [ -n "${PROXYJET_PASSWORD:-}" ]; then
-    HOST="${PROXYJET_HOST:-proxy-jet.io}"
+    # Residential Proxy immer via proxy-jet.io (nicht DC-spezifische Hosts)
     PORT="${PROXYJET_PORT:-1010}"
-    export HTTP_PROXY="http://${PROXYJET_USERNAME}:${PROXYJET_PASSWORD}@${HOST}:${PORT}"
-    export HTTPS_PROXY="$HTTP_PROXY"
-    echo "$(date): Proxy aktiv: ${HOST}:${PORT} (Residential)"
+    export FIDE_PROXY="http://${PROXYJET_USERNAME}:${PROXYJET_PASSWORD}@proxy-jet.io:${PORT}"
+    echo "$(date): Proxy aktiv: proxy-jet.io:${PORT} (Residential)"
 else
     echo "$(date): WARNUNG: Keine ProxyJet-Credentials (PROXYJET_USERNAME/PROXYJET_PASSWORD) — direkte Verbindung"
 fi

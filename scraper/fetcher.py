@@ -1,4 +1,5 @@
 import logging
+import os
 import random
 import time
 
@@ -58,10 +59,13 @@ def fetch_calculations(fide_id: int, period_str: str) -> str:
         "Referer": REFERER_URL.format(fide_id=fide_id, period=period_str),
     }
 
+    proxy_url = os.getenv("FIDE_PROXY")
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+
     last_exception = None
     for attempt in range(1, max_attempts + 1):
         try:
-            resp = requests.get(url, headers=headers, timeout=timeout)
+            resp = requests.get(url, headers=headers, timeout=timeout, proxies=proxies)
 
             if resp.status_code == 429:
                 raise RateLimitedError(

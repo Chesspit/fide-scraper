@@ -65,6 +65,8 @@ def _apply_schema(conn: sqlite3.Connection) -> None:
         # DC-Thread-Affinität: NULL=residential, 'dc_de'/'dc_in'/... = nur dieser DC-Thread
         "ALTER TABLE scrape_groups ADD COLUMN thread_affinity TEXT",
         "CREATE INDEX IF NOT EXISTS idx_groups_affinity ON scrape_groups(thread_affinity, status)",
+        # Update-Batches: 1 = nur bereits gescrapte Spieler auswählen (kein Vollbackfill-Risiko bei Rating-Drift)
+        "ALTER TABLE scrape_groups ADD COLUMN update_only INTEGER NOT NULL DEFAULT 0",
     ]:
         try:
             conn.execute(stmt)

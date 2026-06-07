@@ -15,8 +15,13 @@ Verwendung:
 
 import argparse
 import sqlite3
+import sys
 from datetime import date
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from orchestrator.setup_db import DB_PATH
 
 
 def main() -> int:
@@ -27,7 +32,7 @@ def main() -> int:
                         help="Nur anzeigen, nicht ändern")
     args = parser.parse_args()
 
-    db_path = Path(__file__).resolve().parent / "scraper.db"
+    db_path = DB_PATH
     if not db_path.exists():
         print(f"FEHLER: SQLite-DB nicht gefunden: {db_path}")
         return 1

@@ -35,6 +35,7 @@ class Group:
     device: str | None = None
     profile: str | None = None          # None = fuzzy selection
     thread_affinity: str | None = None  # None = residential, 'dc_de'/'dc_in'/... = DC-Thread
+    update_only: int = 0                # 1 = nur bereits gescrapte Spieler (Update-Batch)
 
 
 class QueueManager:
@@ -118,7 +119,7 @@ class QueueManager:
         candidates = conn.execute(
             f"""
             SELECT id, federation, continent, year, elo_min, elo_max,
-                   player_count, priority, device, profile, thread_affinity
+                   player_count, priority, device, profile, thread_affinity, update_only
             FROM scrape_groups
             WHERE status = 'pending' AND priority <= ?
               {affinity_filter} {device_filter}

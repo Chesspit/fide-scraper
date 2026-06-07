@@ -208,15 +208,28 @@ def _read_dc_thread_enabled(dc_id: str) -> bool:
 # Player lookup
 # ---------------------------------------------------------------------------
 
-def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int) -> list[int]:
-    """Return active player fide_ids matching the federation and ELO range."""
+def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
+                 update_only: bool = False) -> list[int]:
+    """Return active player fide_ids matching the federation and ELO range.
+
+    update_only=True restricts to players already scraped at least once
+    (status='ok' in scrape_periods) — used for monthly Update-Batches, where
+    rating drift must never pull in a never-scraped player (would trigger an
+    unwanted full historical backfill instead of a quick monthly refresh).
+    """
+    scraped_filter = (
+        "AND EXISTS (SELECT 1 FROM scrape_periods sp "
+        "WHERE sp.fide_id = players.fide_id AND sp.status = 'ok')"
+        if update_only else ""
+    )
     with pg_conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             SELECT fide_id FROM players
             WHERE active = TRUE
               AND federation = %s
               AND std_rating BETWEEN %s AND %s
+              {scraped_filter}
             ORDER BY fide_id
             """,
             (federation, elo_min, elo_max),
@@ -323,7 +336,8 @@ def scrape_group(
     Returns (records_found, pg_conn, mb_group).
     Raises BlockedError if IP gets hard-blocked (caller should abort worker).
     """
-    fide_ids = get_fide_ids(pg_conn, group.federation, group.elo_min, group.elo_max)
+    fide_ids = get_fide_ids(pg_conn, group.federation, group.elo_min, group.elo_max,
+                            update_only=bool(group.update_only))
     if not fide_ids:
         logger.info("Group %s/%d/%d-%d: no active players found — skipping",
                     group.federation, group.year, group.elo_min, group.elo_max)

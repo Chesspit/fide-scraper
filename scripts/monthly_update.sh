@@ -88,7 +88,7 @@ PYEOF
 
 # --- Schritt 4: UP-Jobs ausführen ---
 echo ""
-echo "$(date): === Schritt 4/4: Update-Jobs starten ==="
+echo "$(date): === Schritt 4/5: Update-Jobs starten ==="
 JOBS=(UP-ELO2300 UP-FEMALE UP-GER UP-DACH)
 
 for JOB in "${JOBS[@]}"; do
@@ -97,10 +97,19 @@ for JOB in "${JOBS[@]}"; do
     bash "$SCRIPT_DIR/scripts/run_update_job.sh" "$JOB" "$FROM_DATE" "$NEW_PERIOD"
 done
 
+# --- Schritt 5: VPS-Orchestrator — done-Gruppen des laufenden Jahres requeuen ---
+# Betrifft auch die dc_update-Batches (Rest-Population): PostgreSQL scrape_periods
+# sorgt für idempotentes Überspringen bereits gescrapter Perioden — nur der neue
+# Monat wird tatsächlich nachgeholt.
+echo ""
+echo "$(date): === Schritt 5/5: VPS-Orchestrator — Update-Batches requeuen ==="
+if ! ssh pit@187.124.181.116 \
+    "cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_current_year.py"; then
+    echo "$(date): WARNUNG: reset_current_year.py auf VPS fehlgeschlagen — manuell nachholen:"
+    echo "  ssh pit@187.124.181.116 \"cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_current_year.py\""
+fi
+
 echo ""
 echo "$(date): ========================================"
 echo "$(date): Monatliches Update $NEW_PERIOD abgeschlossen ✓"
 echo "$(date): ========================================"
-echo ""
-echo "VPS-Orchestrator (falls aktiv):"
-echo "  ssh pit@187.124.181.116 \"cd /opt/fide-scraper && python3 orchestrator/reset_current_year.py\""

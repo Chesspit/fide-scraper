@@ -179,6 +179,39 @@ concurrency:
     slot: 106
     timezone: Asia/Dubai
     username_env: PROXYJET_DC_AE_USERNAME
+  - active_hours:
+    - 7
+    - 23
+    enabled: true
+    federations:
+    - AUT
+    - SUI
+    - GER
+    host: eu.proxy-jet.io
+    id: dc_dach
+    label: DACH
+    max_hours: null
+    password_env: PROXYJET_DC_DACH_PASSWORD
+    port: 1010
+    profile: semi_conservative
+    slot: 107
+    timezone: Europe/Berlin
+    username_env: PROXYJET_DC_DACH_USERNAME
+  - active_hours:
+    - 7
+    - 23
+    enabled: true
+    federations: []
+    host: eu.proxy-jet.io
+    id: dc_update
+    label: Update
+    max_hours: null
+    password_env: PROXYJET_DC_UPDATE_PASSWORD
+    port: 1010
+    profile: semi_conservative
+    slot: 108
+    timezone: Europe/Berlin
+    username_env: PROXYJET_DC_UPDATE_USERNAME
   max_workers: 2
   worker_profiles:
   - semi_aggressive

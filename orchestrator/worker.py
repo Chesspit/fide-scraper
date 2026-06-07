@@ -672,7 +672,7 @@ def run(
     for t in dc_thread_cfgs_raw:
         t_copy = dict(t)
         t_copy["dc_mode"]      = dc_mode
-        t_copy["active_hours"] = dc_active_hours
+        t_copy["active_hours"] = t.get("active_hours", dc_active_hours)
         dc_thread_cfgs.append(t_copy)
 
     # Backward-Kompatibilität: altes datacenter-Block (single DC)

@@ -1010,7 +1010,12 @@ tab_heatmap = dbc.Container(fluid=True, children=[
                 html.Span("🔄 Residential Threads", className="fw-semibold me-3 small"),
                 html.Span("(Profil wirksam nach Neustart)", className="text-muted small"),
             ], className="mb-2"),
-            html.Div(id="residential-threads-panel", className="d-flex flex-wrap gap-2"),
+            html.Div(id="residential-threads-panel", style={
+                "display": "grid",
+                "gridTemplateColumns": "repeat(2, 1fr)",
+                "gap": "8px",
+                "maxWidth": "370px",
+            }),
         ], className="py-2 px-3"),
         className="mb-3",
         style={"borderLeft": "3px solid #1976D2"},
@@ -1024,7 +1029,7 @@ tab_heatmap = dbc.Container(fluid=True, children=[
                       className="text-muted small ms-2"),
             html.Div(id="dc-threads-panel", style={
                 "display": "grid",
-                "gridTemplateColumns": "repeat(8, 1fr)",
+                "gridTemplateColumns": "repeat(5, 1fr)",
                 "gap": "8px",
                 "marginTop": "10px",
             }),

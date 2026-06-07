@@ -443,9 +443,9 @@ orchestrator/
 ├── Dockerfile, docker-compose.yml, requirements.txt
 ```
 
-### 7.2 Thread-Architektur (ab 2026-05-25)
+### 7.2 Thread-Architektur (ab 2026-05-25, dc_dach + dc_update ab 2026-06-07)
 
-**Bis zu 10 parallele Threads** — 2 Residential + 8 Datacenter:
+**Bis zu 12 parallele Threads** — 2 Residential + 10 Datacenter:
 
 ```yaml
 concurrency:
@@ -463,7 +463,24 @@ concurrency:
     - {id: dc_es, slot: 104, host: es.proxy-jet.io, timezone: Europe/Madrid,     federations: [ESP,ITA,POR,AND,GIB]}
     - {id: dc_mx, slot: 105, host: mx.proxy-jet.io, timezone: America/Mexico_City, federations: [FRA,BEL,NED,LUX]}
     - {id: dc_ae, slot: 106, host: ae.proxy-jet.io, timezone: Asia/Dubai,        federations: [SRB,CRO,BIH,MKD,MNE,SLO,KOS,ALB,GRE,TUR]}
+    - {id: dc_dach,   slot: 107, host: eu.proxy-jet.io, timezone: Europe/Berlin, federations: [GER,SUI,AUT]}                  # Vollbackfill
+    - {id: dc_update, slot: 108, host: eu.proxy-jet.io, timezone: Europe/Berlin, federations: []}                            # monatliches Update Rest-Population
 ```
+
+**dc_update — monatliches Update der "Rest"-Population (seit 2026-06-07):**
+Die 4 Update-Jobs (`update_jobs.yaml`: `UP-ELO2300`/`UP-FEMALE`/`UP-GER`/`UP-DACH`) decken nur ~30.000
+der 125.500 bereits gescrapten Spieler monatlich ab. Die übrigen ~95.585 Spieler ("Rest" — gescrapt,
+aktiv, außerhalb der 4 Prioritätsfilter) laufen über `dc_update`:
+- Neue `scrape_groups.update_only`-Spalte: wenn `1`, filtert `get_fide_ids()` zusätzlich auf
+  `EXISTS(scrape_periods WHERE status='ok')` — Update-Batches selektieren garantiert nur bereits
+  gescrapte Spieler, kein Risiko eines Vollbackfills durch Rating-Drift in dynamischen ELO-Bändern.
+  Neue Spieler landen automatisch im passenden Föderations-Batch, sobald sie erstmals komplett
+  gescraped wurden — kein Re-Balancing nötig.
+- `orchestrator/generate_update_batches.py`: einmaliger Initial-Lauf, erzeugt 77 Batches
+  (1 pro Föderation, ELO 0–2299; ESP/IND als einzige >6.000-Föderationen in je 3 ELO-Unterbänder
+  à 3.000–6.000 Spieler gesplittet), alle mit `thread_affinity='dc_update'`, `update_only=1`.
+- `monthly_update.sh` requeued die Batches automatisch über `reset_current_year.py` (per SSH im
+  VPS-Dashboard-Container, Schritt 5/5).
 
 **thread_affinity:** Jede SQLite-Gruppe ist einem DC-Thread zugewiesen (`dc_de`, `dc_in`, ...) oder
 residential (`NULL`). DC-Threads claimen nur ihre eigenen Gruppen; Residential-Threads claimen

@@ -80,7 +80,7 @@ bash scripts/run_female_chain.sh female_2000_02
 | | |
 |---|---|
 | Dashboard | **https://scelo.chesspit.net** (BasicAuth) |
-| Modus | **bis zu 10 Threads (2 Residential + 8 DC); aktuell 8 aktiv (DC-DE + DC-UK disabled)** |
+| Modus | **bis zu 12 Threads (2 Residential + 10 DC); aktuell 9 DC aktiv (DC-DE + DC-UK disabled)** |
 | DC-Modus | Individuelle Von/Bis-Zeit pro Karte (Ortszeit, Timezone-basiert) |
 
 ### Alle Threads
@@ -97,6 +97,8 @@ bash scripts/run_female_chain.sh female_2000_02
 | DC-ES (Slot 104) | Datacenter | semi_conservative | ESP, ITA, POR, AND, GIB | Europe/Madrid | ✅ aktiv |
 | DC-MX (Slot 105) | Datacenter | semi_conservative | FRA, BEL, NED, LUX | America/Mexico_City | ✅ aktiv |
 | DC-AE (Slot 106) | Datacenter | semi_conservative | SRB, CRO, BIH, MKD, MNE, SLO, KOS, ALB, GRE, TUR | Asia/Dubai | ✅ aktiv |
+| DC-DACH (Slot 107) | Datacenter | semi_conservative | GER, SUI, AUT (Vollbackfill) | Europe/Berlin | ✅ aktiv |
+| DC-UPDATE (Slot 108) | Datacenter | semi_conservative | alle (Update-Batches, `update_only=1`) | Europe/Berlin | ✅ aktiv |
 
 ### Residential Queue-Strategie (T0/T1)
 
@@ -150,6 +152,23 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 | Spieler-Steckbrief | Aktiv | `/player-profile` | Profil + Rating-History + Spielstatistiken |
 | Partien-Detail | Test | `/games` | Alle Partien eines Spielers, filterbar |
 | GM/IM Entwicklung | Test | `/titles` | Zeitreihe der Titelträger |
+
+---
+
+## Änderungen Session 2026-06-07
+
+### VPS Orchestrator — dc_update: monatliches Update für die "Rest"-Population
+| Was | Details |
+|-----|---------|
+| **Problem** | Die 4 Update-Jobs `UP-ELO2300`/`UP-FEMALE`/`UP-GER`/`UP-DACH` (`update_jobs.yaml`) decken nur ~30.000 der 125.500 bereits gescrapten Spieler monatlich ab. Die übrigen **~95.585 "Rest"-Spieler** (alle gescrapten, aktiven Spieler außerhalb ELO≥2300/Female/GER/SUI/AUT) hatten keinen automatischen Refresh-Mechanismus |
+| **`update_only`-Spalte** ✅ | Neue `scrape_groups.update_only`-Migration (`setup_db.py`); wenn `1`, filtert `get_fide_ids()` (`worker.py`) zusätzlich auf `EXISTS(scrape_periods WHERE status='ok')` — Update-Batches wählen garantiert nur bereits gescrapte Spieler aus, kein Risiko eines Vollbackfills durch Rating-Drift in dynamischen ELO-Bändern |
+| **Auto-Einsortierung neuer Spieler** ✅ | Sobald ein Spieler erstmals vollständig gescraped wurde (Eintrag in `scrape_periods`), erscheint er automatisch im nächsten Update-Zyklus seines Föderations-Batches — ohne Re-Balancing |
+| **`generate_update_batches.py`** ✅ | Neues Skript: 77 Batches generiert (1 pro Föderation, ELO 0–2299; große Föderationen ESP/IND in je 3 ELO-Unterbänder à 3.000–6.000 Spieler gesplittet); alle mit `thread_affinity='dc_update'`, `update_only=1`, Jahr 2026 — Initial-Lauf auf VPS ausgeführt: 95.585 Spieler erfasst |
+| **`dc_update`-Thread aktiviert** ✅ | Slot 108, "Update", `enabled: true` in `profiles.yaml`; erster Lauf ITA/2026/0–2299 bestätigt korrekt 5.182 von 5.658 Spielern (nur bereits gescrapte) × 1 Periode |
+| **`monthly_update.sh`** ✅ | Neuer Schritt 5/5: `reset_current_year.py` wird automatisch per SSH im VPS-Dashboard-Container ausgeführt (vorher nur als manueller Hinweis) — requeued die `dc_update`-Batches monatlich |
+| **Bug-Fix `reset_current_year.py`** ✅ | Skript ignorierte `ORCHESTRATOR_DATA_DIR` und suchte die DB unter `/app/orchestrator/scraper.db` statt `/data/scraper.db` — hätte im Container nie funktioniert; jetzt nutzt es `setup_db.DB_PATH` |
+| **Dashboard: Bericht Scraper** ✅ | DC-UPDATE-Spalte jetzt dauerhaft sichtbar (analog zu DC-DACH), auch ohne bisherige Run-Daten |
+| Commits | `e59abe4` (dc_update Update-Batches + Migration + Worker-Filter), `757a0ff` (Bericht Scraper DC-UPDATE-Spalte) |
 
 ---
 

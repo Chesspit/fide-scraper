@@ -2489,7 +2489,7 @@ def refresh_bericht(_, active_tab):
 
     present_labels = {d["slot_label"] for d in data}
     res_labels = _ordered_res                                # immer T1–T4 anzeigen
-    dc_labels  = [l for l in _ordered_dc  if l in present_labels]
+    dc_labels  = [l for l in _ordered_dc  if l in present_labels or l == "DC-DACH"]
 
     all_data_labels = res_labels + dc_labels
 

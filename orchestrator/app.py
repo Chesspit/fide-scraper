@@ -457,7 +457,7 @@ def query_queue(affinity_filter: str | None = None) -> list[dict]:
 
     if affinity_filter == "dc":
         where_extra = "AND thread_affinity IS NOT NULL"
-    elif affinity_filter in ("dc_de", "dc_in", "dc_uk", "dc_us", "dc_hk", "dc_es", "dc_mx", "dc_ae"):
+    elif affinity_filter in ("dc_de", "dc_in", "dc_uk", "dc_us", "dc_hk", "dc_es", "dc_mx", "dc_ae", "dc_dach", "dc_update"):
         where_extra = f"AND thread_affinity = '{affinity_filter}'"
     elif affinity_filter == "residential":
         where_extra = "AND thread_affinity IS NULL AND (device IS NULL OR device = '')"
@@ -488,12 +488,13 @@ def query_queue(affinity_filter: str | None = None) -> list[dict]:
     # Thread-Anzeige: live Slot ODER konfigurierte Affinität → eine Spalte
     _DC_SLOT_LABELS = {
         99: "DC-DE", 100: "DC-IN", 101: "DC-UK", 102: "DC-US", 103: "DC-HK",
-        104: "DC-ES", 105: "DC-MX", 106: "DC-AE",
+        104: "DC-ES", 105: "DC-MX", 106: "DC-AE", 107: "DC-DACH", 108: "DC-UPDATE",
     }
     _AFFINITY_LABELS = {
         "dc_de": "DC-DE", "dc_in": "DC-IN", "dc_uk": "DC-UK",
         "dc_us": "DC-US", "dc_hk": "DC-HK",
         "dc_es": "DC-ES", "dc_mx": "DC-MX", "dc_ae": "DC-AE",
+        "dc_dach": "DC-DACH", "dc_update": "DC-UPDATE",
     }
     threads = read_worker_state().get("threads", [])
     thread_map = {}  # group_label → "▶ T2" / "▶ DC-IN"
@@ -577,6 +578,8 @@ def query_completed() -> list[dict]:
                            WHEN 104 THEN 'DC-ES'
                            WHEN 105 THEN 'DC-MX'
                            WHEN 106 THEN 'DC-AE'
+                           WHEN 107 THEN 'DC-DACH'
+                           WHEN 108 THEN 'DC-UPDATE'
                            ELSE 'DC'
                        END
                    WHEN r.thread_slot IS NOT NULL THEN 'T' || (r.thread_slot + 1)
@@ -1084,6 +1087,8 @@ AFFINITY_OPTIONS = [
     {"label": "DC-ES",           "value": "dc_es"},
     {"label": "DC-MX",           "value": "dc_mx"},
     {"label": "DC-AE",           "value": "dc_ae"},
+    {"label": "DC-DACH",         "value": "dc_dach"},
+    {"label": "DC-UPDATE",       "value": "dc_update"},
 ]
 
 tab_queue = dbc.Container(fluid=True, children=[
@@ -1131,6 +1136,8 @@ tab_queue = dbc.Container(fluid=True, children=[
                     {"label": "DC-ES",  "value": "dc_es"},
                     {"label": "DC-MX",  "value": "dc_mx"},
                     {"label": "DC-AE",  "value": "dc_ae"},
+                    {"label": "DC-DACH",   "value": "dc_dach"},
+                    {"label": "DC-UPDATE", "value": "dc_update"},
                 ],
                 value="dc",
                 clearable=False,
@@ -1261,9 +1268,9 @@ _REPORT_SLOT_LABELS = {
     104: "DC-ES",
     105: "DC-MX",
     106: "DC-AE",
-    107: "DC-??",   # Platzhalter für 3 weitere DC-Scrapers
-    108: "DC-??2",
-    109: "DC-??3",
+    107: "DC-DACH",
+    108: "DC-UPDATE",
+    109: "DC-??3",   # Platzhalter für weitere DC-Scraper
 }
 _RESIDENTIAL_SLOTS = {0, 1, 2, 3}   # alle niedrigen Slots = Residential
 
@@ -1291,6 +1298,8 @@ _REPORT_COLORS = {
     "DC-ES": "#C62828",
     "DC-MX": "#00838F",
     "DC-AE": "#4E342E",
+    "DC-DACH":   "#9E9D24",
+    "DC-UPDATE": "#5D4037",
 }
 
 tab_bericht = dbc.Container(fluid=True, children=[
@@ -1461,7 +1470,8 @@ def _build_worker_status_widget(ws: dict) -> html.Div:
     import time as _time
 
     _SLOT_BADGE = ["primary", "success", "warning", "info"]
-    _DC_SLOT_LABELS = {99: "DC-DE", 100: "DC-IN", 101: "DC-UK", 102: "DC-US", 103: "DC-HK"}
+    _DC_SLOT_LABELS = {99: "DC-DE", 100: "DC-IN", 101: "DC-UK", 102: "DC-US", 103: "DC-HK",
+                       104: "DC-ES", 105: "DC-MX", 106: "DC-AE", 107: "DC-DACH", 108: "DC-UPDATE"}
     _PROFILE_ABBR = {
         "semi_aggressive":  "semi-aggr.",
         "aggressive":       "aggr.",
@@ -2096,7 +2106,8 @@ def refresh_queue(_, active_tab, category_filter, dc_sub_filter):
         f = dc_sub_filter  # z.B. 'dc_in' → filtert WHERE thread_affinity='dc_in'
         cat_label = {"dc_de": "DC-DE", "dc_in": "DC-IN", "dc_uk": "DC-UK",
                      "dc_us": "DC-US", "dc_hk": "DC-HK",
-                     "dc_es": "DC-ES", "dc_mx": "DC-MX", "dc_ae": "DC-AE"}.get(f, f)
+                     "dc_es": "DC-ES", "dc_mx": "DC-MX", "dc_ae": "DC-AE",
+                     "dc_dach": "DC-DACH", "dc_update": "DC-UPDATE"}.get(f, f)
     elif category_filter == "all" or not category_filter:
         f = None
         cat_label = "alle"
@@ -2474,7 +2485,7 @@ def refresh_bericht(_, active_tab):
 
     # Residential: alle Slots in _RESIDENTIAL_SLOTS, Canonical-Reihenfolge
     _ordered_res = ["T1", "T2", "T3", "T4"]
-    _ordered_dc  = ["DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK", "DC-ES", "DC-MX", "DC-AE"]
+    _ordered_dc  = ["DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK", "DC-ES", "DC-MX", "DC-AE", "DC-DACH", "DC-UPDATE"]
 
     present_labels = {d["slot_label"] for d in data}
     res_labels = _ordered_res                                # immer T1–T4 anzeigen

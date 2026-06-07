@@ -1003,40 +1003,48 @@ tab_heatmap = dbc.Container(fluid=True, children=[
     # Thread-Panels: Residential (oben kompakt) + Datacenter (unten, 2×4-Raster)
     dcc.Interval(id="interval-dc-status", interval=30_000, n_intervals=0),
 
-    # Residential Threads (kompakte Zeile)
-    dbc.Card(
-        dbc.CardBody([
-            html.Div([
-                html.Span("🔄 Residential Threads", className="fw-semibold me-3 small"),
-                html.Span("(Profil wirksam nach Neustart)", className="text-muted small"),
-            ], className="mb-2"),
-            html.Div(id="residential-threads-panel", style={
-                "display": "grid",
-                "gridTemplateColumns": "repeat(2, 1fr)",
-                "gap": "8px",
-                "maxWidth": "370px",
-            }),
-        ], className="py-2 px-3"),
-        className="mb-3",
-        style={"borderLeft": "3px solid #1976D2"},
-    ),
+    # Residential Threads + Datacenter Threads nebeneinander
+    dbc.Row([
+        # Residential Threads (kompakte 2×2-Box)
+        dbc.Col(
+            dbc.Card(
+                dbc.CardBody([
+                    html.Div([
+                        html.Span("🔄 Residential Threads", className="fw-semibold me-3 small"),
+                        html.Span("(Profil wirksam nach Neustart)", className="text-muted small"),
+                    ], className="mb-2"),
+                    html.Div(id="residential-threads-panel", style={
+                        "display": "grid",
+                        "gridTemplateColumns": "repeat(2, 1fr)",
+                        "gap": "8px",
+                        "maxWidth": "370px",
+                    }),
+                ], className="py-2 px-3"),
+                className="h-100",
+                style={"borderLeft": "3px solid #1976D2"},
+            ),
+            width="auto",
+        ),
 
-    # Datacenter Threads (volle Breite, 2×4-Raster)
-    dbc.Card(
-        dbc.CardBody([
-            html.Span("🖥 Datacenter Threads", className="fw-semibold small"),
-            html.Span(" · Zeiten in Ortszeit (timezone) · wirksam nach Neustart",
-                      className="text-muted small ms-2"),
-            html.Div(id="dc-threads-panel", style={
-                "display": "grid",
-                "gridTemplateColumns": "repeat(5, 1fr)",
-                "gap": "8px",
-                "marginTop": "10px",
-            }),
-        ], className="py-2 px-3"),
-        className="mb-3",
-        style={"borderLeft": "3px solid #9C27B0"},
-    ),
+        # Datacenter Threads (5×2-Raster)
+        dbc.Col(
+            dbc.Card(
+                dbc.CardBody([
+                    html.Span("🖥 Datacenter Threads", className="fw-semibold small"),
+                    html.Span(" · Zeiten in Ortszeit (timezone) · wirksam nach Neustart",
+                              className="text-muted small ms-2"),
+                    html.Div(id="dc-threads-panel", style={
+                        "display": "grid",
+                        "gridTemplateColumns": "repeat(5, 1fr)",
+                        "gap": "8px",
+                        "marginTop": "10px",
+                    }),
+                ], className="py-2 px-3"),
+                className="h-100",
+                style={"borderLeft": "3px solid #9C27B0"},
+            ),
+        ),
+    ], className="mb-3 g-2"),
 
     # Feedback-Meldung nach Button-Klick
     html.Div(id="worker-cmd-out", className="mt-2"),

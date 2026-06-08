@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-06-05 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-06-08 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -57,21 +57,27 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 |---------|--------:|-------------:|-----------|--------|
 | female_2100_01 – female_2100_06 | 6 | 395 | 2104–2199 | ✅ complete |
 | female_2000_01 – female_2000_09 | 9 | 626 | 2004–2103 | ✅ complete (seit 2026-06-03) |
-| female_1900_01 – female_1900_04 | 4 | 269 | 1967–2003 | ✅ complete |
-| female_1900_05 – female_1900_07 | 3 | 212 | 1940–1966 | 🔄 Chain läuft (Mac Mini, 05 aktiv) |
-| female_1900_08 – female_1900_16 | 9 | 656 | 1903–1939 | ⏳ pending |
-| female_1800_01 – female_1800_24 | 24 | 1.769 | 1800–1902 | ⏳ pending |
+| female_1900_01 – female_1900_16 | 16 | ~925 | 1903–2003 | ✅ complete (seit 2026-06-08, 11:42 Uhr) |
+| female_1800_01 – female_1800_02 | 2 | ~150 | 1800–1902 | ✅ complete |
+| female_1800_03 | 1 | ~85 | 1800–1902 | 🔄 läuft (Mac Mini, ETA ~22:45 Uhr 2026-06-08) |
+| female_1800_04 – female_1800_24 | 21 | ~1.534 | 1800–1902 | ⏳ pending |
 | **Gesamt** | **55** | **3.952** | **1800–2199** | |
 
 Laufzeitabschätzung Mac Mini (~14 Perioden/min): **~2–3 Tage gesamt**
 
-Chain läuft automatisch durch alle 49 Gruppen:
+**Aktuelle Chain (gestartet 2026-06-08, 08:51 Uhr):** `female_1900_16 → female_1800_01 → 02 → 03`
 ```bash
 # Status prüfen:
-tail -20 /tmp/female_chain.log
-# Bei Abbruch neu starten (ab erster pending-Gruppe):
-bash scripts/run_female_chain.sh female_2000_02
+tail -5 /tmp/backfill_female_1800_03_local.log
+tail -10 /tmp/chain_female_1900_16_1800_03.log
 ```
+
+**Vorbereitete Folgekette** (morgen früh starten, NACH Abschluss der laufenden Kette):
+`female_1800_04 → 05 → 06 → 07` via `scripts/chain_female_1800_04_07.sh`
+```bash
+nohup bash scripts/chain_female_1800_04_07.sh > /tmp/chain_female_1800_04_07.log 2>&1 & disown
+```
+Danach bleiben noch female_1800_08–24 (17 Gruppen) offen.
 
 ---
 
@@ -152,6 +158,32 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 | Spieler-Steckbrief | Aktiv | `/player-profile` | Profil + Rating-History + Spielstatistiken |
 | Partien-Detail | Test | `/games` | Alle Partien eines Spielers, filterbar |
 | GM/IM Entwicklung | Test | `/titles` | Zeitreihe der Titelträger |
+
+---
+
+## Änderungen Session 2026-06-08
+
+### Mac Mini — female_1900 abgeschlossen, female_1800 läuft
+| Was | Details |
+|-----|---------|
+| **female_1900_01 – _16** ✅ | Komplette Reihe (16 Gruppen, ~925 Spielerinnen) abgeschlossen — _16 zuletzt um 11:42 Uhr (5191/5191, 0 Fehler) |
+| **female_1800_01 – _02** ✅ | Abgeschlossen (5083/5084 bzw. 5824/5824 Perioden) |
+| **female_1800_03** 🔄 | Läuft (Stand ~21:42 Uhr: 3665/5192, ETA ~22:45 Uhr) — letzte Gruppe der aktuellen Chain |
+| **`scripts/chain_female_1900_16_1800_03.sh`** ✅ | Chain-Skript für female_1900_16 + female_1800_01–03, lief automatisch durch |
+| **`scripts/chain_female_1800_04_07.sh`** ✅ | Folgekette vorbereitet (female_1800_04→05→06→07), morgen früh manuell starten |
+
+### Orchestrator-Dashboard — Übersicht-Heatmap-Fix
+| Was | Details |
+|-----|---------|
+| **Problem** | "Übersicht gesamt" zeigte ELO-Buckets ab 0 — `dc_update`-Batches tragen `elo_min=0` als Drift-Puffer (`REST_ELO_FLOOR` in `generate_update_batches.py`), wodurch leere Buckets weit unterhalb der realen Population (≥1400) sichtbar waren |
+| **Fix** ✅ | Neue Konstante `OVERVIEW_ELO_FLOOR = 1400`; `query_overview()` klemmt `lo_bucket` jetzt auf `max(elo_min-Bucket, 1400)` — Worker-Auswahllogik (`get_fide_ids`, Drift-Schutz) bleibt unverändert |
+| Deploy | Build + `up -d --no-deps dashboard` auf VPS ausgeführt |
+| Commit | `6f53e4d` |
+
+### Dokumentation
+| Was | Details |
+|-----|---------|
+| **`docs/setup_raspi.pdf`** ✅ | PDF-Export von `docs/setup_raspi.md` erstellt (Pandoc → HTML → Chrome-Headless-Druck) |
 
 ---
 

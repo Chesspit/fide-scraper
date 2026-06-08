@@ -60,6 +60,11 @@ OVERVIEW_FEDERATIONS = ["GER", "SUI", "AUT", "·", "DC-DE", "DC-IN", "DC-UK", "D
 # Föderationen die direkt als eigene Spalte erscheinen (kein DC-Aggregat)
 _OV_DIRECT_FEDS = {"GER", "SUI", "AUT"}
 
+# Realer unterer ELO-Rand aller Scraping-Gruppen (siehe groups.elo_min). dc_update-Batches
+# tragen elo_min=0 als Drift-Puffer (REST_ELO_FLOOR in generate_update_batches.py) — ohne
+# diese Klammerung würde die Übersicht leere Buckets weit unterhalb der realen Population zeigen.
+OVERVIEW_ELO_FLOOR = 1400
+
 pm = ProfileManager()
 
 
@@ -364,7 +369,7 @@ def query_overview() -> list[dict]:
         if target is None:
             continue
 
-        lo_bucket = (elo_min // 50) * 50
+        lo_bucket = max((elo_min // 50) * 50, OVERVIEW_ELO_FLOOR)
         hi_bucket = (elo_max // 50) * 50
         for bucket in range(lo_bucket, hi_bucket + 50, 50):
             if bucket >= 2300:          # ≥ 2300 = Mac Mini → nicht in Übersicht

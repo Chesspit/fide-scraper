@@ -5,13 +5,14 @@ without restarting the worker — just call set_active() and the next
 get_active() call returns the updated profile.
 """
 
+import os
 import random
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-PROFILES_PATH = Path(__file__).resolve().parent / "profiles.yaml"
+PROFILES_PATH = Path(os.getenv("ORCHESTRATOR_PROFILES", str(Path(__file__).resolve().parent / "profiles.yaml")))
 
 
 class ProfileManager:

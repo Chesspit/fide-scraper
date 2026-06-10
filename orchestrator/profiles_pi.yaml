@@ -1,0 +1,58 @@
+active_profile: normal
+concurrency:
+  datacenter_threads: []
+  max_workers: 1
+  worker_profiles:
+  - normal
+  worker_slots:
+  - enabled: true
+    max_hours: null
+    profile: normal
+    slot: 1
+fuzzy_weights:
+  aggressive: 0
+  conservative: 0
+  normal: 100
+  semi_aggressive: 0
+  semi_conservative: 0
+profiles:
+  aggressive:
+    base_wait_seconds: 1.0
+    cooldown_on_429: 30
+    jitter: 0.3
+    max_retries: 2
+    min_wait_seconds: 0.7
+    timeout_seconds: 10
+    use_proxy: false
+  conservative:
+    base_wait_seconds: 8.0
+    cooldown_on_429: 120
+    jitter: 0.5
+    max_retries: 5
+    min_wait_seconds: 4.0
+    timeout_seconds: 30
+    use_proxy: false
+  normal:
+    base_wait_seconds: 3.0
+    cooldown_on_429: 60
+    jitter: 0.4
+    max_retries: 3
+    min_wait_seconds: 1.5
+    timeout_seconds: 20
+    use_proxy: false
+  semi_aggressive:
+    base_wait_seconds: 2.0
+    cooldown_on_429: 45
+    jitter: 0.35
+    max_retries: 2
+    min_wait_seconds: 1.1
+    timeout_seconds: 15
+    use_proxy: false
+  semi_conservative:
+    base_wait_seconds: 5.5
+    cooldown_on_429: 90
+    jitter: 0.45
+    max_retries: 4
+    min_wait_seconds: 2.7
+    timeout_seconds: 25
+    use_proxy: false

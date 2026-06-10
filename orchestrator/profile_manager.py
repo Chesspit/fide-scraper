@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
 PROFILES_PATH = Path(os.getenv("ORCHESTRATOR_PROFILES", str(Path(__file__).resolve().parent / "profiles.yaml")))
 

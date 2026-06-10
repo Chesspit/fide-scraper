@@ -56,7 +56,17 @@ ENVEOF
     sed -i "s|/HOME_PLACEHOLDER|$HOME|g" "$ENV_FILE"
     echo ".env angelegt: $ENV_FILE"
 else
-    echo ".env bereits vorhanden — nicht überschrieben."
+    echo ".env bereits vorhanden — prüfe fehlende Einträge."
+    if ! grep -q "ORCHESTRATOR_DATA_DIR" "$ENV_FILE"; then
+        echo "ORCHESTRATOR_DATA_DIR=$HOME/fide-scraper/orchestrator/pi_data" >> "$ENV_FILE"
+        echo "ORCHESTRATOR_PROFILES=$HOME/fide-scraper/orchestrator/profiles_pi.yaml" >> "$ENV_FILE"
+        warn "ORCHESTRATOR_DATA_DIR + ORCHESTRATOR_PROFILES ergänzt"
+    fi
+    if ! grep -q "WORKER_DEVICE=raspi" "$ENV_FILE"; then
+        sed -i 's/^WORKER_DEVICE=.*/WORKER_DEVICE=raspi/' "$ENV_FILE" 2>/dev/null || \
+            echo "WORKER_DEVICE=raspi" >> "$ENV_FILE"
+        warn "WORKER_DEVICE=raspi gesetzt"
+    fi
 fi
 
 # ── 6. Tunnel starten (im Hintergrund) ──────────────────────────────────────

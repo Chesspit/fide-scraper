@@ -21,6 +21,10 @@ echo "$(date): sync_pi_to_vps.sh gestartet. PI_DB=$PI_DB"
 while true; do
     START=$(date +%s)
 
+    python3 -c "import sqlite3; sqlite3.connect('$PI_DB').execute('PRAGMA wal_checkpoint(TRUNCATE)')" 2>&1 \
+        && echo "$(date): WAL checkpoint ok" \
+        || echo "$(date): WARNUNG: WAL checkpoint fehlgeschlagen"
+
     if scp -q "$PI_DB" "$VPS:/tmp/scraper_pi.db" 2>&1; then
         echo "$(date): SCP ok"
         if ssh "$VPS" "docker exec orchestrator-worker-1 \

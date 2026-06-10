@@ -39,7 +39,7 @@ mkdir -p "$DATA_DIR"
 # ── 4. Pi-Queue vom VPS laden ────────────────────────────────────────────────
 echo "Lade scraper_pi.db vom VPS..."
 # Zuerst auf VPS generieren (falls noch nicht vorhanden)
-ssh "$VPS" "docker exec orchestrator-worker-1 python3 /opt/fide-scraper/orchestrator/export_pi_groups.py \
+ssh "$VPS" "docker exec orchestrator-worker-1 python3 /app/orchestrator/export_pi_groups.py \
     --src /data/scraper.db --out /tmp/scraper_pi.db 2>&1"
 scp "$VPS:/tmp/scraper_pi.db" "$DATA_DIR/scraper.db"
 echo "Queue geladen: $DATA_DIR/scraper.db"

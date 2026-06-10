@@ -27,7 +27,8 @@ while true; do
 
     if scp -q "$PI_DB" "$VPS:/tmp/scraper_pi.db" 2>&1; then
         echo "$(date): SCP ok"
-        if ssh "$VPS" "docker exec orchestrator-worker-1 \
+        if ssh "$VPS" "docker cp /tmp/scraper_pi.db orchestrator-worker-1:/tmp/scraper_pi.db && \
+            docker exec orchestrator-worker-1 \
             python3 /app/orchestrator/merge_pi_status.py \
             --pi-db /tmp/scraper_pi.db --vps-db /data/scraper.db" 2>&1; then
             echo "$(date): Merge ok"

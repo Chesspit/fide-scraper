@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-06-08 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-06-10 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -8,9 +8,8 @@ Stand: 2026-06-08 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **6.030.128** |
-| Spieler mit ok-Daten | **121.096** |
-| DB-Größe | **~7,8 GB** |
+| Partien gesamt | **7.241.857** |
+| DB-Größe | **~9,3 GB** |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ |
 
 ---
@@ -58,26 +57,17 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 | female_2100_01 – female_2100_06 | 6 | 395 | 2104–2199 | ✅ complete |
 | female_2000_01 – female_2000_09 | 9 | 626 | 2004–2103 | ✅ complete (seit 2026-06-03) |
 | female_1900_01 – female_1900_16 | 16 | ~925 | 1903–2003 | ✅ complete (seit 2026-06-08, 11:42 Uhr) |
-| female_1800_01 – female_1800_02 | 2 | ~150 | 1800–1902 | ✅ complete |
-| female_1800_03 | 1 | ~85 | 1800–1902 | 🔄 läuft (Mac Mini, ETA ~22:45 Uhr 2026-06-08) |
-| female_1800_04 – female_1800_24 | 21 | ~1.534 | 1800–1902 | ⏳ pending |
+| female_1800_01 – female_1800_03 | 3 | ~235 | 1800–1902 | ✅ complete (seit 2026-06-08) |
+| female_1800_04 – female_1800_07 | 4 | ~280 | 1800–1902 | 🔄 läuft (Mac Mini, Chain via `chain_female_1800_04_07.sh`) |
+| female_1800_08 – female_1800_24 | 17 | ~1.254 | 1800–1902 | ⏳ pending |
 | **Gesamt** | **55** | **3.952** | **1800–2199** | |
 
-Laufzeitabschätzung Mac Mini (~14 Perioden/min): **~2–3 Tage gesamt**
-
-**Aktuelle Chain (gestartet 2026-06-08, 08:51 Uhr):** `female_1900_16 → female_1800_01 → 02 → 03`
+**Nächste Kette nach Abschluss 04–07:**
+`female_1800_08 → 09 → 10` via `scripts/chain_female_1800_08_10.sh`
 ```bash
-# Status prüfen:
-tail -5 /tmp/backfill_female_1800_03_local.log
-tail -10 /tmp/chain_female_1900_16_1800_03.log
+nohup bash scripts/chain_female_1800_08_10.sh > /tmp/chain_female_1800_08_10.log 2>&1 & disown
 ```
-
-**Vorbereitete Folgekette** (morgen früh starten, NACH Abschluss der laufenden Kette):
-`female_1800_04 → 05 → 06 → 07` via `scripts/chain_female_1800_04_07.sh`
-```bash
-nohup bash scripts/chain_female_1800_04_07.sh > /tmp/chain_female_1800_04_07.log 2>&1 & disown
-```
-Danach bleiben noch female_1800_08–24 (17 Gruppen) offen.
+Danach bleiben noch female_1800_11–24 (14 Gruppen) offen.
 
 ---
 
@@ -105,6 +95,34 @@ Danach bleiben noch female_1800_08–24 (17 Gruppen) offen.
 | DC-AE (Slot 106) | Datacenter | semi_conservative | SRB, CRO, BIH, MKD, MNE, SLO, KOS, ALB, GRE, TUR | Asia/Dubai | ✅ aktiv |
 | DC-DACH (Slot 107) | Datacenter | semi_conservative | GER, SUI, AUT (Vollbackfill) | Europe/Berlin | ✅ aktiv |
 | DC-UPDATE (Slot 108) | Datacenter | semi_conservative | alle (Update-Batches, `update_only=1`) | Europe/Berlin | ✅ aktiv |
+
+---
+
+## Raspberry Pi (Slot 50 "Pi") — aktiv seit 2026-06-10
+
+Raspberry Pi 500 als drittes Scraping-Gerät beim Bruder (Remote-Zugang via Tailscale).
+
+| | |
+|---|---|
+| Gerät | Raspberry Pi 500 (Pi 5, ARM64, 8 GB), Benutzer `pit1` |
+| Tailscale-IP | `100.125.193.29` |
+| Profil | `normal` (1 Thread, kein Proxy — residential IP) |
+| Queue | 1247 Gruppen (`device='raspi'`), Jahr 2020, ELO 1400–2840, alle Föderationen |
+| Sync | `sync_pi_to_vps.sh` alle 5 Min → `merge_pi_status.py` → thread_slot 50 im Dashboard |
+
+```bash
+# Worker-Log:
+ssh pit1@100.125.193.29 "tail -20 /tmp/worker_pi.log"
+# Sync-Log:
+ssh pit1@100.125.193.29 "tail -10 /tmp/sync_pi.log"
+# Worker neu starten (falls nötig):
+ssh pit1@100.125.193.29 "cd ~/fide-scraper && source .venv/bin/activate && kill \$(pgrep -f worker.py); sleep 2; nohup python3 orchestrator/worker.py > /tmp/worker_pi.log 2>&1 &"
+```
+
+**Hinweis SSH:** Tailscale-Tunnel muss aktiv sein. Falls Verbindung hängt:
+```bash
+/Applications/Tailscale.app/Contents/MacOS/Tailscale ping 100.125.193.29
+```
 
 ### Residential Queue-Strategie (T0/T1)
 
@@ -158,6 +176,26 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 | Spieler-Steckbrief | Aktiv | `/player-profile` | Profil + Rating-History + Spielstatistiken |
 | Partien-Detail | Test | `/games` | Alle Partien eines Spielers, filterbar |
 | GM/IM Entwicklung | Test | `/titles` | Zeitreihe der Titelträger |
+
+---
+
+## Änderungen Session 2026-06-10
+
+### Raspberry Pi 500 — Setup abgeschlossen, Scraping aktiv
+| Was | Details |
+|-----|---------|
+| **Setup Phase 1–3** ✅ | Pi 500 eingerichtet: OS, SSH, Repo, venv, SSH-Key auf VPS, Tailscale (Fernzugriff via `100.125.193.29`) |
+| **Worker aktiv** ✅ | 1247 Gruppen (Jahr 2020, alle Föderationen), 1 Thread (normal-Profil), `profiles_pi.yaml` |
+| **Pi-Sync** ✅ | `sync_pi_to_vps.sh` + `merge_pi_status.py`: alle 5 Min SCP → Merge → thread_slot 50 "Pi" im Dashboard |
+| **Bugs gefixt** | `profile_manager.py`: dotenv vor PROFILES_PATH laden (war module-level zu früh); `setup_pi_worker.sh`: fehlende .env-Einträge bei bestehender Datei ergänzen |
+| Commits | `a2ae8b4`, `efd21ec`, `95fe051` |
+
+### Mac Mini — female_1800 läuft weiter
+| Was | Details |
+|-----|---------|
+| **female_1800_03** ✅ | Abgeschlossen (2026-06-08 ~22:45 Uhr) |
+| **female_1800_04–07** 🔄 | Chain läuft via `chain_female_1800_04_07.sh` |
+| **`chain_female_1800_08_10.sh`** ✅ | Folgekette vorbereitet |
 
 ---
 

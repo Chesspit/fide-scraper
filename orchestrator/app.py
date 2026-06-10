@@ -1265,6 +1265,7 @@ _REPORT_SLOT_LABELS = {
     1:   "T2",
     2:   "T3",
     3:   "T4",
+    50:  "Pi",
     99:  "DC-DE",
     100: "DC-IN",
     101: "DC-UK",
@@ -1277,7 +1278,7 @@ _REPORT_SLOT_LABELS = {
     108: "DC-UPDATE",
     109: "DC-??3",   # Platzhalter für weitere DC-Scraper
 }
-_RESIDENTIAL_SLOTS = {0, 1, 2, 3}   # alle niedrigen Slots = Residential
+_RESIDENTIAL_SLOTS = {0, 1, 2, 3, 50}   # alle niedrigen Slots = Residential; 50 = Pi
 
 _DE_MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
               "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
@@ -1295,6 +1296,7 @@ _REPORT_COLORS = {
     "T2":    "#42A5F5",
     "T3":    "#26A69A",
     "T4":    "#78909C",
+    "Pi":    "#880E4F",
     "DC-DE": "#E65100",
     "DC-IN": "#FF8F00",
     "DC-UK": "#2E7D32",
@@ -2489,7 +2491,7 @@ def refresh_bericht(_, active_tab):
     all_days = sorted({d["day"] for d in data})
 
     # Residential: alle Slots in _RESIDENTIAL_SLOTS, Canonical-Reihenfolge
-    _ordered_res = ["T1", "T2", "T3", "T4"]
+    _ordered_res = ["T1", "T2", "T3", "T4", "Pi"]
     _ordered_dc  = ["DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK", "DC-ES", "DC-MX", "DC-AE", "DC-DACH", "DC-UPDATE"]
 
     present_labels = {d["slot_label"] for d in data}

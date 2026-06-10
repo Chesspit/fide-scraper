@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-06-10 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-06-10, ~17:00 Uhr (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -57,17 +57,11 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 | female_2100_01 – female_2100_06 | 6 | 395 | 2104–2199 | ✅ complete |
 | female_2000_01 – female_2000_09 | 9 | 626 | 2004–2103 | ✅ complete (seit 2026-06-03) |
 | female_1900_01 – female_1900_16 | 16 | ~925 | 1903–2003 | ✅ complete (seit 2026-06-08, 11:42 Uhr) |
-| female_1800_01 – female_1800_03 | 3 | ~235 | 1800–1902 | ✅ complete (seit 2026-06-08) |
-| female_1800_04 – female_1800_07 | 4 | ~280 | 1800–1902 | 🔄 läuft (Mac Mini, Chain via `chain_female_1800_04_07.sh`) |
-| female_1800_08 – female_1800_24 | 17 | ~1.254 | 1800–1902 | ⏳ pending |
+| female_1800_01 – female_1800_10 | 10 | ~717 | 1800–1902 | ✅ complete (seit 2026-06-10, 16:54 Uhr) |
+| female_1800_11 – female_1800_24 | 14 | ~1.037 | 1800–1902 | ⏳ pending |
 | **Gesamt** | **55** | **3.952** | **1800–2199** | |
 
-**Nächste Kette nach Abschluss 04–07:**
-`female_1800_08 → 09 → 10` via `scripts/chain_female_1800_08_10.sh`
-```bash
-nohup bash scripts/chain_female_1800_08_10.sh > /tmp/chain_female_1800_08_10.log 2>&1 & disown
-```
-Danach bleiben noch female_1800_11–24 (14 Gruppen) offen.
+**Nächste Kette:** female_1800_11–24 (14 Gruppen, ~1.037 Spielerinnen) — Chain-Skripte ausstehend.
 
 ---
 
@@ -185,17 +179,19 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 | Was | Details |
 |-----|---------|
 | **Setup Phase 1–3** ✅ | Pi 500 eingerichtet: OS, SSH, Repo, venv, SSH-Key auf VPS, Tailscale (Fernzugriff via `100.125.193.29`) |
-| **Worker aktiv** ✅ | 1247 Gruppen (Jahr 2020, alle Föderationen), 1 Thread (normal-Profil), `profiles_pi.yaml` |
+| **Worker aktiv** ✅ | 1.247 Gruppen (Jahr 2020, alle Föderationen außer DACH), 1 Thread (normal-Profil, kein Proxy), `profiles_pi.yaml` |
 | **Pi-Sync** ✅ | `sync_pi_to_vps.sh` + `merge_pi_status.py`: alle 5 Min SCP → Merge → thread_slot 50 "Pi" im Dashboard |
-| **Bugs gefixt** | `profile_manager.py`: dotenv vor PROFILES_PATH laden (war module-level zu früh); `setup_pi_worker.sh`: fehlende .env-Einträge bei bestehender Datei ergänzen |
-| Commits | `a2ae8b4`, `efd21ec`, `95fe051` |
+| **VPS DB** ✅ | 1.247 Gruppen Jahr 2020 → `device='raspi'`, `thread_affinity=NULL`; 1 AUT-Gruppe → dc_dach |
+| **Bugs gefixt** | `profile_manager.py`: dotenv vor PROFILES_PATH laden; `setup_pi_worker.sh`: fehlende .env-Einträge ergänzen |
+| Commits | `efd21ec`, `95fe051`, `c85976c` |
 
-### Mac Mini — female_1800 läuft weiter
+### Mac Mini — female_1800_08–10 abgeschlossen
 | Was | Details |
 |-----|---------|
-| **female_1800_03** ✅ | Abgeschlossen (2026-06-08 ~22:45 Uhr) |
-| **female_1800_04–07** 🔄 | Chain läuft via `chain_female_1800_04_07.sh` |
-| **`chain_female_1800_08_10.sh`** ✅ | Folgekette vorbereitet |
+| **female_1800_04–07** ✅ | Abgeschlossen (seit 2026-06-09) |
+| **female_1800_08–10** ✅ | Chain via `chain_female_1800_08_10.sh` abgeschlossen — _10 fertig 16:54 Uhr (5809/5810) |
+| **female_1800_11–24** ⏳ | 14 Gruppen, ~1.037 Spielerinnen — Chain-Skripte ausstehend |
+| **female_2000 Master** ✅ | `backfill_status = 'complete'` gesetzt (war vergessen worden) |
 
 ---
 

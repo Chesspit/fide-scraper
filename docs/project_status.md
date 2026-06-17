@@ -576,7 +576,7 @@ Enthält zusätzlich QC-Zellen: Vergleich `Σ rating_change_weighted` mit tatsä
 
 | Aufgabe | Priorität | Status |
 |---|---|---|
-| female_1800_20–24 (5 Gruppen, ~382 Spielerinnen) | Hoch | ⏳ für nächste Session (_19 abgeschlossen 2026-06-17, 20:35 Uhr) |
+| female_1800_20–24 (5 Gruppen, ~372 Spielerinnen) | Hoch | ⏳ Chain-Skript bereit (`scripts/chain_female_1800_20_24.sh`), Start voraussichtlich ~2026-06-29 |
 | VPS 10-Thread-Betrieb beobachten | Hoch | 🔄 läuft seit 2026-05-25 (DC-DE+UK disabled) |
 | DACH 2020–2026 via T1/T2 | Hoch | 🔄 läuft (GER 2026 → DACH 2025–2020) |
 | DC-Threads Föderations-Queue füllen | Mittel | 🔄 6 DC-Threads aktiv (2026→2009) |

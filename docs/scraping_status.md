@@ -63,7 +63,12 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 | female_1800_20 – female_1800_24 | 5 | ~382 | 1800–1902 | ⏳ pending |
 | **Gesamt** | **55** | **3.952** | **1800–2199** | |
 
-**Nächster Schritt:** **female_1800_20** in neuer Session starten (bewusst nicht automatisch verkettet).
+**Nächster Schritt:** Chain-Skript `scripts/chain_female_1800_20_24.sh` vorbereitet (20→21→22→23→24, vollautomatisch, Spieler bereits geseedet). Start voraussichtlich erst in ~12 Tagen (ca. 2026-06-29):
+
+```bash
+nohup bash scripts/chain_female_1800_20_24.sh > /tmp/chain_female_1800_20_24.log 2>&1 &
+echo "PID: $!"
+```
 
 ---
 

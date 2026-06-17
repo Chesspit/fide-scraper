@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-06-17, ~17:10 Uhr (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-06-17, ~20:35 Uhr (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -8,11 +8,11 @@ Stand: 2026-06-17, ~17:10 Uhr (Quelle: `groups`-Tabelle DB + Orchestrator SQLite
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **8.361.511** |
+| Partien gesamt | **8.392.921** |
 | DB-Größe | **~8,9 GB** |
-| Gruppen complete | **101 / 253** |
+| Gruppen complete | **102 / 253** |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ |
-| Spieler mit ≥ 1 Periode | **140.076** |
+| Spieler mit ≥ 1 Periode | **140.168** |
 
 ---
 
@@ -59,12 +59,11 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 | female_2100_01 – female_2100_06 | 6 | 395 | 2104–2199 | ✅ complete |
 | female_2000_01 – female_2000_09 | 9 | 626 | 2004–2103 | ✅ complete (seit 2026-06-03) |
 | female_1900_01 – female_1900_16 | 16 | ~925 | 1903–2003 | ✅ complete (seit 2026-06-08, 11:42 Uhr) |
-| female_1800_01 – female_1800_18 | 18 | ~1.323 | 1800–1902 | ✅ complete (seit 2026-06-17, 16:42 Uhr) |
-| female_1800_19 | 1 | ~77 | 1800–1902 | 🔄 läuft (gestartet 17:07 Uhr) |
+| female_1800_01 – female_1800_19 | 19 | ~1.400 | 1800–1902 | ✅ complete (seit 2026-06-17, 20:35 Uhr) |
 | female_1800_20 – female_1800_24 | 5 | ~382 | 1800–1902 | ⏳ pending |
 | **Gesamt** | **55** | **3.952** | **1800–2199** | |
 
-**Nächster Schritt:** wenn **female_1800_19** fertig ist, **female_1800_20** in neuer Session starten (bewusst nicht automatisch verkettet).
+**Nächster Schritt:** **female_1800_20** in neuer Session starten (bewusst nicht automatisch verkettet).
 
 ---
 
@@ -185,8 +184,9 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 | **female_1800_16** ✅ | Fehlende pre-2012 Quartalsperioden nachgeladen (16/16 Perioden), fertig 09:30 Uhr |
 | **female_1800_17** ✅ | 7.877 Perioden, fertig 13:22 Uhr |
 | **female_1800_18** ✅ | 7.172 Perioden, fertig 16:42 Uhr |
-| **female_1800_19–24** ⏳ | 6 Gruppen offen — Chain nach Mac Mini Neustart starten |
-| **Spieler mit ≥ 1 Periode** | **140.076** (vs. 95.585 beim Start dc_update am 2026-06-07, +44.491) |
+| **female_1800_19** ✅ | 8617/8617 Player-Period-Kombinationen, 0 Fehler, fertig 20:35 Uhr |
+| **female_1800_20–24** ⏳ | 5 Gruppen offen — in neuer Session starten |
+| **Spieler mit ≥ 1 Periode** | **140.168** (vs. 95.585 beim Start dc_update am 2026-06-07, +44.583) |
 
 ---
 

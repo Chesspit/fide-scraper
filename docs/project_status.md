@@ -127,7 +127,7 @@ Feldern: `elo_min`, `elo_max`, `federations`, `sampling`, `priority`,
 | 3 | 51 | ~5.500 | global_02–28b (weltweit ≥2300) | **51/51 complete** ✅ |
 | — | 15 | 1.021 | female_2100 + female_2000 | **15/15 complete** ✅ |
 | — | 16 | ~925 | female_1900 | **16/16 complete** ✅ |
-| — | 24 | ~1.769 | female_1800 | 18/24 complete, 1 läuft (female_1800_19), 5 pending |
+| — | 24 | ~1.769 | female_1800 | 19/24 complete, 5 pending (_20–24) |
 | 4 | 8 | 1.163 | dach_01–08 (SUI+AUT+GER ≥2200) | pending |
 | 5 | 40 | 5.988 | sui_01–20 + aut_01–20 (1400–2199) | pending |
 | 6 | 86 | 12.948 | ger_01–86 (≥2000 priorisiert, <2000 deprioritisiert) | pending |
@@ -262,16 +262,16 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 
 | Kennzahl | Wert |
 |---|---|
-| **Gesamt-Partien** | **8.361.511** |
-| **Spieler mit Daten** | **140.076** |
+| **Gesamt-Partien** | **8.392.921** |
+| **Spieler mit Daten** | **140.168** |
 | **DB-Größe** | **~8,9 GB** |
 | **Früheste Periode** | **2008-04** |
 | **Neueste Periode** | **2026-05** (einige frühe Gruppen) |
-| **Gruppen complete** | **101 / 253** |
+| **Gruppen complete** | **102 / 253** |
 | **global_XX ELO ≥ 2300** | **51/51 complete** ✅ |
 | **female_2100 + female_2000** | **15/15 complete** ✅ |
 | **female_1900** | **16/16 complete** ✅ |
-| **female_1800** | **18/24 complete**, female_1800_19 läuft 🔄 |
+| **female_1800** | **19/24 complete**, _20–24 pending |
 
 ### 5.1 Scraping-Status Kern-Gruppen
 
@@ -576,7 +576,7 @@ Enthält zusätzlich QC-Zellen: Vergleich `Σ rating_change_weighted` mit tatsä
 
 | Aufgabe | Priorität | Status |
 |---|---|---|
-| female_1800_19–24 (6 Gruppen, ~459 Spielerinnen) | Hoch | 🔄 _19 läuft auf Mac Mini, _20–24 für spätere Sessions (bewusst nicht auto-verkettet) |
+| female_1800_20–24 (5 Gruppen, ~382 Spielerinnen) | Hoch | ⏳ für nächste Session (_19 abgeschlossen 2026-06-17, 20:35 Uhr) |
 | VPS 10-Thread-Betrieb beobachten | Hoch | 🔄 läuft seit 2026-05-25 (DC-DE+UK disabled) |
 | DACH 2020–2026 via T1/T2 | Hoch | 🔄 läuft (GER 2026 → DACH 2025–2020) |
 | DC-Threads Föderations-Queue füllen | Mittel | 🔄 6 DC-Threads aktiv (2026→2009) |

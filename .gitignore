@@ -23,8 +23,13 @@ notebooks/*.csv
 # scraper.db: Queue-Stand (done/pending/failed) — ändert sich mit jedem Scraping-Lauf
 # worker_state.json: aktueller Worker-Status (run/pause/stopped)
 orchestrator/scraper.db
+orchestrator/scraper.db-shm
+orchestrator/scraper.db-wal
 orchestrator/worker_state.json
 orchestrator/__pycache__/
+
+# DB-Dumps (lokal, zu groß für Git)
+backups/
 
 # Frontend-Caches (zur Laufzeit generiert)
 frontend/*.parquet

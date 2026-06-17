@@ -46,8 +46,9 @@ Stand: 2026-06-17
 ## Erledigtes (Session 2026-06-17)
 
 ✅ female_1800_11–18 abgeschlossen (Mac Mini Chain, fertig 16:42 Uhr)
-✅ female_1800_19 gestartet (17:07 Uhr, 8617 Player-Period-Kombinationen, ETA ~22:45 Uhr)
-✅ Spieler mit ≥1 Periode: 140.076 (vs. 95.585 beim dc_update-Start am 2026-06-07, +44.491)
+✅ female_1800_19 abgeschlossen (gestartet 17:07 Uhr, fertig 20:35 Uhr — 8617/8617, 0 Fehler)
+✅ Spieler mit ≥1 Periode: 140.168 (vs. 95.585 beim dc_update-Start am 2026-06-07, +44.583)
+✅ DB-Dump erstellt (backups/fidedb_2026-06-17.dump, 789 MB, pg_dump -F c)
 ✅ docs/scraping_status.md + docs/project_status.md auf aktuellen Stand gebracht
 
 ## Erledigtes (Session 2026-05-25)

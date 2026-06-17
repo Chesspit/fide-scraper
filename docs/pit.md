@@ -1,6 +1,6 @@
 # Pit's Projektnotizen — ELO-Einsichten
 
-Stand: 2026-05-25
+Stand: 2026-06-17
 
 ---
 
@@ -43,9 +43,16 @@ Stand: 2026-05-25
 
 ---
 
-## Erledigtes (diese Session)
+## Erledigtes (Session 2026-06-17)
 
-✅ DC-ES/MX/AE eingerichtet und aktiviert (2026-05-25)
+✅ female_1800_11–18 abgeschlossen (Mac Mini Chain, fertig 16:42 Uhr)
+✅ female_1800_19 gestartet (17:07 Uhr, 8617 Player-Period-Kombinationen, ETA ~22:45 Uhr)
+✅ Spieler mit ≥1 Periode: 140.076 (vs. 95.585 beim dc_update-Start am 2026-06-07, +44.491)
+✅ docs/scraping_status.md + docs/project_status.md auf aktuellen Stand gebracht
+
+## Erledigtes (Session 2026-05-25)
+
+✅ DC-ES/MX/AE eingerichtet und aktiviert
 ✅ Bericht-Tab im Orchestrator-Dashboard (MB/Tag pro Thread, Residential/DC-Summen)
 ✅ Analytics-Navbar restrukturiert (Aktiv/Test-Gruppen, deutsche Flagge)
 ✅ Version A/B gelöscht, ELO-Top100 umbenannt

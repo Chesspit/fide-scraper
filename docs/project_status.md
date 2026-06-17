@@ -1,6 +1,6 @@
 # FIDE Scraper — Projektdokumentation
 
-Stand: 5. Juni 2026
+Stand: 17. Juni 2026
 
 ---
 
@@ -126,8 +126,8 @@ Feldern: `elo_min`, `elo_max`, `federations`, `sampling`, `priority`,
 | 2 | 1 | 170 | male_2200 | ⛔ skipped (gestrichen 2026-05-18) |
 | 3 | 51 | ~5.500 | global_02–28b (weltweit ≥2300) | **51/51 complete** ✅ |
 | — | 15 | 1.021 | female_2100 + female_2000 | **15/15 complete** ✅ |
-| — | 20 | 1.386 | female_1900 | 4/16 complete, 3/16 läuft (Chain), 9/16 pending |
-| — | 24 | 1.769 | female_1800 | pending |
+| — | 16 | ~925 | female_1900 | **16/16 complete** ✅ |
+| — | 24 | ~1.769 | female_1800 | 18/24 complete, 1 läuft (female_1800_19), 5 pending |
 | 4 | 8 | 1.163 | dach_01–08 (SUI+AUT+GER ≥2200) | pending |
 | 5 | 40 | 5.988 | sui_01–20 + aut_01–20 (1400–2199) | pending |
 | 6 | 86 | 12.948 | ger_01–86 (≥2000 priorisiert, <2000 deprioritisiert) | pending |
@@ -258,17 +258,20 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 
 ---
 
-## 5. Aktueller Datensatz-Stand (2026-06-05)
+## 5. Aktueller Datensatz-Stand (2026-06-17)
 
 | Kennzahl | Wert |
 |---|---|
-| **Gesamt-Partien** | **6.030.128** |
-| **Spieler mit Daten** | **121.096** |
-| **DB-Größe** | **~7,8 GB** |
+| **Gesamt-Partien** | **8.361.511** |
+| **Spieler mit Daten** | **140.076** |
+| **DB-Größe** | **~8,9 GB** |
 | **Früheste Periode** | **2008-04** |
 | **Neueste Periode** | **2026-05** (einige frühe Gruppen) |
+| **Gruppen complete** | **101 / 253** |
 | **global_XX ELO ≥ 2300** | **51/51 complete** ✅ |
 | **female_2100 + female_2000** | **15/15 complete** ✅ |
+| **female_1900** | **16/16 complete** ✅ |
+| **female_1800** | **18/24 complete**, female_1800_19 läuft 🔄 |
 
 ### 5.1 Scraping-Status Kern-Gruppen
 
@@ -573,7 +576,7 @@ Enthält zusätzlich QC-Zellen: Vergleich `Σ rating_change_weighted` mit tatsä
 
 | Aufgabe | Priorität | Status |
 |---|---|---|
-| female_1900–1800-Gruppen (2.155 Spielerinnen) | Hoch | 🔄 Mac Mini Chain läuft (female_1900_05–07, danach 08–16, dann 1800) |
+| female_1800_19–24 (6 Gruppen, ~459 Spielerinnen) | Hoch | 🔄 _19 läuft auf Mac Mini, _20–24 für spätere Sessions (bewusst nicht auto-verkettet) |
 | VPS 10-Thread-Betrieb beobachten | Hoch | 🔄 läuft seit 2026-05-25 (DC-DE+UK disabled) |
 | DACH 2020–2026 via T1/T2 | Hoch | 🔄 läuft (GER 2026 → DACH 2025–2020) |
 | DC-Threads Föderations-Queue füllen | Mittel | 🔄 6 DC-Threads aktiv (2026→2009) |

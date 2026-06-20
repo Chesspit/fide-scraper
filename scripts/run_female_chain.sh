@@ -79,6 +79,36 @@ print(f'female_2100_06 DB: {cur.rowcount} Zeile(n) aktualisiert')
 conn.close()
 " 2>&1 | tee -a "$CHAIN_LOG"
 
+# ── Preflight: FIDE-Erreichbarkeit prüfen (z.B. NordVPN-IP von FIDE geblockt) ──
+# FIDE liefert bei geblockter IP HTTP 200 mit LEEREM Body. backfill.py würde das als
+# "keine Partien" werten und falsche no_data-Status schreiben → stille Korruption.
+# Darum hier ein Kanarienvogel-Fetch einer bekannt gefüllten Periode VOR dem Loop.
+log "Preflight: teste FIDE-Erreichbarkeit (Kanarienvogel-Fetch)..."
+if ! lsof -i :5434 | grep -q LISTEN 2>/dev/null; then
+    bash "$SCRIPT_DIR/scripts/tunnel.sh" & sleep 10
+fi
+PREFLIGHT=$(cd "$SCRIPT_DIR" && env DATABASE_URL="$DB_URL" python3 -c "
+import psycopg2, sys
+from scraper.fetcher import fetch_calculations  # echte Header (Referer + X-Requested-With)
+conn = psycopg2.connect('$DB_URL'); cur = conn.cursor()
+cur.execute(\"SELECT fide_id, period FROM scrape_periods WHERE status='ok' LIMIT 1\")
+row = cur.fetchone(); conn.close()
+if not row:
+    print('SKIP keine ok-Referenzperiode gefunden'); sys.exit(0)
+fid, per = row
+try:
+    html = fetch_calculations(fid, str(per))
+except Exception as e:
+    print(f'BLOCKED id={fid} period={per} EXCEPTION {type(e).__name__}: {e}'); sys.exit(0)
+print(('OK' if 'calc_table' in html else 'BLOCKED') + f' id={fid} period={per} {len(html)}B')
+" 2>&1)
+log "Preflight: $PREFLIGHT"
+if echo "$PREFLIGHT" | grep -q "^BLOCKED"; then
+    log "ABBRUCH: FIDE liefert leere Antwort (IP geblockt — NordVPN/VPN aktiv?)."
+    log "         NordVPN deaktivieren, dann Chain neu starten. KEINE Daten geschrieben."
+    exit 1
+fi
+
 # Startindex bestimmen
 START_IDX=0
 for i in "${!ALL_GROUPS[@]}"; do

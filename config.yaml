@@ -34,4 +34,5 @@ periods:
   #   - 2025-04-01
 
 data:
-  players_file: data/standard_jun26frl.zip
+  # April-2026-Snapshot — dieselbe Liste, aus der alle bisherigen Gruppen geseedet wurden.
+  players_file: data/players_list_foa_2026-04.txt

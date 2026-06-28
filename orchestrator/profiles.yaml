@@ -2,9 +2,9 @@ active_profile: normal
 concurrency:
   datacenter_threads:
   - active_hours:
-    - 7
-    - 23
-    enabled: false
+    - 9
+    - 19
+    enabled: true
     federations:
     - POL
     - UKR
@@ -45,7 +45,7 @@ concurrency:
   - active_hours:
     - 8
     - 21
-    enabled: false
+    enabled: true
     federations:
     - ENG
     - SCO
@@ -116,8 +116,8 @@ concurrency:
     timezone: Asia/Hong_Kong
     username_env: PROXYJET_DC_HK_USERNAME
   - active_hours:
-    - 8
-    - 22
+    - 12
+    - 18
     enabled: true
     federations:
     - ESP
@@ -223,11 +223,11 @@ concurrency:
     max_hours: null
     profile: semi_aggressive
     slot: 0
-  - enabled: true
+  - enabled: false
     max_hours: null
     profile: normal
     slot: 1
-  - enabled: true
+  - enabled: false
     max_hours: null
     profile: semi_conservative
     slot: 2

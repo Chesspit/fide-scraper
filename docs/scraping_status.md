@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-06-17, ~20:35 Uhr (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Stand: 2026-06-28 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
 
 ---
 
@@ -8,11 +8,11 @@ Stand: 2026-06-17, ~20:35 Uhr (Quelle: `groups`-Tabelle DB + Orchestrator SQLite
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **8.392.921** |
-| DB-Größe | **~8,9 GB** |
-| Gruppen complete | **102 / 253** |
+| Partien gesamt | **9.268.017** |
+| DB-Größe | **~9,4 GB** |
+| Gruppen complete | **107 / 253** |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ |
-| Spieler mit ≥ 1 Periode | **140.168** |
+| Spieler mit ≥ 1 Periode | **141.699** |
 
 ---
 
@@ -59,16 +59,11 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 | female_2100_01 – female_2100_06 | 6 | 395 | 2104–2199 | ✅ complete |
 | female_2000_01 – female_2000_09 | 9 | 626 | 2004–2103 | ✅ complete (seit 2026-06-03) |
 | female_1900_01 – female_1900_16 | 16 | ~925 | 1903–2003 | ✅ complete (seit 2026-06-08, 11:42 Uhr) |
-| female_1800_01 – female_1800_19 | 19 | ~1.400 | 1800–1902 | ✅ complete (seit 2026-06-17, 20:35 Uhr) |
-| female_1800_20 – female_1800_24 | 5 | ~382 | 1800–1902 | ⏳ pending |
-| **Gesamt** | **55** | **3.952** | **1800–2199** | |
+| female_1800_01 – female_1800_19 | 19 | ~1.400 | 1800–1902 | ✅ complete (seit 2026-06-17) |
+| female_1800_20 – female_1800_24 | 5 | ~382 | 1800–1902 | ✅ complete (seit ~2026-06-28) |
+| **Gesamt** | **55** | **3.952** | **1800–2199** | ✅ **alle complete** |
 
-**Nächster Schritt:** Chain-Skript `scripts/chain_female_1800_20_24.sh` vorbereitet (20→21→22→23→24, vollautomatisch, Spieler bereits geseedet). Start voraussichtlich erst in ~12 Tagen (ca. 2026-06-29):
-
-```bash
-nohup bash scripts/chain_female_1800_20_24.sh > /tmp/chain_female_1800_20_24.log 2>&1 &
-echo "PID: $!"
-```
+**Nächster Schritt:** female_1600-Gruppen anlegen (ELO 1600–1799, ~5.941 Spielerinnen — noch keine Gruppen in DB).
 
 ---
 
@@ -177,6 +172,19 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 | Spieler-Steckbrief | Aktiv | `/player-profile` | Profil + Rating-History + Spielstatistiken |
 | Partien-Detail | Test | `/games` | Alle Partien eines Spielers, filterbar |
 | GM/IM Entwicklung | Test | `/titles` | Zeitreihe der Titelträger |
+
+---
+
+## Änderungen Session 2026-06-28
+
+### Mac Mini — female_1800_20–24 abgeschlossen, alle female_XX (1800–2199) complete
+| Was | Details |
+|-----|---------|
+| **female_1800_20–24** ✅ | 5 Gruppen, ~382 Spielerinnen, `scraped_to='2026-05-01'` |
+| **Alle 55 female-Gruppen** ✅ | ELO 1800–2199 komplett (female_2100–female_1800-Serie) |
+| **DB-Stand** | 9.268.017 Partien, ~9,4 GB, 141.699 Spieler mit ≥ 1 Periode, 107/253 Gruppen complete |
+| **Kein Backfill aktiv** | Mac Mini idle — nächste Gruppe noch nicht gestartet |
+| **Nächster Schritt** | female_1600-Gruppen anlegen + seeden (~5.941 Spielerinnen, ELO 1600–1799, ~80 Gruppen) |
 
 ---
 

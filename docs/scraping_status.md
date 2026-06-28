@@ -1,6 +1,7 @@
 # Scraping-Status
 
 Stand: 2026-06-28 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
+Raspberry-Pi-Stand aktualisiert: 2026-06-28, ~18:30 Uhr
 
 ---
 
@@ -105,6 +106,14 @@ Raspberry Pi 500 als drittes Scraping-Gerät beim Bruder (Remote-Zugang via Tail
 | Profil | `normal` (1 Thread, kein Proxy — residential IP) |
 | Queue | 1247 Gruppen (`device='raspi'`), Jahr 2020, ELO 1400–2840, alle Föderationen |
 | Sync | `sync_pi_to_vps.sh` alle 5 Min → `merge_pi_status.py` → thread_slot 50 im Dashboard |
+| **Fortschritt (2026-06-28)** | **362 done / 1 running (SWE) / 884 pending — ~29 %** |
+
+**Fortschritt:** 17/1246 am 12.06. → 362/1247 am 28.06. (~21,5 Gruppen/Tag) → Rest ~6 Wochen (Anfang August). Worker + Sync aktiv (Periode 2020-03-01).
+
+**Status abfragen** (Tailscale `up`, NordVPN aus; Pi-SQLite unter `orchestrator/pi_data/scraper.db`, kein `sqlite3`-CLI → Python):
+```bash
+ssh pit1@100.125.193.29 "python3 -c \"import sqlite3; c=sqlite3.connect('/home/pit1/fide-scraper/orchestrator/pi_data/scraper.db'); print(list(c.execute('SELECT status,COUNT(*) FROM scrape_groups GROUP BY status')))\""
+```
 
 ```bash
 # Worker-Log:

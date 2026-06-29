@@ -407,9 +407,14 @@ def scrape_group(
     for _combo_idx, (fide_id, period) in enumerate(pending, start=1):
         # Pause/stop check inside the loop
         cmd = read_command()
-        if cmd == "stopped":
-            logger.info("Stop command received — aborting group mid-scrape")
-            raise InterruptedError("stopped")
+        if cmd in ("stopped", "restart"):
+            # restart wie stopped behandeln: Gruppe wird vom Caller auf pending
+            # zurückgesetzt, Thread bricht ab; danach exitet der Prozess und Docker
+            # startet den Worker mit frischer Config neu. Ohne diesen Check würde der
+            # Neustart-Button erst greifen, wenn alle Threads ihre (oft großen) Gruppen
+            # fertig haben — bei Parallelbetrieb potenziell Stunden später.
+            logger.info("%s-Befehl empfangen — Gruppe wird mitten im Scrape abgebrochen", cmd)
+            raise InterruptedError(cmd)
         while cmd == "pause":
             logger.debug("Paused — waiting...")
             time.sleep(_PAUSE_POLL_INTERVAL)
@@ -677,10 +682,11 @@ def run(
     #   auto:       ALLE Threads mit Credentials starten (Timezone entscheidet Aktivität)
     #   individual: nur explizit enabled=true Threads starten (kein Timezone-Check)
     all_dc = cfg.get("datacenter_threads", [])
-    if dc_mode == "auto":
-        dc_thread_cfgs_raw = all_dc   # alle — credentials-Check folgt in _run_parallel_loop
-    else:
-        dc_thread_cfgs_raw = [t for t in all_dc if t.get("enabled", False)]
+    # Das enabled-Flag gilt in BEIDEN Modi: ein in der UI deaktivierter Thread wird
+    # gar nicht erst gestartet. auto vs. individual unterscheiden sich nur im
+    # Timezone-Gating (active_hours), nicht in der Thread-Anzahl. (Früher hat auto
+    # alle Threads gespawnt und enabled ignoriert → UI-Reduzierung wirkte nicht.)
+    dc_thread_cfgs_raw = [t for t in all_dc if t.get("enabled", True)]
 
     dc_thread_cfgs = []
     for t in dc_thread_cfgs_raw:
@@ -871,6 +877,15 @@ def run_dc_slot(
                 except Exception:
                     pass
 
+            # Enabled-Check ZUERST: ein in der UI deaktivierter Thread stoppt sofort —
+            # auch wenn er sonst (außerhalb active_hours) nur schlafen würde. Stünde
+            # dieser Check nach dem Timezone-Sleep, bliebe ein schlafender Thread als
+            # 💤-Slot hängen und würde das Deaktivieren nie bemerken.
+            if not _read_dc_thread_enabled(affinity):
+                logger.info("DC-Thread %s: in profiles.yaml deaktiviert — stoppe", label)
+                _clear_thread_slot(slot)
+                break
+
             # Timezone-Check: nur im auto-Modus aktiv
             dc_mode = dc_cfg.get("dc_mode", "auto")
             if dc_mode == "auto" and not _dc_is_active(dc_cfg):
@@ -888,11 +903,6 @@ def run_dc_slot(
                 )
                 stop_event.wait(timeout=min(secs, _DC_SLEEP_CHECK_INTERVAL))
                 continue
-
-            # Enabled-Check: sofort stoppen wenn Toggle in der UI auf False gesetzt wurde
-            if not _read_dc_thread_enabled(affinity):
-                logger.info("DC-Thread %s: in profiles.yaml deaktiviert — stoppe nach aktueller Gruppe", label)
-                break
 
             profile = pm_local.pick_fuzzy(override=profile_name)
             group   = qm_local.get_next_group(dc_affinity=affinity)

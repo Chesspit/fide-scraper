@@ -1279,8 +1279,8 @@ _REPORT_COLORS = {
     "DC-ES": "#C62828",
     "DC-MX": "#00838F",
     "DC-AE": "#4E342E",
-    "DC-DACH":   "#9E9D24",
-    "DC-UPDATE": "#5D4037",
+    "DC-DACH":     "#9E9D24",
+    "DC-UPDATE-1": "#5D4037",
 }
 
 tab_bericht = dbc.Container(fluid=True, children=[
@@ -2463,11 +2463,18 @@ def refresh_bericht(_, active_tab):
 
     # Residential: alle Slots in _RESIDENTIAL_SLOTS, Canonical-Reihenfolge
     _ordered_res = ["T1", "T2", "T3", "T4", "Pi"]
-    _ordered_dc  = ["DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK", "DC-ES", "DC-MX", "DC-AE", "DC-DACH", "DC-UPDATE"]
+    # Live aus profiles.yaml statt hartkodiert — sonst fällt ein umbenannter/neuer
+    # DC-Thread (z.B. DC-UPDATE → DC-UPDATE-1) stillschweigend aus Tabelle UND
+    # Tagessummen raus, obwohl seine scrape_runs-Zeilen weiter mitgezählt werden sollten.
+    _dc_thread_cfgs = _get_concurrency_cfg().get("datacenter_threads", [])
+    _ordered_dc = [t["label"] for t in _dc_thread_cfgs if "label" in t]
+    # DACH-Vollbackfill + alle dc_update-Pool-Threads immer anzeigen (auch ohne bisherige Daten)
+    _always_show_dc = {t["label"] for t in _dc_thread_cfgs
+                        if t.get("id") == "dc_dach" or str(t.get("id", "")).startswith("dc_update")}
 
     present_labels = {d["slot_label"] for d in data}
     res_labels = _ordered_res                                # immer T1–T4 anzeigen
-    dc_labels  = [l for l in _ordered_dc  if l in present_labels or l in ("DC-DACH", "DC-UPDATE")]
+    dc_labels  = [l for l in _ordered_dc  if l in present_labels or l in _always_show_dc]
 
     all_data_labels = res_labels + dc_labels
 

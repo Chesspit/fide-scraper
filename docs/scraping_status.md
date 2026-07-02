@@ -1,19 +1,46 @@
 # Scraping-Status
 
-Stand: 2026-06-28 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite)
-Raspberry-Pi-Stand aktualisiert: 2026-06-28, ~18:30 Uhr
+Stand: 2026-07-02 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite, Live-Abfrage)
+Raspberry-Pi-Stand aktualisiert: 2026-06-28, ~18:30 Uhr (Tailscale seitdem nicht erneut abgefragt)
 
 ---
 
-## Gesamtstand DB
+## Gesamtstand DB (Live 2026-07-02, ~11:30 UTC)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **9.268.017** |
-| DB-Größe | **~9,4 GB** |
-| Gruppen complete | **107 / 253** |
-| Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ |
-| Spieler mit ≥ 1 Periode | **141.699** |
+| Partien gesamt | **9.432.433** |
+| DB-Größe | **~9,46 GB** |
+| Gruppen complete | **107 / 253** (140 pending, 5 partial, 1 skipped) — bezieht sich auf die manuell gepflegten Mac-Mini-Analysegruppen, unabhängig vom neuen P1/P2/P3-System (siehe unten) |
+| Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ (Vorbehalt: siehe Top-Spieler-Lückenanalyse unten) |
+| Spieler mit ≥ 1 gescrapter Periode | **141.845** |
+| Neueste published_rating-Periode | **2026-07-01** (heute importiert, `standard_jul26frl.zip`) |
+| Neueste gescrapte Spiel-Periode | **2026-06-01** (läuft gerade über den neuen P1/P2/P3-Prozess nach) |
+
+---
+
+## Top-Spieler-Lückenanalyse (ELO ≥ 2300, aktiv) — Stand 2026-07-01
+
+Trotz "51/51 Global-Gruppen complete" sind **nicht 100 % aller Top-Spieler gescrapt**. Live-Abfrage gegen `players` (aktiv, `std_rating >= 2300`) vs. `game_results`:
+
+| ELO-Bucket | Gesamt (aktiv) | Gescraped | Anteil |
+|---|---:|---:|---:|
+| 2800–2899 | 2 | 2 | 100 % |
+| 2700–2799 | 30 | 29 | 96,7 % |
+| 2600–2699 | 127 | 126 | 99,2 % |
+| 2500–2599 | 455 | 442 | 97,1 % |
+| 2400–2499 | 1.175 | 1.135 | 96,6 % |
+| 2300–2399 | 2.571 | 2.455 | 95,5 % |
+| **Gesamt** | **4.360** | **4.189** | **96,1 %** |
+
+**171 Top-Spieler fehlen**, alle mit `analysis_group IS NULL` (nie regulär in einer `global_*`-Gruppe geseeded):
+
+- **57 Spieler nie angefasst** — kein Seed, kein einziger Scrape-Versuch
+- **114 Spieler** haben `scrape_periods`-Einträge (z. B. via Opponent-Resolution berührt), aber **kein Ergebnis** (`no_data`/Fehler)
+
+Föderationsverteilung der fehlenden 171 (Top 5): **RUS (16), UKR (14), SRB (14), HUN (9), CRO (9)**. Teils historische/verstorbene Top-Spieler, die im `active`-Flag noch als aktiv geführt werden (z. B. Vugar Gashimov, 2737, gest. 2014).
+
+**TODO:** Gruppe für die 171 (mind. die 57 nie angefassten) fehlenden Top-Spieler anlegen und seeden, um die 2300er-Range wirklich lückenlos zu machen.
 
 ---
 
@@ -68,12 +95,12 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 
 ---
 
-## Orchestrator (VPS) — föderationsbasiertes Scraping
+## Orchestrator (VPS) — föderationsbasiertes Scraping + P1/P2/P3-Monatsrefresh
 
 | | |
 |---|---|
 | Dashboard | **https://scelo.chesspit.net** (BasicAuth) |
-| Modus | **bis zu 12 Threads (2 Residential + 10 DC); aktuell 9 DC aktiv (DC-DE + DC-UK disabled)** |
+| Modus | **bis zu 10 Threads (2 Residential + 9 DC); aktuell 6 DC aktiv (DC-DE + DC-US + DC-ES disabled)** |
 | DC-Modus | Individuelle Von/Bis-Zeit pro Karte (Ortszeit, Timezone-basiert) |
 
 ### Alle Threads
@@ -84,14 +111,28 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 | T2 | Residential | normal | DACH (Priority) | — | ✅ aktiv |
 | DC-DE (Slot 99) | Datacenter | semi_conservative | POL, UKR, LAT, LIT, EST, CZE, SVK, FID | Europe/Berlin | ⏸ disabled |
 | DC-IN (Slot 100) | Datacenter | semi_conservative | IND, IRI | Asia/Kolkata | ✅ aktiv |
-| DC-UK (Slot 101) | Datacenter | semi_conservative | ENG, SCO, WLS, IRL, NIR, DEN, NOR, SWE, FIN, ISL | Europe/London | ⏸ disabled |
-| DC-US (Slot 102) | Datacenter | semi_conservative | USA, CAN | America/New_York | ✅ aktiv |
+| DC-UK (Slot 101) | Datacenter | semi_conservative | ENG, SCO, WLS, IRL, NIR, DEN, NOR, SWE, FIN, ISL | Europe/London | ✅ aktiv |
+| DC-US (Slot 102) | Datacenter | semi_conservative | USA, CAN | America/New_York | ⏸ disabled |
 | DC-HK (Slot 103) | Datacenter | semi_conservative | CHN, VIE + Ozeanien | Asia/Hong_Kong | ✅ aktiv |
-| DC-ES (Slot 104) | Datacenter | semi_conservative | ESP, ITA, POR, AND, GIB | Europe/Madrid | ✅ aktiv |
+| DC-ES (Slot 104) | Datacenter | semi_conservative | ESP, ITA, POR, AND, GIB | Europe/Madrid | ⏸ disabled |
 | DC-MX (Slot 105) | Datacenter | semi_conservative | FRA, BEL, NED, LUX | America/Mexico_City | ✅ aktiv |
 | DC-AE (Slot 106) | Datacenter | semi_conservative | SRB, CRO, BIH, MKD, MNE, SLO, KOS, ALB, GRE, TUR | Asia/Dubai | ✅ aktiv |
 | DC-DACH (Slot 107) | Datacenter | semi_conservative | GER, SUI, AUT (Vollbackfill) | Europe/Berlin | ✅ aktiv |
-| DC-UPDATE (Slot 108) | Datacenter | semi_conservative | alle (Update-Batches, `update_only=1`) | Europe/Berlin | ✅ aktiv |
+| DC-UPDATE-1 (Slot 108) | Datacenter | semi_conservative | alle (P1/P2/P3-Monatsrefresh, `update_only=1`) | Europe/Berlin | ✅ aktiv |
+
+**DC-UPDATE-1 ersetzt seit 2026-07-02 den alten `dc_update`-Thread** — siehe Session-Änderungen unten. Läuft aktuell die 40 P3-Batches ab (P1+P2 bereits fertig).
+
+### P1/P2/P3-Monatsrefresh — Fortschritt (Stand 2026-07-02, ~19:25 UTC)
+
+Ersetzt die alten 4 UP-Jobs (lokal, Mac Mini) + föderationsbasierte `dc_update`-Rest-Batches durch drei geschlechtsunabhängige Prioritätsstufen, komplett auf dem VPS (siehe `orchestrator/monthly_refresh_tiers.py`):
+
+| Tier | Filter | Spieler | Batches | Status |
+|---|---|---:|---:|---|
+| P1 | ELO ≥ 2300, alle Föderationen | 4.189 | 2 | ✅ komplett fertig |
+| P2 | GER/SUI/AUT, ELO < 2300 | 19.481 | 7 | ✅ komplett fertig |
+| P3 | Rest (alle übrigen ≥1×gescrapten Spieler) | 118.066 | 40 | 🔄 7/40 fertig, 1 läuft (27.806 neue Partien bisher) |
+
+P1 und P2 waren größtenteils bereits durch den Mac-Mini-Ad-hoc-Lauf bzw. den laufenden DC-DACH-Vollbackfill abgedeckt und liefen daher sehr schnell durch. P3 läuft seit ~11:30 Uhr deutlich schneller als ursprünglich geschätzt (~66 Min/Batch statt ~4h) — vermutlich Überschneidung mit den parallel laufenden Welt-Backfill-Threads (DC-AE/IN/HK/MX/UK) in den höheren ELO-Bändern. Hochrechnung: alle 40 Batches evtl. in ~1–1,5 Tagen statt der befürchteten fast einer Woche fertig; muss sich bei den unteren ELO-Bändern noch bestätigen. Bei Bedarf per zweitem `dc_update_2`-Thread weiter beschleunigbar (siehe `monthly_refresh_tiers.DC_UPDATE_POOL`).
 
 ---
 
@@ -153,14 +194,15 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 
 | DC-Thread | Gruppen done | Gruppen pending | Jahresbereich |
 |-----------|-------------:|----------------:|---------------|
-| DC-DE | 82 | ~1.967 | 2009–2026 |
-| DC-IN | 140 | ~2.344 | 2009–2026 |
-| DC-UK | 46 | ~1.394 | 2009–2026 |
-| DC-US | 59 | ~673 | 2009–2026 |
-| DC-HK | 45 | ~530 | 2009–2026 |
-| DC-ES | 11 | ~2.941 | 2009–2026 |
-| DC-MX | 53 | ~3.079 | 2009–2026 |
-| DC-AE | 2 | ~1.546 | 2009–2026 |
+| DC-DE *(disabled)* | 327 | ~1.608 | 2009–2026 |
+| DC-IN | 408 | ~1.937 | 2009–2026 |
+| DC-UK | 308 | ~1.051 | 2009–2026 |
+| DC-US *(disabled)* | 280 | ~410 | 2009–2026 |
+| DC-HK | 213 | ~329 | 2009–2026 |
+| DC-ES *(disabled)* | 329 | ~2.458 | 2009–2026 |
+| DC-MX | 294 | ~2.662 | 2009–2026 |
+| DC-AE | 340 | ~1.121 | 2009–2026 |
+| DC-DACH | 313 | ~1.084 | 2009–2026 |
 
 ---
 
@@ -181,6 +223,29 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 | Spieler-Steckbrief | Aktiv | `/player-profile` | Profil + Rating-History + Spielstatistiken |
 | Partien-Detail | Test | `/games` | Alle Partien eines Spielers, filterbar |
 | GM/IM Entwicklung | Test | `/titles` | Zeitreihe der Titelträger |
+
+---
+
+## Änderungen Session 2026-07-02
+
+### Monatlicher Update-Prozess komplett neu gebaut: P1/P2/P3-ELO-Band-System
+| Was | Details |
+|-----|---------|
+| **Auslöser** | `reset_current_year.py` (Vormonats-Mechanismus) setzte pauschal ALLE done-Gruppen des Jahres zurück — inkl. der ~700+ Zeilen des separaten Welt-Backfills, nicht nur die Update-Batches. Zusätzlich: keine Geschlechtertrennung mehr gewünscht, Batches sollen rein nach ELO-Band statt Föderation definiert werden |
+| **Neue Priorität** | P1 = ELO ≥ 2300 (alle Föderationen/Geschlechter), P2 = DACH (GER/SUI/AUT) < 2300, P3 = Rest — ersetzt die alten 4 UP-Jobs (ELO2300/FEMALE/GER/DACH) + föderationsbasierte `dc_update`-Rest-Batches |
+| **`orchestrator/monthly_refresh_tiers.py`** ✅ | Neues Modul, Single Source of Truth für Tier-Filter/-Grenzen, von Batch-Generator UND Worker importiert |
+| **`orchestrator/generate_monthly_refresh_batches.py`** ✅ | Ersetzt `generate_update_batches.py`; ELO-Band-Batches gepoolt über alle Föderationen (statt pro Föderation), Zielgröße ~2.000–3.000 Spieler; sortiert nach Tier zuerst (P1→P2→P3), dann Größe — wichtig bei sequenzieller Abarbeitung auf nur einem Thread |
+| **`orchestrator/reset_monthly_refresh.py`** ✅ | Ersetzt `reset_current_year.py`; trifft ausschließlich P1/P2/P3-Gruppen (federation-Sentinel), lässt den Welt-Backfill unangetastet — behebt den Kern-Bug |
+| **`worker.py::get_fide_ids()`** ✅ | Neuer föderationsübergreifender Tier-Zweig, bestehender Föderations-Pfad für den Welt-Backfill unverändert |
+| **Thread-Pool** | Bewusst mit nur 1 Thread gestartet (`dc_update_1`, Slot 108, ersetzt alten `dc_update`) — sequenzielle Abarbeitung nach Priorität; zweiter Thread (`dc_update_2`) bei Bedarf trivial ergänzbar |
+| **`app.py`** ✅ | 9 hartkodierte DC-Thread-Label-Stellen auf dynamischen `_dc_thread_maps()`-Helper umgestellt (liest `profiles.yaml` live statt hartkodierter Dicts) |
+| **`monthly_update.sh`** ✅ | Mac-Mini-Schritte entfernt (config.yaml-Rewrite, UP-Jobs-Schleife) — läuft jetzt vollständig ohne Mac Mini/MacBook Pro; Raspberry Pi bleibt wie bisher nur für historischen Backfill zuständig |
+| **Deploy-Stolperstein** | `/data/profiles.yaml` lebt in einem persistenten Docker-Volume, wird nur per `cp -n` (no-clobber) aus der git-Version geseedet — ein reiner `git pull` + Rebuild reicht bei strukturellen Änderungen NICHT. Live hatte DC-DE/US/ES `enabled:false` (git-Version war veraltet) — git-Datei an Live-Stand angeglichen, dann `/data/profiles.yaml` gelöscht und Container neu gestartet, damit der Seed-Mechanismus sauber greift |
+| **Alte Dateien als superseded markiert** | `update_jobs.yaml`, `scripts/run_update_job.sh`, `orchestrator/generate_update_batches.py`, `orchestrator/reset_current_year.py` — bleiben auf Platte, nicht mehr aufrufen |
+| **Ad-hoc Mac-Mini-Lauf (Ausnahme)** | Vor dem Deploy: `UP-ELO2300` lokal für Juni nachgeholt (1274/1274, 0 Fehler) + gezielter Re-Scrape der 246 bereits vor dem Monatswechsel gescrapten Top-Spieler zur QC-Absicherung (246/246, 0 Fehler) |
+| **Ergebnis (Stand ~19:25 UTC)** | P1 ✅ fertig, P2 ✅ fertig, P3 🔄 7/40 Batches (27.806 neue Partien) — läuft weiter im Hintergrund, deutlich schneller als geschätzt |
+| **Bug gefunden + gefixt: Bericht Scraper zeigte DC-UPDATE-1 nicht** | `_ordered_dc` in `app.py` war hartkodiert und kannte noch das alte Label `"DC-UPDATE"` — nach dem Rename auf `DC-UPDATE-1` fiel die Spalte komplett aus Tabelle UND Tagessummen (`_dc_mb`, `_total`) raus. Liste jetzt live aus `profiles.yaml` abgeleitet |
+| Commits | `6c19bbb` (Hauptumbau), `547b7f2` (profiles.yaml an Live-Stand angeglichen), `97aa3ba` (Bericht-Scraper-Fix) |
 
 ---
 

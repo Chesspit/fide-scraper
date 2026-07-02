@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Reset done scrape_groups for the current year back to pending.
+"""SUPERSEDED (siehe Session-Plan "P1/P2/P3 ELO-Band-System"): dieser Reset
+setzt PAUSCHAL alle done-Gruppen des Jahres zurück — das trifft ungewollt
+auch den separaten, laufenden Welt-Backfill (dc_ae/de/es/hk/in/mx/uk/us/dach),
+nicht nur die Update-Batches. Ersetzt durch orchestrator/reset_monthly_refresh.py,
+das ausschließlich die P1/P2/P3-Tier-Gruppen trifft. Nicht mehr in
+scripts/monthly_update.sh aufrufen.
+
+Reset done scrape_groups for the current year back to pending.
 
 Teil des monatlichen FIDE-Updates: sobald ein neuer Monat verfügbar ist,
 werden done-Gruppen des laufenden Jahres auf pending zurückgesetzt.

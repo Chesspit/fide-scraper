@@ -77,6 +77,17 @@ def _get_concurrency_cfg() -> dict:
         return {}
 
 
+def _dc_thread_maps() -> tuple[dict[int, str], dict[str, str]]:
+    """Derive {slot: label} and {thread_affinity_id: label} from profiles.yaml,
+    live — so new DC threads (e.g. dc_update_1/2/3) show up everywhere without
+    editing app.py. Falls back to an empty mapping if profiles.yaml is
+    unreadable; call sites should tolerate missing keys gracefully."""
+    threads = _get_concurrency_cfg().get("datacenter_threads", [])
+    slot_labels = {t["slot"]: t["label"] for t in threads if "slot" in t and "label" in t}
+    id_labels = {t["id"]: t["label"] for t in threads if "id" in t and "label" in t}
+    return slot_labels, id_labels
+
+
 def _save_max_workers(n: int) -> None:
     """Persist max_workers to profiles.yaml [concurrency] section."""
     try:
@@ -460,9 +471,11 @@ def query_queue(affinity_filter: str | None = None) -> list[dict]:
     """
     conn = get_conn()
 
+    _dc_slot_labels, _dc_id_labels = _dc_thread_maps()
+
     if affinity_filter == "dc":
         where_extra = "AND thread_affinity IS NOT NULL"
-    elif affinity_filter in ("dc_de", "dc_in", "dc_uk", "dc_us", "dc_hk", "dc_es", "dc_mx", "dc_ae", "dc_dach", "dc_update"):
+    elif affinity_filter in _dc_id_labels:
         where_extra = f"AND thread_affinity = '{affinity_filter}'"
     elif affinity_filter == "residential":
         where_extra = "AND thread_affinity IS NULL AND (device IS NULL OR device = '')"
@@ -491,16 +504,6 @@ def query_queue(affinity_filter: str | None = None) -> list[dict]:
     result = [dict(r) for r in rows]
 
     # Thread-Anzeige: live Slot ODER konfigurierte Affinität → eine Spalte
-    _DC_SLOT_LABELS = {
-        99: "DC-DE", 100: "DC-IN", 101: "DC-UK", 102: "DC-US", 103: "DC-HK",
-        104: "DC-ES", 105: "DC-MX", 106: "DC-AE", 107: "DC-DACH", 108: "DC-UPDATE",
-    }
-    _AFFINITY_LABELS = {
-        "dc_de": "DC-DE", "dc_in": "DC-IN", "dc_uk": "DC-UK",
-        "dc_us": "DC-US", "dc_hk": "DC-HK",
-        "dc_es": "DC-ES", "dc_mx": "DC-MX", "dc_ae": "DC-AE",
-        "dc_dach": "DC-DACH", "dc_update": "DC-UPDATE",
-    }
     threads = read_worker_state().get("threads", [])
     thread_map = {}  # group_label → "▶ T2" / "▶ DC-IN"
     for t in threads:
@@ -509,7 +512,7 @@ def query_queue(affinity_filter: str | None = None) -> list[dict]:
             continue
         slot = t.get("slot", 0)
         if slot >= 99:
-            label = f"▶ {_DC_SLOT_LABELS.get(slot, 'DC')}"
+            label = f"▶ {_dc_slot_labels.get(slot, 'DC')}"
         else:
             label = f"▶ T{slot + 1}"
         thread_map[grp] = label
@@ -523,7 +526,7 @@ def query_queue(affinity_filter: str | None = None) -> list[dict]:
         else:
             # Wartend → konfigurierte Affinität als Label
             aff = row.get("thread_affinity", "")
-            row["thread_affinity"] = _AFFINITY_LABELS.get(aff, "") if aff else ""
+            row["thread_affinity"] = _dc_id_labels.get(aff, "") if aff else ""
     return result
 
 
@@ -563,8 +566,13 @@ def _fmt_dt(s: str | None) -> str:
 def query_completed() -> list[dict]:
     """Done groups with scraping stats from scrape_runs."""
     conn = get_conn()
+    _dc_slot_labels, _ = _dc_thread_maps()
+    _dc_slot_case = "\n".join(
+        f"                           WHEN {slot} THEN '{label}'"
+        for slot, label in sorted(_dc_slot_labels.items())
+    )
     rows = conn.execute(
-        """SELECT
+        f"""SELECT
                g.federation,
                g.continent,
                g.year,
@@ -575,16 +583,7 @@ def query_completed() -> list[dict]:
                CASE
                    WHEN r.thread_slot >= 99 THEN
                        CASE r.thread_slot
-                           WHEN 99  THEN 'DC-DE'
-                           WHEN 100 THEN 'DC-IN'
-                           WHEN 101 THEN 'DC-UK'
-                           WHEN 102 THEN 'DC-US'
-                           WHEN 103 THEN 'DC-HK'
-                           WHEN 104 THEN 'DC-ES'
-                           WHEN 105 THEN 'DC-MX'
-                           WHEN 106 THEN 'DC-AE'
-                           WHEN 107 THEN 'DC-DACH'
-                           WHEN 108 THEN 'DC-UPDATE'
+{_dc_slot_case}
                            ELSE 'DC'
                        END
                    WHEN r.thread_slot IS NOT NULL THEN 'T' || (r.thread_slot + 1)
@@ -1082,19 +1081,16 @@ DEVICE_OPTIONS = [
     {"label": "vps",           "value": "vps"},
 ]
 
-AFFINITY_OPTIONS = [
-    {"label": "— (Residential)", "value": ""},
-    {"label": "DC-DE",           "value": "dc_de"},
-    {"label": "DC-IN",           "value": "dc_in"},
-    {"label": "DC-UK",           "value": "dc_uk"},
-    {"label": "DC-US",           "value": "dc_us"},
-    {"label": "DC-HK",           "value": "dc_hk"},
-    {"label": "DC-ES",           "value": "dc_es"},
-    {"label": "DC-MX",           "value": "dc_mx"},
-    {"label": "DC-AE",           "value": "dc_ae"},
-    {"label": "DC-DACH",         "value": "dc_dach"},
-    {"label": "DC-UPDATE",       "value": "dc_update"},
-]
+def _build_affinity_options() -> list[dict]:
+    """{'Residential' + one entry per configured DC thread}, live from profiles.yaml."""
+    _, _dc_id_labels = _dc_thread_maps()
+    options = [{"label": "— (Residential)", "value": ""}]
+    for thread_id, label in _dc_id_labels.items():
+        options.append({"label": label, "value": thread_id})
+    return options
+
+
+AFFINITY_OPTIONS = _build_affinity_options()
 
 tab_queue = dbc.Container(fluid=True, children=[
     dcc.Interval(id="interval-queue", interval=15_000, n_intervals=0),
@@ -1131,19 +1127,7 @@ tab_queue = dbc.Container(fluid=True, children=[
         dbc.Col(
             dcc.Dropdown(
                 id="queue-dc-filter",
-                options=[
-                    {"label": "Alle DC-Threads", "value": "dc"},
-                    {"label": "DC-DE",  "value": "dc_de"},
-                    {"label": "DC-IN",  "value": "dc_in"},
-                    {"label": "DC-UK",  "value": "dc_uk"},
-                    {"label": "DC-US",  "value": "dc_us"},
-                    {"label": "DC-HK",  "value": "dc_hk"},
-                    {"label": "DC-ES",  "value": "dc_es"},
-                    {"label": "DC-MX",  "value": "dc_mx"},
-                    {"label": "DC-AE",  "value": "dc_ae"},
-                    {"label": "DC-DACH",   "value": "dc_dach"},
-                    {"label": "DC-UPDATE", "value": "dc_update"},
-                ],
+                options=[{"label": "Alle DC-Threads", "value": "dc"}] + AFFINITY_OPTIONS[1:],
                 value="dc",
                 clearable=False,
                 style={"width": "160px", "fontSize": "0.85rem", "display": "none"},
@@ -1266,17 +1250,7 @@ _REPORT_SLOT_LABELS = {
     2:   "T3",
     3:   "T4",
     50:  "Pi",
-    99:  "DC-DE",
-    100: "DC-IN",
-    101: "DC-UK",
-    102: "DC-US",
-    103: "DC-HK",
-    104: "DC-ES",
-    105: "DC-MX",
-    106: "DC-AE",
-    107: "DC-DACH",
-    108: "DC-UPDATE",
-    109: "DC-??3",   # Platzhalter für weitere DC-Scraper
+    **_dc_thread_maps()[0],   # live aus profiles.yaml, inkl. dc_update_1/2/3
 }
 _RESIDENTIAL_SLOTS = {0, 1, 2, 3, 50}   # alle niedrigen Slots = Residential; 50 = Pi
 
@@ -1477,8 +1451,7 @@ def _build_worker_status_widget(ws: dict) -> html.Div:
     import time as _time
 
     _SLOT_BADGE = ["primary", "success", "warning", "info"]
-    _DC_SLOT_LABELS = {99: "DC-DE", 100: "DC-IN", 101: "DC-UK", 102: "DC-US", 103: "DC-HK",
-                       104: "DC-ES", 105: "DC-MX", 106: "DC-AE", 107: "DC-DACH", 108: "DC-UPDATE"}
+    _DC_SLOT_LABELS, _ = _dc_thread_maps()
     _PROFILE_ABBR = {
         "semi_aggressive":  "semi-aggr.",
         "aggressive":       "aggr.",
@@ -2111,10 +2084,8 @@ def refresh_queue(_, active_tab, category_filter, dc_sub_filter):
     # DC-Sub-Filter: spezifischen DC-Thread oder alle DC
     if category_filter == "dc" and dc_sub_filter and dc_sub_filter != "dc":
         f = dc_sub_filter  # z.B. 'dc_in' → filtert WHERE thread_affinity='dc_in'
-        cat_label = {"dc_de": "DC-DE", "dc_in": "DC-IN", "dc_uk": "DC-UK",
-                     "dc_us": "DC-US", "dc_hk": "DC-HK",
-                     "dc_es": "DC-ES", "dc_mx": "DC-MX", "dc_ae": "DC-AE",
-                     "dc_dach": "DC-DACH", "dc_update": "DC-UPDATE"}.get(f, f)
+        _, _dc_id_labels = _dc_thread_maps()
+        cat_label = _dc_id_labels.get(f, f)
     elif category_filter == "all" or not category_filter:
         f = None
         cat_label = "alle"

@@ -189,7 +189,7 @@ concurrency:
     - GER
     host: eu.proxy-jet.io
     id: dc_dach
-    label: DACH
+    label: DC-DACH
     max_hours: null
     password_env: PROXYJET_DC_DACH_PASSWORD
     port: 1010
@@ -203,8 +203,8 @@ concurrency:
     enabled: true
     federations: []
     host: eu.proxy-jet.io
-    id: dc_update
-    label: Update
+    id: dc_update_1
+    label: DC-UPDATE-1
     max_hours: null
     password_env: PROXYJET_DC_UPDATE_PASSWORD
     port: 1010

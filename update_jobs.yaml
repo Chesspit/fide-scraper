@@ -1,3 +1,9 @@
+# SUPERSEDED (siehe Session-Plan "P1/P2/P3 ELO-Band-System"): dieser lokale
+# Mac-Mini-Mechanismus (scripts/run_update_job.sh) wird im monatlichen Update
+# nicht mehr verwendet. Ersetzt durch die geschlechtsunabhängigen Tiers
+# P1 (ELO>=2300) / P2 (DACH) / P3 (Rest) in orchestrator/monthly_refresh_tiers.py,
+# die vollständig über den VPS-Orchestrator laufen (dc_update_1..3-Threads).
+# Datei bleibt für einen Übergangszyklus als Referenz erhalten, nicht mehr aufrufen.
 jobs:
   UP-ELO2300:
     description: "Alle gescrapten Spieler mit ELO >= 2300 (alle Föderationen)"

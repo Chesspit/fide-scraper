@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Generate monthly update batches for the "rest" population (~95.000 Spieler)
+"""SUPERSEDED (siehe Session-Plan "P1/P2/P3 ELO-Band-System"): ersetzt durch
+orchestrator/generate_monthly_refresh_batches.py — geschlechtsunabhängige,
+föderationsübergreifende ELO-Band-Tiers (P1/P2/P3) statt föderationsbasierter
+Rest-Population-Batches. Nicht mehr erneut ausführen; die alten
+thread_affinity='dc_update'-Zeilen werden nach dem Cutover gelöscht (siehe
+Deprecation-Tabelle im Plan).
+
+Generate monthly update batches for the "rest" population (~95.000 Spieler)
 that are not covered by the 4 priority update jobs (UP-ELO2300/FEMALE/GER/DACH).
 
 Diese Spieler haben bereits eine vollständige Scrape-Historie, aber keinen

@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# SUPERSEDED (siehe Session-Plan "P1/P2/P3 ELO-Band-System"): nicht mehr Teil
+# des monatlichen Updates — läuft lokal auf dem Mac Mini, der aus dem
+# Monatszyklus entfernt wurde. Ersetzt durch die VPS-Orchestrator-Tiers
+# P1/P2/P3 (orchestrator/generate_monthly_refresh_batches.py +
+# orchestrator/reset_monthly_refresh.py). Bleibt für Ausnahme-/Ad-hoc-Fälle
+# auf Platte, aber nicht mehr in scripts/monthly_update.sh aufrufen.
+#
 # Monatliches Update-Script für benannte Spieler-Gruppen (UP-*).
 # Liest Job-Definition aus update_jobs.yaml, fragt relevante Spieler-IDs
 # aus der DB ab und startet Backfill für den konfigurierten Zeitraum.

@@ -30,6 +30,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from orchestrator.monthly_refresh_tiers import TIER_FILTERS
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.proxy_manager import ProxyJetManager
 from orchestrator.queue_manager import Group, QueueManager
@@ -216,6 +217,11 @@ def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
     (status='ok' in scrape_periods) — used for monthly Update-Batches, where
     rating drift must never pull in a never-scraped player (would trigger an
     unwanted full historical backfill instead of a quick monthly refresh).
+
+    federation may also be a monthly-refresh tier sentinel ('P1'/'P2'/'P3',
+    see orchestrator/monthly_refresh_tiers.py) — in that case the query pools
+    across ALL federations using the tier's population filter instead of an
+    exact federation match. Tier groups always imply update_only semantics.
     """
     scraped_filter = (
         "AND EXISTS (SELECT 1 FROM scrape_periods sp "
@@ -223,17 +229,27 @@ def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
         if update_only else ""
     )
     with pg_conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT fide_id FROM players
-            WHERE active = TRUE
-              AND federation = %s
-              AND std_rating BETWEEN %s AND %s
-              {scraped_filter}
-            ORDER BY fide_id
-            """,
-            (federation, elo_min, elo_max),
-        )
+        if federation in TIER_FILTERS:
+            query = f"""
+                SELECT fide_id FROM players
+                WHERE active = TRUE
+                  AND {TIER_FILTERS[federation]}
+                  AND std_rating BETWEEN %s AND %s
+                  {scraped_filter}
+                ORDER BY fide_id
+                """
+            params = (elo_min, elo_max)
+        else:
+            query = f"""
+                SELECT fide_id FROM players
+                WHERE active = TRUE
+                  AND federation = %s
+                  AND std_rating BETWEEN %s AND %s
+                  {scraped_filter}
+                ORDER BY fide_id
+                """
+            params = (federation, elo_min, elo_max)
+        cur.execute(query, params)
         return [row[0] for row in cur.fetchall()]
 
 

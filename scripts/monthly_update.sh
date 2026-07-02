@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Monatliches FIDE-Update: TXT-Snapshot importieren und alle UP-Jobs ausführen.
+# Monatliches FIDE-Update: TXT-Snapshot importieren, dann P1/P2/P3-Monatsrefresh
+# auf dem VPS-Orchestrator anstoßen.
+#
+# Läuft komplett ohne Mac Mini / MacBook Pro — das eigentliche Nachscrapen
+# übernehmen die dc_update_1/2/3-Threads auf dem VPS (siehe
+# orchestrator/generate_monthly_refresh_batches.py / reset_monthly_refresh.py).
 #
 # Voraussetzung: TXT-Datei bereits in data/ abgelegt
-#   data/players_list_foa_YYYY-MM.txt  (oder .zip)
+#   data/players_list_foa_YYYY-MM.txt  (oder .zip)  bzw. standard_*frl.zip
 #
 # Verwendung:
 #   bash scripts/monthly_update.sh 2026-05-01    # expliziter Monat
@@ -22,12 +27,8 @@ y = t.year if t.month > 1 else t.year - 1
 print(date(y, m, 1))
 ")}
 
-YEAR_MONTH="${NEW_PERIOD:0:7}"          # z.B. "2026-05"
-FROM_DATE="${NEW_PERIOD:0:4}-01-01"     # z.B. "2026-01-01" — fängt Lücken seit Jan auf
-
 echo "$(date): ========================================"
 echo "$(date): Monatliches FIDE-Update: $NEW_PERIOD"
-echo "$(date): FROM=$FROM_DATE TO=$NEW_PERIOD"
 echo "$(date): ========================================"
 
 # --- Schritt 1: TXT-Datei suchen (unterstützt alle FIDE-Namensformate) ---
@@ -66,50 +67,26 @@ fi
 
 # --- Schritt 2: TXT-Snapshot importieren ---
 echo ""
-echo "$(date): === Schritt 2/4: TXT-Snapshot importieren ==="
+echo "$(date): === Schritt 2/3: TXT-Snapshot importieren ==="
 DATABASE_URL="$DB_URL" python3 "$SCRIPT_DIR/scripts/import_rating_snapshots.py" \
     --file "$IMPORT_FILE"
 
-# --- Schritt 3: config.yaml aktualisieren ---
+# --- Schritt 3: VPS-Orchestrator — P1/P2/P3-Monatsrefresh requeuen ---
+# Setzt NUR die P1/P2/P3-Gruppen (federation-Sentinel, siehe
+# orchestrator/monthly_refresh_tiers.py) zurück — der separate, laufende
+# Welt-Backfill (dc_ae/de/es/hk/in/mx/uk/us/dach) bleibt unangetastet.
+# PostgreSQL scrape_periods sorgt für idempotentes Überspringen bereits
+# gescrapter Perioden — nur der neue Monat wird tatsächlich nachgeholt.
 echo ""
-echo "$(date): === Schritt 3/4: config.yaml aktualisieren ==="
-YEAR_MONTH="$YEAR_MONTH" CONFIG="$SCRIPT_DIR/config.yaml" python3 - <<'PYEOF'
-import re, os
-config_path = os.environ['CONFIG']
-year_month  = os.environ['YEAR_MONTH']
-with open(config_path) as f:
-    content = f.read()
-new_ref = f'data/players_list_foa_{year_month}.txt'
-content = re.sub(r'players_file:.*', f'players_file: {new_ref}', content)
-with open(config_path, 'w') as f:
-    f.write(content)
-print(f'config.yaml → players_file: {new_ref}')
-PYEOF
-
-# --- Schritt 4: UP-Jobs ausführen ---
-echo ""
-echo "$(date): === Schritt 4/5: Update-Jobs starten ==="
-JOBS=(UP-ELO2300 UP-FEMALE UP-GER UP-DACH)
-
-for JOB in "${JOBS[@]}"; do
-    echo ""
-    echo "$(date): --- $JOB ---"
-    bash "$SCRIPT_DIR/scripts/run_update_job.sh" "$JOB" "$FROM_DATE" "$NEW_PERIOD"
-done
-
-# --- Schritt 5: VPS-Orchestrator — done-Gruppen des laufenden Jahres requeuen ---
-# Betrifft auch die dc_update-Batches (Rest-Population): PostgreSQL scrape_periods
-# sorgt für idempotentes Überspringen bereits gescrapter Perioden — nur der neue
-# Monat wird tatsächlich nachgeholt.
-echo ""
-echo "$(date): === Schritt 5/5: VPS-Orchestrator — Update-Batches requeuen ==="
+echo "$(date): === Schritt 3/3: VPS-Orchestrator — P1/P2/P3-Monatsrefresh requeuen ==="
 if ! ssh pit@187.124.181.116 \
-    "cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_current_year.py"; then
-    echo "$(date): WARNUNG: reset_current_year.py auf VPS fehlgeschlagen — manuell nachholen:"
-    echo "  ssh pit@187.124.181.116 \"cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_current_year.py\""
+    "cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_monthly_refresh.py"; then
+    echo "$(date): WARNUNG: reset_monthly_refresh.py auf VPS fehlgeschlagen — manuell nachholen:"
+    echo "  ssh pit@187.124.181.116 \"cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_monthly_refresh.py\""
 fi
 
 echo ""
 echo "$(date): ========================================"
 echo "$(date): Monatliches Update $NEW_PERIOD abgeschlossen ✓"
+echo "$(date): dc_update_1..3 holen den neuen Monat im Hintergrund nach (VPS-Dashboard)."
 echo "$(date): ========================================"

@@ -46,6 +46,9 @@ services:
       - orchestrator_data:/data
       - ../config.yaml:/app/config.yaml:ro
       - ../orchestrator/webshare_proxies.txt:/app/orchestrator/webshare_proxies.txt:ro
+      - ../orchestrator/webshare_proxies_americas.txt:/app/orchestrator/webshare_proxies_americas.txt:ro
+      - ../orchestrator/webshare_proxies_europe.txt:/app/orchestrator/webshare_proxies_europe.txt:ro
+      - ../orchestrator/webshare_proxies_mena_asia.txt:/app/orchestrator/webshare_proxies_mena_asia.txt:ro
     ports:
       - "127.0.0.1:8050:8050"
     networks:
@@ -90,6 +93,9 @@ services:
       - ../config.yaml:/app/config.yaml:ro
       - ../data:/app/data:ro
       - ../orchestrator/webshare_proxies.txt:/app/orchestrator/webshare_proxies.txt:ro
+      - ../orchestrator/webshare_proxies_americas.txt:/app/orchestrator/webshare_proxies_americas.txt:ro
+      - ../orchestrator/webshare_proxies_europe.txt:/app/orchestrator/webshare_proxies_europe.txt:ro
+      - ../orchestrator/webshare_proxies_mena_asia.txt:/app/orchestrator/webshare_proxies_mena_asia.txt:ro
     networks:
       - fide_net
     # unless-stopped — Worker immer neu starten (auch nach Crash), ausser bei explizitem

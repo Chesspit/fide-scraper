@@ -19,7 +19,7 @@ concurrency:
     label: DC-DE
     max_hours: null
     password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies.txt
+    pool_file: orchestrator/webshare_proxies_europe.txt
     profile: semi_conservative
     slot: 99
     timezone: Europe/Berlin
@@ -35,7 +35,7 @@ concurrency:
     label: DC-IN
     max_hours: null
     password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies.txt
+    pool_file: orchestrator/webshare_proxies_mena_asia.txt
     profile: semi_conservative
     slot: 100
     timezone: Asia/Kolkata
@@ -59,7 +59,7 @@ concurrency:
     label: DC-UK
     max_hours: null
     password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies.txt
+    pool_file: orchestrator/webshare_proxies_europe.txt
     profile: semi_conservative
     slot: 101
     timezone: Europe/London
@@ -75,7 +75,7 @@ concurrency:
     label: DC-US
     max_hours: null
     password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies.txt
+    pool_file: orchestrator/webshare_proxies_americas.txt
     profile: semi_conservative
     slot: 102
     timezone: America/New_York
@@ -105,7 +105,7 @@ concurrency:
     label: DC-HK
     max_hours: null
     password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies.txt
+    pool_file: orchestrator/webshare_proxies_mena_asia.txt
     profile: semi_conservative
     slot: 103
     timezone: Asia/Hong_Kong
@@ -124,7 +124,7 @@ concurrency:
     label: DC-ES
     max_hours: null
     password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies.txt
+    pool_file: orchestrator/webshare_proxies_europe.txt
     profile: semi_conservative
     slot: 104
     timezone: Europe/Madrid
@@ -142,7 +142,7 @@ concurrency:
     label: DC-MX
     max_hours: null
     password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies.txt
+    pool_file: orchestrator/webshare_proxies_americas.txt
     profile: semi_conservative
     slot: 105
     timezone: America/Mexico_City
@@ -166,7 +166,7 @@ concurrency:
     label: DC-AE
     max_hours: null
     password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies.txt
+    pool_file: orchestrator/webshare_proxies_mena_asia.txt
     profile: semi_conservative
     slot: 106
     timezone: Asia/Dubai
@@ -183,7 +183,7 @@ concurrency:
     label: DC-DACH
     max_hours: null
     password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies.txt
+    pool_file: orchestrator/webshare_proxies_europe.txt
     profile: semi_conservative
     slot: 107
     timezone: Europe/Berlin

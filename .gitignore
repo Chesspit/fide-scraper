@@ -28,8 +28,9 @@ orchestrator/scraper.db-wal
 orchestrator/worker_state.json
 orchestrator/__pycache__/
 
-# Proxy-Pool-Liste (enthält IPs des gebuchten Proxy-Kontingents, Credentials separat in .env)
+# Proxy-Pool-Listen (enthalten IPs des gebuchten Proxy-Kontingents, Credentials separat in .env)
 orchestrator/webshare_proxies.txt
+orchestrator/webshare_proxies_*.txt
 
 # DB-Dumps (lokal, zu groß für Git)
 backups/

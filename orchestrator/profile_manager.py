@@ -29,21 +29,27 @@ class ProfileManager:
             self._data = yaml.safe_load(f)
 
     def get_active(self) -> dict[str, Any]:
-        """Return the currently active profile dict."""
-        name = self._data.get("active_profile", "normal")
+        """Return the currently active profile dict.
+
+        Ein per Dashboard gesetzter Override (runtime_settings.json) gewinnt
+        über den active_profile-Default aus profiles.yaml — die YAML selbst
+        wird seit Review #4 nie mehr umgeschrieben (read-only-Mount).
+        """
+        from orchestrator import runtime_settings
+        name = runtime_settings.active_profile_override() \
+            or self._data.get("active_profile", "normal")
         profiles = self._data.get("profiles", {})
         if name not in profiles:
             raise ValueError(f"Unknown profile: {name!r}")
         return {"name": name, **profiles[name]}
 
     def set_active(self, name: str) -> None:
-        """Switch the active profile and persist to disk."""
+        """Switch the active profile (persisted in runtime_settings.json)."""
         if name not in self._data.get("profiles", {}):
             raise ValueError(f"Unknown profile: {name!r}. "
                              f"Available: {self.available()}")
-        self._data["active_profile"] = name
-        with open(self._path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(self._data, f, default_flow_style=False, allow_unicode=True)
+        from orchestrator import runtime_settings
+        runtime_settings.set_value("active_profile", name)
 
     def available(self) -> list[str]:
         return list(self._data.get("profiles", {}).keys())

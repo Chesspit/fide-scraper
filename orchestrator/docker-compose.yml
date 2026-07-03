@@ -25,15 +25,16 @@ services:
     build:
       context: ..
       dockerfile: orchestrator/Dockerfile
-    # profiles.yaml liegt im gemeinsamen Volume (/data), die git-Version dient nur als
-    # Seed (cp -n = nur kopieren falls noch nicht vorhanden, Runtime-Config bleibt erhalten).
-    command: sh -c "cp -n /app/orchestrator/profiles.yaml /data/profiles.yaml 2>/dev/null || true; exec python -m orchestrator.app"
+    # profiles.yaml ist seit Review #4 rein statisch (Git/Image = Wahrheit);
+    # Laufzeit-State (enabled/active_hours/max_hours/active_profile) liegt in
+    # /data/runtime_settings.json. Das frühere cp-n-Seeding nach /data entfällt.
+    command: python -m orchestrator.app
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
       DATABASE_URL: postgresql://fide:${DB_PASSWORD}@host.docker.internal:5432/fidedb
       ORCHESTRATOR_DATA_DIR: /data
-      ORCHESTRATOR_PROFILES: /data/profiles.yaml
+      ORCHESTRATOR_PROFILES: /app/orchestrator/profiles.yaml
       # Webshare: ein gemeinsames Credential-Paar für den ganzen 100-IP-Pool
       # (siehe orchestrator/webshare_proxies.txt) — ersetzt die 9 separaten
       # ProxyJet-DC-Thread-Credential-Paare, die es bei Webshare nicht braucht.
@@ -71,14 +72,16 @@ services:
     build:
       context: ..
       dockerfile: orchestrator/Dockerfile
-    # Seed wie beim Dashboard; profiles.yaml wird aus dem gemeinsamen Volume gelesen.
-    command: sh -c "cp -n /app/orchestrator/profiles.yaml /data/profiles.yaml 2>/dev/null || true; exec python -m orchestrator.worker"
+    # profiles.yaml statisch aus dem Image (siehe Dashboard-Kommentar oben);
+    # Laufzeit-State teilt sich der Worker mit dem Dashboard über
+    # /data/runtime_settings.json (gemeinsames Volume).
+    command: python -m orchestrator.worker
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
       DATABASE_URL: postgresql://fide:${DB_PASSWORD}@host.docker.internal:5432/fidedb
       ORCHESTRATOR_DATA_DIR: /data
-      ORCHESTRATOR_PROFILES: /data/profiles.yaml
+      ORCHESTRATOR_PROFILES: /app/orchestrator/profiles.yaml
       # Webshare: ein gemeinsames Credential-Paar für den ganzen 100-IP-Pool
       # (siehe orchestrator/webshare_proxies.txt) — ersetzt die 9 separaten
       # ProxyJet-DC-Thread-Credential-Paare, die es bei Webshare nicht braucht.

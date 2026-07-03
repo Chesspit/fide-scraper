@@ -27,10 +27,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
-import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from orchestrator import runtime_settings
 from orchestrator.monthly_refresh_tiers import TIER_FILTERS
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.proxy_manager import ProxyManager
@@ -215,31 +215,21 @@ def _increment_global_stats(mb_group: float) -> None:
 
 
 def _load_concurrency_config() -> dict:
-    """Load the [concurrency] section from profiles.yaml."""
-    try:
-        with open(PROFILES_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        return data.get("concurrency", {})
-    except Exception:
-        return {}
+    """[concurrency]-Sicht: profiles.yaml-Topologie + Runtime-Overrides."""
+    return runtime_settings.effective_concurrency()
 
 
 def _read_dc_thread_enabled(dc_id: str) -> bool:
-    """Liest enabled-Flag eines DC-Threads live aus profiles.yaml.
+    """Liest enabled-Flag eines DC-Threads live (Runtime-Override vor YAML).
 
     Wird zwischen Gruppen geprüft — so greift der UI-Toggle sofort nach
     Abschluss der aktuellen Gruppe, ohne einen Neustart zu benötigen.
-    Gibt True zurück falls die Datei nicht lesbar ist (safe default: weiterlaufen).
+    Gibt True zurück im Fehlerfall (safe default: weiterlaufen).
     """
     try:
-        with open(PROFILES_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        for t in data.get("concurrency", {}).get("datacenter_threads", []):
-            if t.get("id") == dc_id:
-                return bool(t.get("enabled", True))
+        return runtime_settings.dc_thread_enabled(dc_id)
     except Exception:
-        pass
-    return True  # Im Fehlerfall: sicher weiterlaufen
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -979,7 +969,7 @@ def run_dc_slot(
             # dieser Check nach dem Timezone-Sleep, bliebe ein schlafender Thread als
             # 💤-Slot hängen und würde das Deaktivieren nie bemerken.
             if not _read_dc_thread_enabled(affinity):
-                logger.info("DC-Thread %s: in profiles.yaml deaktiviert — stoppe", label)
+                logger.info("DC-Thread %s: per UI-Toggle deaktiviert — stoppe", label)
                 _clear_thread_slot(slot)
                 break
 

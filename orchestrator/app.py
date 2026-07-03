@@ -21,7 +21,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from dash import Input, Output, State, callback_context, dash_table, dcc, html
 
-import yaml
+from orchestrator import runtime_settings
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.setup_db import DB_PATH, create_db
 
@@ -69,12 +69,8 @@ pm = ProfileManager()
 
 
 def _get_concurrency_cfg() -> dict:
-    """Read [concurrency] section from profiles.yaml (live, not cached)."""
-    try:
-        with open(PROFILES_PATH, encoding="utf-8") as f:
-            return yaml.safe_load(f).get("concurrency", {})
-    except Exception:
-        return {}
+    """[concurrency]-Sicht: profiles.yaml-Topologie + Runtime-Overrides (live)."""
+    return runtime_settings.effective_concurrency()
 
 
 def _dc_thread_maps() -> tuple[dict[int, str], dict[str, str]]:
@@ -88,89 +84,34 @@ def _dc_thread_maps() -> tuple[dict[int, str], dict[str, str]]:
     return slot_labels, id_labels
 
 
-def _save_max_workers(n: int) -> None:
-    """Persist max_workers to profiles.yaml [concurrency] section."""
-    try:
-        with open(PROFILES_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        if "concurrency" not in data:
-            data["concurrency"] = {}
-        data["concurrency"]["max_workers"] = n
-        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
-    except Exception:
-        pass
-
-
-def _save_datacenter_enabled(enabled: bool) -> None:
-    """Persist concurrency.datacenter.enabled to profiles.yaml (legacy fallback)."""
-    try:
-        with open(PROFILES_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        data.setdefault("concurrency", {}).setdefault("datacenter", {})["enabled"] = enabled
-        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
-    except Exception:
-        pass
-
-
 def _save_dc_thread_enabled(dc_id: str, enabled: bool) -> None:
-    """Persist enabled-Flag für einen DC-Thread in profiles.yaml."""
+    """Persist enabled-Flag für einen DC-Thread (runtime_settings.json)."""
     try:
-        with open(PROFILES_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        threads = data.get("concurrency", {}).get("datacenter_threads", [])
-        for t in threads:
-            if t.get("id") == dc_id:
-                t["enabled"] = enabled
-                break
-        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+        runtime_settings.update_dc_thread(dc_id, enabled=bool(enabled))
     except Exception:
         pass
 
 
 def _save_dc_thread_active_hours(dc_id: str, h_start, h_end) -> None:
-    """Persist active_hours für einen DC-Thread in profiles.yaml."""
+    """Persist active_hours für einen DC-Thread (runtime_settings.json)."""
     try:
-        with open(PROFILES_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        for t in data.get("concurrency", {}).get("datacenter_threads", []):
-            if t.get("id") == dc_id:
-                t["active_hours"] = [int(h_start), int(h_end)]
-                break
-        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+        runtime_settings.update_dc_thread(dc_id, active_hours=[int(h_start), int(h_end)])
     except Exception:
         pass
 
 
 def _save_slot_max_hours(slot: int, hours) -> None:
-    """Persist max_hours für einen Residential-Slot in profiles.yaml (None = unbegrenzt)."""
+    """Persist max_hours für einen Residential-Slot (None = unbegrenzt)."""
     try:
-        with open(PROFILES_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        for s in data.get("concurrency", {}).get("worker_slots", []):
-            if s.get("slot") == slot:
-                s["max_hours"] = float(hours) if hours else None
-                break
-        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+        runtime_settings.update_worker_slot(slot, max_hours=float(hours) if hours else None)
     except Exception:
         pass
 
 
 def _save_dc_thread_max_hours(dc_id: str, hours) -> None:
-    """Persist max_hours für einen DC-Thread in profiles.yaml (None = unbegrenzt)."""
+    """Persist max_hours für einen DC-Thread (None = unbegrenzt)."""
     try:
-        with open(PROFILES_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        for t in data.get("concurrency", {}).get("datacenter_threads", []):
-            if t.get("id") == dc_id:
-                t["max_hours"] = float(hours) if hours else None
-                break
-        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+        runtime_settings.update_dc_thread(dc_id, max_hours=float(hours) if hours else None)
     except Exception:
         pass
 
@@ -210,44 +151,17 @@ def _get_dc_thread_status() -> list[dict]:
 
 
 def _save_worker_profile_for_slot(slot: int, profile_name: str) -> None:
-    """Persist worker_slots[slot].profile in profiles.yaml."""
+    """Persist worker_slots[slot].profile (runtime_settings.json)."""
     try:
-        with open(PROFILES_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        slots = data.setdefault("concurrency", {}).setdefault("worker_slots", [
-            {"slot": i, "enabled": i < 2, "profile": "normal"} for i in range(4)
-        ])
-        for s in slots:
-            if s.get("slot") == slot:
-                s["profile"] = profile_name
-                break
-        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+        runtime_settings.update_worker_slot(slot, profile=profile_name)
     except Exception:
         pass
 
 
 def _save_residential_slot_enabled(slot: int, enabled: bool) -> None:
-    """Persist worker_slots[slot].enabled in profiles.yaml."""
+    """Persist worker_slots[slot].enabled (runtime_settings.json)."""
     try:
-        with open(PROFILES_PATH, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        cfg = data.setdefault("concurrency", {})
-        # Migration: worker_slots aus max_workers ableiten falls noch nicht vorhanden
-        if "worker_slots" not in cfg:
-            max_w    = cfg.get("max_workers", 1)
-            profiles = cfg.get("worker_profiles", ["normal"] * 4)
-            cfg["worker_slots"] = [
-                {"slot": i, "enabled": i < max_w,
-                 "profile": profiles[i] if i < len(profiles) else "normal"}
-                for i in range(4)
-            ]
-        for s in cfg["worker_slots"]:
-            if s.get("slot") == slot:
-                s["enabled"] = enabled
-                break
-        with open(PROFILES_PATH, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+        runtime_settings.update_worker_slot(slot, enabled=bool(enabled))
     except Exception:
         pass
 
@@ -1762,7 +1676,7 @@ def refresh_dc_threads_panel(_, active_tab):
     prevent_initial_call=True,
 )
 def toggle_dc_thread(values, ids):
-    """Persist DC-Thread enabled-Flag per Toggle-Klick in profiles.yaml."""
+    """Persist DC-Thread enabled-Flag per Toggle-Klick (runtime_settings.json)."""
     triggered = callback_context.triggered_id
     if triggered and isinstance(triggered, dict):
         dc_id = triggered.get("id")
@@ -1870,7 +1784,7 @@ def refresh_residential_threads_panel(_, active_tab):
     prevent_initial_call=True,
 )
 def save_residential_profile(values, ids):
-    """Persist Profil-Änderung eines Residential-Slots in profiles.yaml."""
+    """Persist Profil-Änderung eines Residential-Slots (runtime_settings.json)."""
     triggered = callback_context.triggered_id
     if triggered and isinstance(triggered, dict):
         slot = triggered.get("slot")
@@ -1888,7 +1802,7 @@ def save_residential_profile(values, ids):
     prevent_initial_call=True,
 )
 def toggle_residential_slot(values, ids):
-    """Persist enabled-Flag eines Residential-Slots in profiles.yaml."""
+    """Persist enabled-Flag eines Residential-Slots (runtime_settings.json)."""
     triggered = callback_context.triggered_id
     if triggered and isinstance(triggered, dict):
         slot = triggered.get("slot")

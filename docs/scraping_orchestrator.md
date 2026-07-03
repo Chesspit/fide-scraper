@@ -246,7 +246,11 @@ class ProxyManager:
 
 **Fazit:** Code-technisch trivial umsetzbar (nur neue `pool_file`s + Zuweisung pro Thread in `profiles.yaml`, `proxy_manager.py` braucht keine Änderung — unterstützt pro-Instanz-Pools bereits). **Praktisch aber noch nicht robust genug** bei nur 100 IPs im Gesamt-Kontingent: Naher Osten hat gerade 0 nutzbare IPs, Asien-Ozeanien nur 9 (dünn für mehrere parallele Threads). Europa und Amerikas sind dagegen gut bestückt. Bevor eine echte Aufteilung sinnvoll ist, entweder (a) bei Webshare gezielt IPs für Naher Osten/Asien-Ozeanien nachkaufen/anfragen, falls das Dashboard das erlaubt, oder (b) die dünnen Regionen vorerst mit der Europa-/Amerikas-Region zusammenlegen statt strikt 4 getrennte Pools zu fahren.
 
-**Offen: Ersatz der 12 toten IPs bei Webshare** — Liste siehe `scripts/check_proxy_pool.py`-Ausgabe vom 2026-07-03 (max. 10 pro Webshare-Anfrage ersetzbar). Nach dem Tausch: `orchestrator/webshare_proxies.txt` lokal + auf dem VPS mit den neuen IPs aktualisieren.
+**Ersatz-Runde 1 (2026-07-03):** User hat 5 der 12 toten IPs bei Webshare ersetzt (1× Ägypten, 4× Türkei/`166.88.110.x`). Nachgetestet: nur der Ägypten-Ersatz (`154.73.250.233:6134`) funktioniert — **alle 4 Türkei-Ersatz-IPs liegen wieder im selben `166.88.110.0/24`-Subnetz und sind ebenfalls tot.** Hinweis für den nächsten Webshare-Support-Kontakt: nicht einzelne IPs meldenden, sondern explizit erwähnen, dass der gesamte `166.88.110.0/24`-Block von unserem Netzwerkpfad aus unerreichbar ist — sonst ersetzt der Automatismus vermutlich wieder innerhalb desselben kaputten Blocks.
+
+`orchestrator/webshare_proxies.txt` (lokal + VPS) wurde auf den aktuellen Webshare-Stand synchronisiert (100 Einträge, davon weiterhin ~11 tot). Der Pool-Rotation-Mechanismus toleriert das bereits gut (siehe Fix vom selben Tag: frischer Proxy pro Retry-Versuch) — keine Notwendigkeit, tote IPs manuell aus der Datei zu entfernen, nur bei jedem Sync/Tausch **den Worker neu starten** (`docker compose restart worker`), da `ProxyManager` die Pool-Datei nur beim Start einliest, nicht live nachlädt.
+
+**Noch offen:** 7 der ursprünglich 12 toten IPs (außerhalb der Türkei-Subnetz-Ersatzrunde) sowie die 4 Türkei-Ersatz-IPs — insgesamt weiterhin ~11 tote Einträge im Pool.
 
 ---
 

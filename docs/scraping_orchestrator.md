@@ -278,6 +278,8 @@ Zuordnung folgt der **konfigurierten `timezone` je Thread** (nicht den `federati
 
 **Bei künftigem IP-Tausch:** die passende Region-Datei (nicht nur `webshare_proxies.txt`) aktualisieren, je nachdem in welcher Region die getauschte IP lag — sonst zieht der betroffene Thread weiterhin aus einem veralteten Pool. Ein Worker-Neustart ist dafür **nicht mehr nötig** (Hot-Reload seit 2026-07-03, siehe oben) — Datei syncen genügt, der Thread übernimmt sie innerhalb von ~30 s.
 
+⚠️ **In-place aktualisieren, nicht per Rename ersetzen:** Die Pool-Dateien sind als Einzeldatei-Bind-Mounts in die Container eingebunden. `scp` und `cat >` schreiben in-place (gleicher Inode, Container sieht die Änderung); Standard-`rsync` und `mv` ersetzen die Datei per Rename (**neuer Inode — der Container behält die alte Datei**, das Hot-Reload sieht nichts). Falls doch rsync: `rsync --inplace` verwenden.
+
 ---
 
 ## Aufgabe 6 — Deployment auf Hostinger VPS (Stand: Traefik/Coolify)

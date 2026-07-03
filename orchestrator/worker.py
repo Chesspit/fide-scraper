@@ -15,7 +15,6 @@ Parallel mode (configured via profiles.yaml [concurrency]):
     Each thread runs independently with its own PostgreSQL + SQLite connection.
 """
 
-import json
 import logging
 import os
 import sys
@@ -30,7 +29,13 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from orchestrator import runtime_settings
+from orchestrator import runtime_settings, state_io
+from orchestrator.state_io import (
+    WORKER_STATE_PATH,
+    read_command,
+    read_worker_state,
+    write_state,
+)
 from orchestrator.monthly_refresh_tiers import TIER_FILTERS
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.proxy_manager import ProxyManager
@@ -46,9 +51,6 @@ from scraper.fetcher import AJAX_URL, HEADERS, REFERER_URL, BlockedError
 from scraper.parser import parse_calculations
 
 logger = logging.getLogger("orchestrator.worker")
-
-_DATA_DIR = Path(os.getenv("ORCHESTRATOR_DATA_DIR", Path(__file__).resolve().parent))
-WORKER_STATE_PATH = _DATA_DIR / "worker_state.json"
 
 _PAUSE_POLL_INTERVAL = 5      # seconds between pause-state polls
 _EMPTY_QUEUE_SLEEP = 120      # seconds to wait when queue is empty (single-thread)
@@ -84,9 +86,6 @@ def _dc_seconds_until_active(dc_cfg: dict) -> float:
         return max(60.0, (target - now).total_seconds())
     except Exception:
         return 3600.0
-
-# Lock protecting all read-modify-write operations on worker_state.json
-_state_lock = threading.Lock()
 
 # Rate-Limit für die "failed ohne Retry-Budget"-Warnung (einmal pro Stunde,
 # egal wie viele Threads im Leerlauf darüber stolpern)
@@ -126,92 +125,13 @@ def _idle_queue_maintenance(qm: QueueManager, log_prefix: str) -> int:
 
 
 # ---------------------------------------------------------------------------
-# State file helpers
+# State file helpers — seit Review #6 kanonisch in orchestrator/state_io.py
+# (eine Implementierung für Worker + Dashboard; Aliase erhalten die alten
+# modul-internen Namen an den ~30 Aufrufstellen unten)
 # ---------------------------------------------------------------------------
-
-def _write_state_atomic(data: dict) -> None:
-    """Write state dict to worker_state.json via a temp file + atomic rename.
-
-    Path.write_text() truncates the file before writing; any concurrent read
-    during that window sees an empty file and falls back to {"command": "stopped"},
-    which can cause freshly-started threads to stop immediately. Using rename(2)
-    (atomic on POSIX) eliminates that window entirely.
-    """
-    content = json.dumps(data, indent=2)
-    tmp = WORKER_STATE_PATH.with_suffix(".tmp")
-    tmp.write_text(content)
-    tmp.replace(WORKER_STATE_PATH)  # atomic on POSIX
-
-
-def read_worker_state() -> dict:
-    """Return the full worker_state.json as a dict."""
-    try:
-        return json.loads(WORKER_STATE_PATH.read_text())
-    except Exception:
-        return {}
-
-
-def read_command() -> str:
-    """Return the current command from worker_state.json ('run'/'pause'/'stopped')."""
-    return read_worker_state().get("command", "stopped")
-
-
-def write_state(command: str | None = None, **extra) -> None:
-    """Update worker_state.json, preserving existing keys (partial update).
-    Thread-safe: acquires _state_lock before read-modify-write.
-    Uses atomic rename to avoid truncation-window race with concurrent readers.
-    """
-    with _state_lock:
-        try:
-            data = json.loads(WORKER_STATE_PATH.read_text()) if WORKER_STATE_PATH.exists() else {}
-        except Exception:
-            data = {}
-        if command is not None:
-            data["command"] = command
-        for k, v in extra.items():
-            if v is not None or k in data:
-                data[k] = v
-        _write_state_atomic(data)
-
-
-def _update_thread_slot(slot: int, **kwargs) -> None:
-    """Update the state entry for a specific thread slot (thread-safe)."""
-    with _state_lock:
-        try:
-            data = json.loads(WORKER_STATE_PATH.read_text()) if WORKER_STATE_PATH.exists() else {}
-        except Exception:
-            data = {}
-        threads = data.setdefault("threads", [])
-        entry = next((t for t in threads if t.get("slot") == slot), None)
-        if entry is None:
-            entry = {"slot": slot}
-            threads.append(entry)
-        entry.update(kwargs)
-        data["threads"] = sorted(threads, key=lambda t: t.get("slot", 0))
-        _write_state_atomic(data)
-
-
-def _clear_thread_slot(slot: int) -> None:
-    """Remove a thread slot from the threads list (thread-safe)."""
-    with _state_lock:
-        try:
-            data = json.loads(WORKER_STATE_PATH.read_text()) if WORKER_STATE_PATH.exists() else {}
-        except Exception:
-            data = {}
-        data["threads"] = [t for t in data.get("threads", []) if t.get("slot") != slot]
-        _write_state_atomic(data)
-
-
-def _increment_global_stats(mb_group: float) -> None:
-    """Atomically increment groups_done and mb_downloaded (thread-safe)."""
-    with _state_lock:
-        try:
-            data = json.loads(WORKER_STATE_PATH.read_text()) if WORKER_STATE_PATH.exists() else {}
-        except Exception:
-            data = {}
-        data["groups_done"] = data.get("groups_done", 0) + 1
-        data["mb_downloaded"] = round(data.get("mb_downloaded", 0.0) + mb_group, 2)
-        _write_state_atomic(data)
+_update_thread_slot = state_io.update_thread_slot
+_clear_thread_slot = state_io.clear_thread_slot
+_increment_global_stats = state_io.increment_global_stats
 
 
 def _load_concurrency_config() -> dict:

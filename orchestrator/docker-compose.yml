@@ -87,6 +87,9 @@ services:
       PROXY_POOL_FILE: ${PROXY_POOL_FILE:-orchestrator/webshare_proxies.txt}
       PROXY_DC_USERNAME: ${PROXY_DC_USERNAME:-}
       PROXY_DC_PASSWORD: ${PROXY_DC_PASSWORD:-}
+      # VPS-IP ist von FIDE geblockt: nach 429/Cooldown nie direkt (ohne Proxy)
+      # fetchen, sondern erneut über den Pool (siehe worker.py::_direct_fallback_on_429)
+      DIRECT_FALLBACK_ON_429: "false"
       WORKER_DEVICE: ${WORKER_DEVICE:-}
     volumes:
       - orchestrator_data:/data

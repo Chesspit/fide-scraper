@@ -325,6 +325,19 @@ def _proxy_label(proxies: dict | None) -> str:
     return url.rsplit("@", 1)[-1] if "@" in url else url
 
 
+def _direct_fallback_on_429() -> bool:
+    """Darf nach einem 429 (oder im Pool-Cooldown) direkt ohne Proxy gefetcht werden?
+
+    Maschinenspezifisch, daher Env-Var statt Profil-Flag: auf dem Mac Mini ist
+    die eigene IP bei FIDE frei (direkt = sinnvoller Fallback), die VPS-IP ist
+    dagegen geblockt — dort wäre jeder direkte Versuch zum Scheitern verurteilt
+    und würde nur ein zusätzliches Signal von der gesperrten IP senden.
+    Default true (bisheriges Verhalten); auf dem VPS via docker-compose.yml
+    DIRECT_FALLBACK_ON_429=false gesetzt.
+    """
+    return os.getenv("DIRECT_FALLBACK_ON_429", "true").strip().lower() not in ("0", "false", "no")
+
+
 def _fetch(
     fide_id: int,
     period_str: str,
@@ -354,6 +367,16 @@ def _fetch(
 
     for attempt in range(1, max_retries + 1):
         proxies = proxy_manager.get_proxy() if use_proxy else None
+        if use_proxy and proxies is None and not _direct_fallback_on_429():
+            # Pool im Cooldown (get_proxy → None): NICHT stillschweigend direkt
+            # fetchen — auf Maschinen mit FIDE-geblockter IP (VPS) wäre das ein
+            # sicherer Fehlschlag. Stattdessen Cooldown aussitzen, dann neu ziehen.
+            remaining = proxy_manager.cooldown_remaining()
+            if remaining > 0:
+                logger.info("Proxy-Pool im Cooldown — warte %.0fs statt direkt zu fetchen "
+                            "(DIRECT_FALLBACK_ON_429=false)", remaining)
+                time.sleep(remaining + 0.5)
+            proxies = proxy_manager.get_proxy()
         try:
             resp = requests.get(url, headers=headers, timeout=timeout, proxies=proxies)
 
@@ -500,10 +523,15 @@ def scrape_group(
             retry_after = nbytes
             cooldown = retry_after if retry_after > 0 else profile.get("cooldown_on_429", 60)
             proxy_manager.report_block(cooldown)
-            logger.warning("Backing off %ds (%s), dann direkter Retry ohne Proxy",
-                           cooldown, f"Retry-After={retry_after}s" if retry_after > 0 else "Profil-Default")
+            allow_direct = _direct_fallback_on_429()
+            logger.warning("Backing off %ds (%s), dann %s",
+                           cooldown,
+                           f"Retry-After={retry_after}s" if retry_after > 0 else "Profil-Default",
+                           "direkter Retry ohne Proxy" if allow_direct
+                           else "erneuter Versuch über den Pool (frische IP)")
             time.sleep(cooldown)
-            html, nbytes2 = _fetch(fide_id, period_str, profile, None)
+            html, nbytes2 = _fetch(fide_id, period_str, profile,
+                                   None if allow_direct else proxy_manager)
             _bytes_session += nbytes2
             if html is None:
                 _consecutive_failures += 1

@@ -1,6 +1,6 @@
 # FIDE Scraper — Projektdokumentation
 
-Stand: 17. Juni 2026
+Stand: 3. Juli 2026
 
 ---
 
@@ -258,20 +258,20 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 
 ---
 
-## 5. Aktueller Datensatz-Stand (2026-06-17)
+## 5. Aktueller Datensatz-Stand (2026-07-03 — Details/Live-Zahlen: `docs/scraping_status.md`)
 
 | Kennzahl | Wert |
 |---|---|
-| **Gesamt-Partien** | **8.392.921** |
-| **Spieler mit Daten** | **140.168** |
-| **DB-Größe** | **~8,9 GB** |
+| **Gesamt-Partien** | **9.506.714** |
+| **Spieler mit ≥ 1 gescrapter Periode** | **141.845** |
+| **DB-Größe** | **~9,49 GB** |
 | **Früheste Periode** | **2008-04** |
-| **Neueste Periode** | **2026-05** (einige frühe Gruppen) |
-| **Gruppen complete** | **102 / 253** |
+| **Neueste published_rating-Periode** | **2026-07-01** |
+| **Neueste gescrapte Spiel-Periode** | **2026-06-01** (läuft über P1/P2/P3-Monatsrefresh nach) |
+| **Gruppen complete (Mac-Mini-Analysegruppen)** | **107 / 253** |
 | **global_XX ELO ≥ 2300** | **51/51 complete** ✅ |
-| **female_2100 + female_2000** | **15/15 complete** ✅ |
-| **female_1900** | **16/16 complete** ✅ |
-| **female_1800** | **19/24 complete**, _20–24 pending |
+| **female_2100–female_1800 (alle 55 Gruppen)** | **complete** ✅ (seit 2026-06-28) |
+| **P1/P2/P3-Monatsrefresh** | P1 ✅ / P2 ✅ komplett, P3: 13/40 Batches |
 
 ### 5.1 Scraping-Status Kern-Gruppen
 
@@ -457,43 +457,34 @@ concurrency:
     - {slot: 1, enabled: true, profile: normal}             # T2
     - {slot: 2, enabled: false, profile: semi_conservative} # T3 (bereit)
     - {slot: 3, enabled: false, profile: semi_aggressive}   # T4 (bereit)
-  datacenter_threads:            # 10 DC-Threads, alle mit pool_file (Webshare) + eigener Timezone
-    - {id: dc_de, slot: 99,  pool_file: orchestrator/webshare_proxies.txt, timezone: Europe/Berlin,     federations: [POL,UKR,LAT,LIT,EST,CZE,SVK,FID]}  # disabled
-    - {id: dc_in, slot: 100, pool_file: orchestrator/webshare_proxies.txt, timezone: Asia/Kolkata,      federations: [IND,IRI]}
-    - {id: dc_uk, slot: 101, pool_file: orchestrator/webshare_proxies.txt, timezone: Europe/London,     federations: [ENG,SCO,WLS,IRL,NIR,DEN,NOR,SWE,FIN,ISL]}
-    - {id: dc_us, slot: 102, pool_file: orchestrator/webshare_proxies.txt, timezone: America/New_York,  federations: [USA,CAN]}  # disabled
-    - {id: dc_hk, slot: 103, pool_file: orchestrator/webshare_proxies.txt, timezone: Asia/Hong_Kong,    federations: [CHN,VIE,...Ozeanien]}
-    - {id: dc_es, slot: 104, pool_file: orchestrator/webshare_proxies.txt, timezone: Europe/Madrid,     federations: [ESP,ITA,POR,AND,GIB]}  # disabled
-    - {id: dc_mx, slot: 105, pool_file: orchestrator/webshare_proxies.txt, timezone: America/Mexico_City, federations: [FRA,BEL,NED,LUX]}
-    - {id: dc_ae, slot: 106, pool_file: orchestrator/webshare_proxies.txt, timezone: Asia/Dubai,        federations: [SRB,CRO,BIH,MKD,MNE,SLO,KOS,ALB,GRE,TUR]}
-    - {id: dc_dach,     slot: 107, pool_file: orchestrator/webshare_proxies.txt, timezone: Europe/Berlin, federations: [GER,SUI,AUT]}  # Vollbackfill
-    - {id: dc_update_1, slot: 108, pool_file: orchestrator/webshare_proxies.txt, timezone: Europe/Berlin, federations: []}     # P1/P2/P3-Monatsrefresh
+  datacenter_threads:            # 10 DC-Threads, pool_file (Webshare, regional) + eigener Timezone
+    - {id: dc_de, slot: 99,  pool_file: orchestrator/webshare_proxies_europe.txt,    timezone: Europe/Berlin,     federations: [POL,UKR,LAT,LIT,EST,CZE,SVK,FID]}  # disabled
+    - {id: dc_in, slot: 100, pool_file: orchestrator/webshare_proxies_mena_asia.txt, timezone: Asia/Kolkata,      federations: [IND,IRI]}
+    - {id: dc_uk, slot: 101, pool_file: orchestrator/webshare_proxies_europe.txt,    timezone: Europe/London,     federations: [ENG,SCO,WLS,IRL,NIR,DEN,NOR,SWE,FIN,ISL]}
+    - {id: dc_us, slot: 102, pool_file: orchestrator/webshare_proxies_americas.txt,  timezone: America/New_York,  federations: [USA,CAN]}  # disabled
+    - {id: dc_hk, slot: 103, pool_file: orchestrator/webshare_proxies_mena_asia.txt, timezone: Asia/Hong_Kong,    federations: [CHN,VIE,...Ozeanien]}
+    - {id: dc_es, slot: 104, pool_file: orchestrator/webshare_proxies_europe.txt,    timezone: Europe/Madrid,     federations: [ESP,ITA,POR,AND,GIB]}  # disabled
+    - {id: dc_mx, slot: 105, pool_file: orchestrator/webshare_proxies_americas.txt,  timezone: America/Mexico_City, federations: [FRA,BEL,NED,LUX]}
+    - {id: dc_ae, slot: 106, pool_file: orchestrator/webshare_proxies_mena_asia.txt, timezone: Asia/Dubai,        federations: [SRB,CRO,BIH,MKD,MNE,SLO,KOS,ALB,GRE,TUR]}
+    - {id: dc_dach,     slot: 107, pool_file: orchestrator/webshare_proxies_europe.txt, timezone: Europe/Berlin, federations: [GER,SUI,AUT]}  # Vollbackfill
+    - {id: dc_update_1, slot: 108, pool_file: orchestrator/webshare_proxies_europe.txt, timezone: Europe/Berlin, federations: []}     # P1/P2/P3-Monatsrefresh
 ```
 
-**Proxy-Anbieter (seit 2026-07-03):** Webshare, statische 100-IP-Liste (`orchestrator/webshare_proxies.txt`, git-ignored) statt eines einzelnen Rotating-Gateways wie beim vorherigen Anbieter ProxyJet (Domain-Ausfall 2026-07-03). Alle DC-Threads teilen sich denselben Pool + ein Credential-Paar; `proxy_manager.py::ProxyManager` wählt pro Request zufällig eine `IP:PORT`-Kombination. Details siehe `docs/scraping_orchestrator.md` Abschnitt "Proxy-Integration".
+**Proxy-Anbieter (seit 2026-07-03):** Webshare, statische 100-IP-Liste (`orchestrator/webshare_proxies.txt`, git-ignored) statt eines einzelnen Rotating-Gateways wie beim vorherigen Anbieter ProxyJet (Domain-Ausfall 2026-07-03). **Nach Region aufgeteilt** (GeoIP-Klassifizierung, `docs/scraping_orchestrator.md`): Europa (53 IPs, 5 Threads inkl. `dc_update_1`), Naher-Osten+Afrika+Asien-Ozeanien (19 IPs, 3 Threads), Amerikas (28 IPs, 2 Threads) — stellt die ursprüngliche Geo-Plausibilität (Zeitfenster passt zur IP-Region) wieder her, die beim reinen Einzel-Pool verloren gegangen war. `proxy_manager.py::ProxyManager` wählt pro Request zufällig eine `IP:PORT`-Kombination aus der jeweils zugewiesenen Datei. Details siehe `docs/scraping_orchestrator.md` Abschnitt "Proxy-Integration".
 
-**dc_update — monatliches Update der "Rest"-Population (seit 2026-06-07):**
-Die 4 Update-Jobs (`update_jobs.yaml`: `UP-ELO2300`/`UP-FEMALE`/`UP-GER`/`UP-DACH`) decken nur ~30.000
-der 125.500 bereits gescrapten Spieler monatlich ab. Die übrigen ~95.585 Spieler ("Rest" — gescrapt,
-aktiv, außerhalb der 4 Prioritätsfilter) laufen über `dc_update`:
-- Neue `scrape_groups.update_only`-Spalte: wenn `1`, filtert `get_fide_ids()` zusätzlich auf
-  `EXISTS(scrape_periods WHERE status='ok')` — Update-Batches selektieren garantiert nur bereits
-  gescrapte Spieler, kein Risiko eines Vollbackfills durch Rating-Drift in dynamischen ELO-Bändern.
-  Neue Spieler landen automatisch im passenden Föderations-Batch, sobald sie erstmals komplett
-  gescraped wurden — kein Re-Balancing nötig.
-- `orchestrator/generate_update_batches.py`: einmaliger Initial-Lauf, erzeugt 77 Batches
-  (1 pro Föderation, ELO 0–2299; ESP/IND als einzige >6.000-Föderationen in je 3 ELO-Unterbänder
-  à 3.000–6.000 Spieler gesplittet), alle mit `thread_affinity='dc_update'`, `update_only=1`.
-- `monthly_update.sh` requeued die Batches automatisch über `reset_current_year.py` (per SSH im
-  VPS-Dashboard-Container, Schritt 5/5).
+**P1/P2/P3 — monatlicher Refresh aller bereits gescrapten Spieler (seit 2026-07-02, ersetzt das frühere `dc_update`/4-UP-Jobs-System):**
+Drei geschlechtsunabhängige Prioritätsstufen statt vormals 4 Kategorien (ELO2300/FEMALE/GER/DACH) + separatem `dc_update`-Rest:
+- **P1** = ELO ≥ 2300 (alle Föderationen), **P2** = DACH (GER/SUI/AUT) < ELO 2300, **P3** = alle übrigen bereits gescrapten, aktiven Spieler (~118.000)
+- `orchestrator/monthly_refresh_tiers.py`: Single Source of Truth für die drei Filter, von Batch-Generator und Worker importiert
+- `orchestrator/generate_monthly_refresh_batches.py`: erzeugt ELO-Band-Batches gepoolt über alle Föderationen (Zielgröße ~2.000–3.000 Spieler/Batch), `thread_affinity='dc_update_1'`, `update_only=1` — Prioritätsreihenfolge P1→P2→P3, erst dann Batch-Größe
+- `orchestrator/reset_monthly_refresh.py`: monatlicher Requeue nur für P1/P2/P3-Gruppen (federation-Sentinel), rührt den separaten Welt-Backfill nicht an — behebt den Vorgänger-Bug (`reset_current_year.py` setzte pauschal alle Gruppen des Jahres zurück)
+- `update_only`-Spalte (unverändert seit 2026-06-07): filtert `get_fide_ids()` auf `EXISTS(scrape_periods WHERE status='ok')` — nie ein Vollbackfill neuer Spieler
 
 **thread_affinity:** Jede SQLite-Gruppe ist einem DC-Thread zugewiesen (`dc_de`, `dc_in`, ...) oder
 residential (`NULL`). DC-Threads claimen nur ihre eigenen Gruppen; Residential-Threads claimen
 nur `thread_affinity IS NULL`.
 
-**profiles.yaml** ist als Bind-Mount auf VPS eingebunden (`/opt/fide-scraper/orchestrator/profiles.yaml`).
-UI-Toggle-Änderungen schreiben direkt in diese Datei und bleiben über Rebuilds erhalten.
-Die Datei ist in git versioniert — nach strukturellen Änderungen VPS-Version committen.
+**profiles.yaml — Achtung, kein reiner Bind-Mount:** Die git-Version (`/opt/fide-scraper/orchestrator/profiles.yaml`) dient nur als **Seed-Template**. Die tatsächliche Laufzeit-Config liegt in einem separaten, persistenten Docker-Volume (`/data/profiles.yaml` im Container), das beim Container-Start per `cp -n` (no-clobber) aus der git-Version befüllt wird — **nur falls die Datei dort noch nicht existiert**. UI-Toggle-Änderungen landen direkt in `/data/profiles.yaml` und bleiben über Rebuilds erhalten. Nach strukturellen git-Änderungen (z.B. neue Threads, umbenannte Felder) reicht ein `git pull` + Rebuild **nicht** — die Live-Datei muss manuell nachgezogen werden (z.B. `docker compose exec worker sh -c 'cat > /data/profiles.yaml'` mit dem transformierten Inhalt), sonst greift die Änderung nie.
 
 ### 7.3 DC-Modi
 
@@ -576,15 +567,18 @@ Enthält zusätzlich QC-Zellen: Vergleich `Σ rating_change_weighted` mit tatsä
 
 ## 9. Offene Punkte / Nächste Schritte
 
+*(aktualisiert 2026-07-03 — ältere Punkte aus Juni, die inzwischen erledigt sind, z.B. alle female_XX-Gruppen (siehe scraping_status.md), entfernt)*
+
 | Aufgabe | Priorität | Status |
 |---|---|---|
-| female_1800_20–24 (5 Gruppen, ~372 Spielerinnen) | Hoch | ⏳ Chain-Skript bereit (`scripts/chain_female_1800_20_24.sh`), Start voraussichtlich ~2026-06-29 |
-| VPS 10-Thread-Betrieb beobachten | Hoch | 🔄 läuft seit 2026-05-25 (DC-DE+UK disabled) |
-| DACH 2020–2026 via T1/T2 | Hoch | 🔄 läuft (GER 2026 → DACH 2025–2020) |
-| DC-Threads Föderations-Queue füllen | Mittel | 🔄 6 DC-Threads aktiv (2026→2009) |
+| P3-Monatsrefresh fertig laufen lassen | Hoch | 🔄 13/40 Batches (Stand 2026-07-03, ~17:20 UTC), läuft automatisch weiter |
+| Webshare-Support: `166.88.110.0/24`-Subnetz melden | Mittel | ⬜ 4 von 5 ersetzten IPs landeten wieder im selben kaputten Block — gezielt das Subnetz melden statt Einzel-IPs |
+| Restliche tote Pool-IPs ersetzen (~11 von 100) | Mittel | ⬜ `scripts/check_proxy_pool.py` zur erneuten Prüfung, danach Region-Datei + Worker-Neustart nicht vergessen |
+| USA/2019/1599–1623-Gruppe (failed, unabhängig) | Niedrig | ⬜ `retries=0`, keine Fehlermeldung, `last_run_at` 2026-06-28 — Ursache noch nicht untersucht |
+| Orchestrator Auto-Retry | Mittel | ⬜ failed-Gruppen nach X h automatisch → pending (max. 3×) — wurde am 2026-07-03 manuell nachgeholt (22 Gruppen geprüft, 21 zurückgesetzt) |
 | PostgreSQL-Backup einrichten | Mittel | ⬜ aktuell kein externes Backup |
-| Orchestrator Auto-Retry | Mittel | ⬜ failed-Gruppen nach X h → pending (max. 3×) |
-| resolve_opponents nach Backfills | Mittel | ⬜ lokal, nach female_XX abgeschlossen |
+| Region-Pools bei Bedarf neu balancieren | Niedrig | ⬜ nur falls IP-Verteilung durch künftige Webshare-Käufe/Ersatz sehr ungleich wird |
+| resolve_opponents nach Backfills | Mittel | ⬜ lokal, nach weltweitem Backfill-Fortschritt |
 | Notebooks 01–09 ausführen | Mittel | ⬜ Daten bereit |
 | Parquet-Export aktualisieren | Niedrig | ⬜ nach grösserem Backfill |
 | female_top/male_control Update | Niedrig | ⬜ (inaktive Spieler, wenig Mehrwert) |

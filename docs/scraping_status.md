@@ -5,18 +5,19 @@ Raspberry-Pi-Stand aktualisiert: 2026-06-28, ~18:30 Uhr (Tailscale seitdem nicht
 
 ---
 
-## Gesamtstand DB (Live 2026-07-03, ~13:50 UTC)
+## Gesamtstand DB (Live 2026-07-03, ~17:20 UTC)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **9.487.420** |
-| DB-Größe | **~9,48 GB** |
+| Partien gesamt | **9.506.714** |
+| DB-Größe | **~9,49 GB** |
 | Gruppen complete | **107 / 253** (140 pending, 5 partial, 1 skipped) — bezieht sich auf die manuell gepflegten Mac-Mini-Analysegruppen, unabhängig vom neuen P1/P2/P3-System (siehe unten) |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ (Vorbehalt: siehe Top-Spieler-Lückenanalyse unten) |
 | Spieler mit ≥ 1 gescrapter Periode | **141.845** |
 | Neueste published_rating-Periode | **2026-07-01** (importiert 2026-07-02, `standard_jul26frl.zip`) |
 | Neueste gescrapte Spiel-Periode | **2026-06-01** (läuft über den P1/P2/P3-Prozess nach, siehe Session-Eintrag 2026-07-03) |
-| P1/P2/P3-Fortschritt | P1 ✅ / P2 ✅ komplett; P3: 11/40 Batches, 41.431 neue Partien bisher |
+| P1/P2/P3-Fortschritt | P1 ✅ / P2 ✅ komplett; P3: 13/40 Batches, 48.045 neue Partien bisher |
+| VPS-Orchestrator-Queue gesamt | 4.142 done, 20.564 pending, 7 running, **1 failed** (21 vom ProxyJet-Ausfall betroffene Gruppen am 2026-07-03 zurückgesetzt + priorisiert, siehe Session-Eintrag; 1 unabhängige Alt-Gruppe (USA/2019) bewusst nicht angefasst) |
 
 ---
 
@@ -243,7 +244,8 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 | **1. Webshare-Ersatzrunde** | User ersetzte 5 der 12 toten IPs. Nachgetestet: nur 1 (Ägypten) funktioniert, die 4 Türkei-Ersatz-IPs landeten wieder im selben kaputten Subnetz |
 | **Geo-Regression erkannt + behoben** ✅ | ProxyJet hatte pro DC-Thread einen regionsspezifischen Host + passende `timezone`/`active_hours` (Anfragen zur lokalen Wachzeit aus plausibler Region). Webshares gemeinsamer Pool hatte das verloren. GeoIP-Klassifizierung (ip-api.com) der 100 IPs → 3 Regions-Pools (User-Entscheidung: Naher Osten + Afrika + Asien-Ozeanien zusammengelegt, da Ägypten/Südafrika UTC+2 nahe an Türkei UTC+3 liegen): Europa (53 IPs → `dc_de`/`dc_uk`/`dc_es`/`dc_dach`/`dc_update_1`, 5 Threads), Naher-Osten+Afrika+Asien-Ozeanien (19 IPs → `dc_in`/`dc_hk`/`dc_ae`, 3 Threads), Amerikas (28 IPs → `dc_us`/`dc_mx`, 2 Threads) |
 | **Alles deployed + verifiziert** ✅ | Mehrere Neustarts, durchgehend gesunde Save-Raten (26-36/5min), 0 anhaltende Fehlschläge nach jedem Schritt |
-| Commits | `d238a81` (Provider-Wechsel), `c035898` (Retry-Fix), `f966cd9` (Logging + Health-Check-Skript), `1385f65`/`7d4497f`/`96fe185` (Doku), `5e49fec` (Region-Split), `29ee081` (DC-UPDATE-1 → Europa) |
+| **22 failed-Gruppen geprüft + 21 zurückgesetzt** ✅ | Nach Abschluss der Migration im Dashboard aufgefallen: 22 Gruppen auf `failed`. 21 zeigten Circuit-Breaker-/Verbindungsabbruch-Signaturen vom 30.6.–3.7. (zeitlich zur ProxyJet-Degradierung passend) → auf `pending` + `priority=0` gesetzt (kommen vor der gesamten Queue dran). 1 Ausreißer (USA/2019/1599–1623, `retries=0`, keine Fehlermeldung, `last_run_at` 28.6.) bewusst unangetastet gelassen — andere Ursache, nicht netzwerkbedingt |
+| Commits | `d238a81` (Provider-Wechsel), `c035898` (Retry-Fix), `f966cd9` (Logging + Health-Check-Skript), `1385f65`/`7d4497f`/`96fe185` (Doku), `5e49fec` (Region-Split), `29ee081` (DC-UPDATE-1 → Europa), `1705230` (Session-Doku) |
 
 ---
 

@@ -4,7 +4,7 @@ import tempfile
 import pytest
 from pathlib import Path
 
-from orchestrator.queue_manager import QueueManager, TIER_WIDTH
+from orchestrator.queue_manager import AUTO_RETRY_MAX, QueueManager, TIER_WIDTH
 from orchestrator.setup_db import create_db
 
 
@@ -26,15 +26,16 @@ def _insert_group(db_path: Path, **kwargs) -> int:
         federation="GER", continent="Europe", year=2024,
         elo_min=1400, elo_max=1799, player_count=150,
         status="pending", priority=1000,
+        retries=0, last_run_at=None,
     )
     defaults.update(kwargs)
     conn = create_db(db_path)
     cur = conn.execute(
         """INSERT INTO scrape_groups
            (federation, continent, year, elo_min, elo_max,
-            player_count, status, priority)
+            player_count, status, priority, retries, last_run_at)
            VALUES (:federation,:continent,:year,:elo_min,:elo_max,
-                   :player_count,:status,:priority)""",
+                   :player_count,:status,:priority,:retries,:last_run_at)""",
         defaults,
     )
     conn.commit()
@@ -129,6 +130,59 @@ class TestStatusTransitions:
         row = conn.execute("SELECT status, notes FROM scrape_groups WHERE id=?", (gid,)).fetchone()
         assert row[0] == "skipped"
         assert "no data" in row[1]
+
+
+# ---------------------------------------------------------------------------
+# Auto-Retry (requeue_failed / count_exhausted_failed)
+# ---------------------------------------------------------------------------
+
+_OLD_TS = "2020-01-01T00:00:00"  # weit vor jeder min_age-Schwelle
+
+
+class TestRequeueFailed:
+    def test_requeues_failed_with_budget(self):
+        qm, db = _tmp_qm()
+        gid = _insert_group(db, status="failed", retries=1, last_run_at=_OLD_TS)
+        assert qm.requeue_failed() == 1
+        conn = create_db(db)
+        row = conn.execute("SELECT status, retries FROM scrape_groups WHERE id=?", (gid,)).fetchone()
+        assert row[0] == "pending"
+        assert row[1] == 1  # retries bleibt stehen — Budget wird nicht zurückgesetzt
+
+    def test_respects_retry_cap(self):
+        qm, db = _tmp_qm()
+        gid = _insert_group(db, status="failed", retries=AUTO_RETRY_MAX, last_run_at=_OLD_TS)
+        assert qm.requeue_failed() == 0
+        conn = create_db(db)
+        row = conn.execute("SELECT status FROM scrape_groups WHERE id=?", (gid,)).fetchone()
+        assert row[0] == "failed"
+
+    def test_respects_min_age(self):
+        import time as _time
+        qm, db = _tmp_qm()
+        recent = _time.strftime("%Y-%m-%dT%H:%M:%S", _time.localtime())
+        gid = _insert_group(db, status="failed", retries=1, last_run_at=recent)
+        assert qm.requeue_failed() == 0
+        conn = create_db(db)
+        row = conn.execute("SELECT status FROM scrape_groups WHERE id=?", (gid,)).fetchone()
+        assert row[0] == "failed"
+
+    def test_null_last_run_requeued_immediately(self):
+        qm, db = _tmp_qm()
+        _insert_group(db, status="failed", retries=0, last_run_at=None)
+        assert qm.requeue_failed() == 1
+
+    def test_ignores_non_failed(self):
+        qm, db = _tmp_qm()
+        _insert_group(db, status="done", retries=0, last_run_at=_OLD_TS)
+        _insert_group(db, status="pending", federation="SUI", retries=0, last_run_at=_OLD_TS)
+        assert qm.requeue_failed() == 0
+
+    def test_count_exhausted_failed(self):
+        qm, db = _tmp_qm()
+        _insert_group(db, status="failed", retries=AUTO_RETRY_MAX, last_run_at=_OLD_TS)
+        _insert_group(db, status="failed", federation="SUI", retries=1, last_run_at=_OLD_TS)
+        assert qm.count_exhausted_failed() == 1
 
 
 # ---------------------------------------------------------------------------

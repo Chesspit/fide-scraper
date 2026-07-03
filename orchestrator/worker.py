@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from orchestrator.monthly_refresh_tiers import TIER_FILTERS
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.proxy_manager import ProxyManager
-from orchestrator.queue_manager import Group, QueueManager
+from orchestrator.queue_manager import AUTO_RETRY_MAX, Group, QueueManager
 from scraper.db import (
     ensure_connection,
     get_connection,
@@ -87,6 +87,42 @@ def _dc_seconds_until_active(dc_cfg: dict) -> float:
 
 # Lock protecting all read-modify-write operations on worker_state.json
 _state_lock = threading.Lock()
+
+# Rate-Limit für die "failed ohne Retry-Budget"-Warnung (einmal pro Stunde,
+# egal wie viele Threads im Leerlauf darüber stolpern)
+_EXHAUSTED_WARN_INTERVAL = 3600
+_exhausted_warn_lock = threading.Lock()
+_exhausted_warn_last = 0.0
+
+
+def _idle_queue_maintenance(qm: QueueManager, log_prefix: str) -> int:
+    """Auto-Retry im Leerlauf: failed-Gruppen mit Retry-Budget wieder einreihen.
+
+    Wird von allen Thread-Loops aufgerufen, wenn die Queue leer ist — genau der
+    Moment, in dem liegengebliebene failed-Gruppen die einzige offene Arbeit
+    sind. Warnt (stündlich gedrosselt) über Gruppen ohne Retry-Budget, damit
+    ein Provider-Ausfall nicht tagelang unbemerkt bleibt.
+
+    Returns number of re-queued groups (caller should re-claim immediately).
+    """
+    global _exhausted_warn_last
+    requeued = qm.requeue_failed()
+    if requeued:
+        logger.info("%s: Auto-Retry — %d failed-Gruppen zurück auf pending", log_prefix, requeued)
+
+    with _exhausted_warn_lock:
+        due = time.time() - _exhausted_warn_last >= _EXHAUSTED_WARN_INTERVAL
+        if due:
+            _exhausted_warn_last = time.time()
+    if due:
+        exhausted = qm.count_exhausted_failed()
+        if exhausted:
+            logger.warning(
+                "%d failed-Gruppen ohne Retry-Budget (retries >= %d) — "
+                "manuelle Prüfung nötig (Dashboard → Queue → failed)",
+                exhausted, AUTO_RETRY_MAX,
+            )
+    return requeued
 
 
 # ---------------------------------------------------------------------------
@@ -592,6 +628,8 @@ def run_slot(
             group   = qm_local.get_next_group(device=device)
 
             if group is None:
+                if _idle_queue_maintenance(qm_local, f"Thread {slot}"):
+                    continue  # Auto-Retry hat Gruppen eingereiht — sofort claimen
                 logger.debug("Thread %d: Queue leer — warte %ds", slot, _THREAD_EMPTY_SLEEP)
                 time.sleep(_THREAD_EMPTY_SLEEP)
                 continue
@@ -759,6 +797,9 @@ def _run_parallel_loop(
     reset_count = qm_main.reset_stale_running()
     if reset_count:
         logger.info("Startup: %d unterbrochene running-Gruppen → pending zurückgesetzt", reset_count)
+    requeued = qm_main.requeue_failed()
+    if requeued:
+        logger.info("Startup: Auto-Retry — %d failed-Gruppen zurück auf pending", requeued)
     qm_main.close()
 
     # Datacenter-Threads konfigurieren (je eigener Host/Pool + Credentials)
@@ -936,6 +977,8 @@ def run_dc_slot(
             group   = qm_local.get_next_group(dc_affinity=affinity)
 
             if group is None:
+                if _idle_queue_maintenance(qm_local, f"DC-Thread {label}"):
+                    continue  # Auto-Retry hat Gruppen eingereiht — sofort claimen
                 logger.debug("DC-Thread %s: Queue leer — warte %ds", label, _THREAD_EMPTY_SLEEP)
                 _clear_thread_slot(slot)
                 time.sleep(_THREAD_EMPTY_SLEEP)
@@ -1019,6 +1062,9 @@ def _run_single_loop(
     reset_count = qm.reset_stale_running()
     if reset_count:
         logger.info("Startup: %d unterbrochene running-Gruppen → pending zurückgesetzt", reset_count)
+    requeued = qm.requeue_failed()
+    if requeued:
+        logger.info("Startup: Auto-Retry — %d failed-Gruppen zurück auf pending", requeued)
 
     if profile_name:
         pm.set_active(profile_name)
@@ -1084,6 +1130,8 @@ def _run_single_loop(
             # ── Nächste Gruppe holen ──────────────────────────────────────
             group = qm.get_next_group(device=device)
             if group is None:
+                if _idle_queue_maintenance(qm, "Worker"):
+                    continue  # Auto-Retry hat Gruppen eingereiht — sofort claimen
                 logger.info("Queue leer — warte %ds", _EMPTY_QUEUE_SLEEP)
                 write_state(current_group=None)
                 time.sleep(_EMPTY_QUEUE_SLEEP)

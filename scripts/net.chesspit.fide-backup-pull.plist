@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- fide-scraper: tägliche Offsite-Kopie der VPS-Backups (siehe pull_backup_macmini.sh).
+     Install:  cp scripts/net.chesspit.fide-backup-pull.plist ~/Library/LaunchAgents/
+               launchctl load ~/Library/LaunchAgents/net.chesspit.fide-backup-pull.plist -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>net.chesspit.fide-backup-pull</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/macminipit/Projekte/fide-scraper/scripts/pull_backup_macmini.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+    <key>StandardErrorPath</key>
+    <string>/Users/macminipit/backups/fide-scraper/pull.err</string>
+</dict>
+</plist>

@@ -21,6 +21,12 @@ from orchestrator.setup_db import DB_PATH, create_db
 # randomly picks from the top ~50 groups by priority.
 TIER_WIDTH = 1
 
+# Auto-Retry: failed-Gruppen mit Rest-Budget werden automatisch wieder
+# eingereiht (siehe requeue_failed()). Nach AUTO_RETRY_MAX Fehlversuchen
+# bleibt die Gruppe failed und braucht manuelle Prüfung (Dashboard → Queue).
+AUTO_RETRY_MAX = 3
+AUTO_RETRY_MIN_AGE_HOURS = 2.0  # Mindestabstand zum letzten Versuch
+
 
 @dataclass
 class Group:
@@ -202,6 +208,42 @@ class QueueManager:
             (group_id,),
         )
         conn.commit()
+
+    def requeue_failed(
+        self,
+        max_retries: int = AUTO_RETRY_MAX,
+        min_age_hours: float = AUTO_RETRY_MIN_AGE_HOURS,
+    ) -> int:
+        """Auto-Retry: re-queue failed groups that still have retry budget.
+
+        Only groups whose last attempt is at least min_age_hours old are
+        touched — a transient outage (proxy provider down, FIDE hiccup) gets
+        time to clear instead of burning the whole budget in minutes.
+        retries is NOT reset; mark_failed() keeps incrementing it, so after
+        max_retries failures the group stays failed until someone looks at it.
+
+        Returns the number of re-queued groups. Idempotent and safe to call
+        from multiple threads (single atomic UPDATE).
+        """
+        conn = self._connect()
+        cur = conn.execute(
+            """UPDATE scrape_groups
+               SET status='pending'
+               WHERE status='failed'
+                 AND retries < ?
+                 AND (last_run_at IS NULL
+                      OR last_run_at < datetime('now','localtime', ?))""",
+            (max_retries, f"-{min_age_hours} hours"),
+        )
+        conn.commit()
+        return cur.rowcount
+
+    def count_exhausted_failed(self, max_retries: int = AUTO_RETRY_MAX) -> int:
+        """Failed groups without retry budget — these need a human."""
+        return self._connect().execute(
+            "SELECT COUNT(*) FROM scrape_groups WHERE status='failed' AND retries >= ?",
+            (max_retries,),
+        ).fetchone()[0]
 
     def skip(self, group_id: int, reason: str = "") -> None:
         conn = self._connect()

@@ -197,7 +197,7 @@ concurrency:
     label: DC-UPDATE-1
     max_hours: null
     password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies.txt
+    pool_file: orchestrator/webshare_proxies_europe.txt
     profile: semi_conservative
     slot: 108
     timezone: Europe/Berlin

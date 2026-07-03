@@ -141,54 +141,73 @@ Erstelle eine Dash-App `app.py` mit einer einzigen Hauptseite:
 
 ---
 
-## Aufgabe 5 — Proxy-Integration via ProxyJet
+## Aufgabe 5 — Proxy-Integration (providerneutral, aktuell Webshare)
 
-Wir verwenden **ProxyJet** (proxyjet.io) als Rotating Residential Proxy-Dienst. ProxyJet verrechnet nur erfolgreiche Requests (`No charge for failed requests`) und hat eine Bandbreiten-Gültigkeit von 1 Jahr — kein monatlicher Verfall.
+**Historie:** Ursprünglich **ProxyJet** (proxyjet.io) als Rotating-Residential-Proxy-Dienst — Domain am 2026-07-03 nicht mehr erreichbar (vermutlich Domain-Beschlagnahmung), kompletter Ausfall aller DC-Threads. Seitdem auf **Webshare** umgestellt, und `proxy_manager.py` providerneutral umgebaut, damit ein künftiger Wechsel nur noch Config/Credentials betrifft, keinen Code mehr.
+
+Webshare (webshare.io, seit 2018 am Markt) liefert **keinen einzelnen Rotating-Gateway-Host**, sondern eine herunterladbare Liste einzelner statischer Datacenter-IPs (im gebuchten Plan: 100 Einträge), alle mit **einem gemeinsamen Credential-Paar**. `proxy_manager.py` gleicht das durch eigene Pool-Rotation aus: bei jedem Request wird zufällig eine `IP:PORT`-Kombination aus der Liste gewählt — Zugriff auf 100 verschiedene IPs statt einer einzigen, reduziert das Risiko einer erneuten FIDE-Sperre einer Einzel-IP bei Dauernutzung.
 
 ### Verbindungsformat
 
-ProxyJet verwendet den Standard-Residential-Proxy-Endpunkt mit HTTP/SOCKS5 und Username/Password-Auth:
+Standard-HTTP-Proxy mit Username/Password-Auth, IP und Port kommen aus dem Pool:
 
 ```
-http://USERNAME:PASSWORD@gate.proxyjet.io:PORT
+http://USERNAME:PASSWORD@IP:PORT
 ```
 
-Die genauen Endpunkt-Details (Host, Port, optionale Country-Targeting-Parameter) findest du nach dem Login im ProxyJet Dashboard unter "Access Details". Trage diese in eine `.env`-Datei ein:
+Verifiziert gegen Webshares offizielles Python-Beispiel (`requests.get(url, proxies={"http": "http://USER:PASS@IP:PORT/", ...})`) — exakt dieses Format, keine Sonderauth.
+
+### Einrichtung
+
+1. Account bei webshare.io anlegen, passenden Proxy-Plan buchen (Pay-as-you-go, siehe Kostenvergleich in `docs/scraping_status.md`, Session 2026-07-03).
+2. IP-Liste über den Download-Link aus dem Dashboard holen (Proxy List → Download), Spalten 1+2 (`IP:PORT`) extrahieren, als `orchestrator/webshare_proxies.txt` speichern (**git-ignored**, eine Zeile pro Proxy).
+3. Username/Passwort (Spalten 3+4, bei allen Einträgen identisch) in `.env` eintragen:
 
 ```env
-PROXYJET_USERNAME=dein_username
-PROXYJET_PASSWORD=dein_password
-PROXYJET_HOST=gate.proxyjet.io
-PROXYJET_PORT=10000
+PROXY_USERNAME=dein_username
+PROXY_PASSWORD=dein_password
+PROXY_POOL_FILE=orchestrator/webshare_proxies.txt
+PROXY_DC_USERNAME=dein_username
+PROXY_DC_PASSWORD=dein_password
 ```
 
 ### Modul `proxy_manager.py`
 
 ```python
 import os, random, time
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
 
-class ProxyJetManager:
-    def __init__(self):
-        self.user = os.getenv("PROXYJET_USERNAME")
-        self.pw   = os.getenv("PROXYJET_PASSWORD")
-        self.host = os.getenv("PROXYJET_HOST", "gate.proxyjet.io")
-        self.port = os.getenv("PROXYJET_PORT", "10000")
+class ProxyManager:
+    def __init__(self, username_env="PROXY_USERNAME", password_env="PROXY_PASSWORD",
+                 host_override=None, pool_file=None):
+        self.user = os.getenv(username_env)
+        self.pw   = os.getenv(password_env)
         self._cooldown_until = 0  # Timestamp: Proxy pausiert bis
+        pool_path = pool_file or os.getenv("PROXY_POOL_FILE")
+        self._pool = self._load_pool(Path(pool_path)) if pool_path else []
+        self.host = host_override or os.getenv("PROXY_HOST")
+        self.port = os.getenv("PROXY_PORT", "1010")
 
     def get_proxy(self) -> dict | None:
         """Gibt ein requests-kompatibles Proxy-Dict zurück, oder None bei Cooldown."""
         if time.time() < self._cooldown_until:
             return None  # Fallback auf direkten Request
-        url = f"http://{self.user}:{self.pw}@{self.host}:{self.port}"
+        if self._pool:
+            host, port = random.choice(self._pool)  # zufällige IP aus dem Pool
+        else:
+            host, port = self.host, self.port        # Single-Host-Modus (echter Gateway)
+        url = f"http://{self.user}:{self.pw}@{host}:{port}"
         return {"http": url, "https": url}
 
     def report_block(self, cooldown_seconds: int = 60):
         """Aufrufen bei HTTP 429 oder Verbindungsfehler."""
         self._cooldown_until = time.time() + cooldown_seconds
 ```
+
+(Vollständige Version inkl. Thread-Safety und `#`-Kommentare im Pool-File: siehe `orchestrator/proxy_manager.py`.)
 
 ### Verhalten pro Scrape-Profil
 
@@ -200,10 +219,9 @@ class ProxyJetManager:
 
 ### Hinweise
 
-- ProxyJet rotiert die IPs automatisch bei jedem neuen Request — kein manuelles IP-Cycling nötig
-- Country Targeting ist möglich (z.B. `gate.proxyjet.io:10000` mit Parameter `?country=de`) — lies die genaue Syntax im ProxyJet Dashboard nach, da sich Endpunkte gelegentlich ändern
-- Bandbreite wird nur bei erfolgreichen Responses verbraucht — fehlgeschlagene Requests kosten nichts
-- Trage `proxies.txt` und `.env` in `.gitignore` ein
+- Pool-Rotation ersetzt bei Webshare das automatische IP-Cycling, das ein echter Rotating-Gateway (wie ProxyJet früher) selbst übernommen hätte — 100 IPs sind reichlich Spielraum, um Dauernutzung einer Einzel-IP zu vermeiden
+- Bei einem künftigen Provider mit echtem Rotating-Gateway: einfach `host_override` statt `pool_file` setzen, kein Code-Umbau nötig (beide Modi koexistieren in `proxy_manager.py`)
+- Trage `webshare_proxies.txt` und `.env` in `.gitignore` ein (bereits erledigt)
 
 ---
 

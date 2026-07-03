@@ -1,7 +1,8 @@
 """Scraping orchestrator worker.
 
-Reads the queue from SQLite, fetches FIDE data via ProxyJet, and writes results
-to the existing PostgreSQL database using the scraper's parser and DB modules.
+Reads the queue from SQLite, fetches FIDE data via a rotating proxy (see
+orchestrator/proxy_manager.py), and writes results to the existing
+PostgreSQL database using the scraper's parser and DB modules.
 
 Run:
     python orchestrator/worker.py [--profile conservative|normal|aggressive]
@@ -32,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from orchestrator.monthly_refresh_tiers import TIER_FILTERS
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
-from orchestrator.proxy_manager import ProxyJetManager
+from orchestrator.proxy_manager import ProxyManager
 from orchestrator.queue_manager import Group, QueueManager
 from scraper.db import (
     ensure_connection,
@@ -338,7 +339,7 @@ def _fetch(
 def scrape_group(
     group: Group,
     pg_conn,
-    proxy_manager: ProxyJetManager,
+    proxy_manager: ProxyManager,
     profile: dict,
     qm: QueueManager,
     slot: int | None = None,
@@ -510,7 +511,7 @@ def run_slot(
     slot: int,
     profile_name: str,
     device: str | None,
-    proxy_manager: ProxyJetManager,
+    proxy_manager: ProxyManager,
     stop_event: threading.Event,
 ) -> None:
     """Thread function: continuously claims and processes groups from the queue.
@@ -718,8 +719,8 @@ def run(
         dc_thread_cfgs = [{
             "id": "dc_de", "enabled": True, "label": "DC", "slot": 99,
             "host": None, "port": 1010,
-            "username_env": "PROXYJET_DC_USERNAME",
-            "password_env": "PROXYJET_PASSWORD",
+            "username_env": "PROXY_DC_USERNAME",
+            "password_env": "PROXY_PASSWORD",
             "timezone": "Europe/Berlin", "active_hours": [7, 23],
             "profile": old.get("profile", "semi_conservative"),
             "federations": [],
@@ -739,7 +740,7 @@ def _run_parallel_loop(
     max_hours: float | None,
 ) -> None:
     """Parallel mode: spawn enabled residential slots + enabled datacenter threads."""
-    proxy_manager = ProxyJetManager()
+    proxy_manager = ProxyManager()
     device        = os.getenv("WORKER_DEVICE")
     max_w         = len(active_slots)
 
@@ -750,13 +751,14 @@ def _run_parallel_loop(
         logger.info("Startup: %d unterbrochene running-Gruppen → pending zurückgesetzt", reset_count)
     qm_main.close()
 
-    # Datacenter-Threads konfigurieren (je eigener Host + Credentials)
-    active_dc: list[tuple[dict, ProxyJetManager]] = []
+    # Datacenter-Threads konfigurieren (je eigener Host/Pool + Credentials)
+    active_dc: list[tuple[dict, ProxyManager]] = []
     for dc_cfg in dc_thread_cfgs:
-        dc_proxy = ProxyJetManager(
+        dc_proxy = ProxyManager(
             username_env=dc_cfg["username_env"],
-            password_env=dc_cfg.get("password_env", "PROXYJET_PASSWORD"),
+            password_env=dc_cfg.get("password_env", "PROXY_PASSWORD"),
             host_override=dc_cfg.get("host") or None,
+            pool_file=dc_cfg.get("pool_file") or None,
         )
         if not dc_proxy._user:
             logger.warning("DC-Thread %s: %s fehlt — übersprungen",
@@ -822,7 +824,7 @@ def _run_parallel_loop(
 
 def run_dc_slot(
     dc_cfg: dict,
-    dc_proxy: ProxyJetManager,
+    dc_proxy: ProxyManager,
     stop_event: threading.Event,
 ) -> None:
     """DC-Thread: scrapet nur Gruppen mit passender thread_affinity,
@@ -999,7 +1001,7 @@ def _run_single_loop(
 ) -> None:
     """Single-thread mode — original sequential worker behaviour, unchanged."""
     pm = ProfileManager()
-    proxy_manager = ProxyJetManager()
+    proxy_manager = ProxyManager()
     qm = QueueManager()
     device = os.getenv("WORKER_DEVICE")
 

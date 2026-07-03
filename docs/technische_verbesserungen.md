@@ -438,16 +438,16 @@ AND gr.period <= p.period_end
 
 **Verzeichnis:** `orchestrator/`
 
-Eigenständiges Tool für skalierbares globales Scraping via ProxyJet Rotating Residential Proxy.
+Eigenständiges Tool für skalierbares globales Scraping via Rotating-Proxy (aktuell Webshare, providerneutral gebaut — siehe `docs/scraping_orchestrator.md`).
 
 ### 6.1 Architektur
 
 | Datei | Beschreibung |
 |---|---|
 | `app.py` | Dash-Dashboard (4 Tabs: Übersicht / Heatmap / Queue / Abgeschlossen) |
-| `worker.py` | Worker-Schleife (Queue → ProxyJet → PostgreSQL) |
+| `worker.py` | Worker-Schleife (Queue → Proxy-Pool → PostgreSQL) |
 | `queue_manager.py` | SQLite-Queue, Prioritätsvergabe, Optimistic Locking, Startup-Reset |
-| `proxy_manager.py` | ProxyJet Rotating Residential Proxy (eu.proxy-jet.io:1010) |
+| `proxy_manager.py` | Rotating-Proxy-Client — Pool-Modus (viele `IP:PORT` + 1 Credential-Paar, aktuell Webshare) oder Single-Host-Modus |
 | `profile_manager.py` | Scrape-Profile + Fuzzy-Auswahl |
 | `generate_groups.py` | 24.588 Gruppen (Föd. × Jahr × ELO-Band) generieren |
 | `setup_db.py` | SQLite-Schema (scrape_groups, scrape_runs) |

@@ -15,16 +15,15 @@ concurrency:
     - CZE
     - SVK
     - FID
-    host: proxy-jet.io
     id: dc_de
     label: DC-DE
     max_hours: null
-    password_env: PROXYJET_PASSWORD
-    port: 1010
+    password_env: PROXY_DC_PASSWORD
+    pool_file: orchestrator/webshare_proxies.txt
     profile: semi_conservative
     slot: 99
     timezone: Europe/Berlin
-    username_env: PROXYJET_DC_USERNAME
+    username_env: PROXY_DC_USERNAME
   - active_hours:
     - 7
     - 23
@@ -32,16 +31,15 @@ concurrency:
     federations:
     - IND
     - IRI
-    host: in.proxy-jet.io
     id: dc_in
     label: DC-IN
     max_hours: null
-    password_env: PROXYJET_DC_IN_PASSWORD
-    port: 1010
+    password_env: PROXY_DC_PASSWORD
+    pool_file: orchestrator/webshare_proxies.txt
     profile: semi_conservative
     slot: 100
     timezone: Asia/Kolkata
-    username_env: PROXYJET_DC_IN_USERNAME
+    username_env: PROXY_DC_USERNAME
   - active_hours:
     - 8
     - 21
@@ -57,16 +55,15 @@ concurrency:
     - SWE
     - FIN
     - ISL
-    host: eu.proxy-jet.io
     id: dc_uk
     label: DC-UK
     max_hours: null
-    password_env: PROXYJET_DC_UK_PASSWORD
-    port: 1010
+    password_env: PROXY_DC_PASSWORD
+    pool_file: orchestrator/webshare_proxies.txt
     profile: semi_conservative
     slot: 101
     timezone: Europe/London
-    username_env: PROXYJET_DC_UK_USERNAME
+    username_env: PROXY_DC_USERNAME
   - active_hours:
     - 7
     - 23
@@ -74,16 +71,15 @@ concurrency:
     federations:
     - USA
     - CAN
-    host: ca.proxy-jet.io
     id: dc_us
     label: DC-US
     max_hours: null
-    password_env: PROXYJET_DC_US_PASSWORD
-    port: 1010
+    password_env: PROXY_DC_PASSWORD
+    pool_file: orchestrator/webshare_proxies.txt
     profile: semi_conservative
     slot: 102
     timezone: America/New_York
-    username_env: PROXYJET_DC_US_USERNAME
+    username_env: PROXY_DC_USERNAME
   - active_hours:
     - 7
     - 23
@@ -105,16 +101,15 @@ concurrency:
     - SAM
     - TON
     - FSM
-    host: in.proxy-jet.io
     id: dc_hk
     label: DC-HK
     max_hours: null
-    password_env: PROXYJET_DC_HK_PASSWORD
-    port: 1010
+    password_env: PROXY_DC_PASSWORD
+    pool_file: orchestrator/webshare_proxies.txt
     profile: semi_conservative
     slot: 103
     timezone: Asia/Hong_Kong
-    username_env: PROXYJET_DC_HK_USERNAME
+    username_env: PROXY_DC_USERNAME
   - active_hours:
     - 12
     - 18
@@ -125,16 +120,15 @@ concurrency:
     - POR
     - AND
     - GIB
-    host: eu.proxy-jet.io
     id: dc_es
     label: DC-ES
     max_hours: null
-    password_env: PROXYJET_DC_ES_PASSWORD
-    port: 1010
+    password_env: PROXY_DC_PASSWORD
+    pool_file: orchestrator/webshare_proxies.txt
     profile: semi_conservative
     slot: 104
     timezone: Europe/Madrid
-    username_env: PROXYJET_DC_ES_USERNAME
+    username_env: PROXY_DC_USERNAME
   - active_hours:
     - 10
     - 22
@@ -144,16 +138,15 @@ concurrency:
     - BEL
     - NED
     - LUX
-    host: ca.proxy-jet.io
     id: dc_mx
     label: DC-MX
     max_hours: null
-    password_env: PROXYJET_DC_MX_PASSWORD
-    port: 1010
+    password_env: PROXY_DC_PASSWORD
+    pool_file: orchestrator/webshare_proxies.txt
     profile: semi_conservative
     slot: 105
     timezone: America/Mexico_City
-    username_env: PROXYJET_DC_MX_USERNAME
+    username_env: PROXY_DC_USERNAME
   - active_hours:
     - 7
     - 23
@@ -169,16 +162,15 @@ concurrency:
     - ALB
     - GRE
     - TUR
-    host: in.proxy-jet.io
     id: dc_ae
     label: DC-AE
     max_hours: null
-    password_env: PROXYJET_DC_AE_PASSWORD
-    port: 1010
+    password_env: PROXY_DC_PASSWORD
+    pool_file: orchestrator/webshare_proxies.txt
     profile: semi_conservative
     slot: 106
     timezone: Asia/Dubai
-    username_env: PROXYJET_DC_AE_USERNAME
+    username_env: PROXY_DC_USERNAME
   - active_hours:
     - 7
     - 23
@@ -187,31 +179,29 @@ concurrency:
     - AUT
     - SUI
     - GER
-    host: eu.proxy-jet.io
     id: dc_dach
     label: DC-DACH
     max_hours: null
-    password_env: PROXYJET_DC_DACH_PASSWORD
-    port: 1010
+    password_env: PROXY_DC_PASSWORD
+    pool_file: orchestrator/webshare_proxies.txt
     profile: semi_conservative
     slot: 107
     timezone: Europe/Berlin
-    username_env: PROXYJET_DC_DACH_USERNAME
+    username_env: PROXY_DC_USERNAME
   - active_hours:
     - 7
     - 23
     enabled: true
     federations: []
-    host: eu.proxy-jet.io
     id: dc_update_1
     label: DC-UPDATE-1
     max_hours: null
-    password_env: PROXYJET_DC_UPDATE_PASSWORD
-    port: 1010
+    password_env: PROXY_DC_PASSWORD
+    pool_file: orchestrator/webshare_proxies.txt
     profile: semi_conservative
     slot: 108
     timezone: Europe/Berlin
-    username_env: PROXYJET_DC_UPDATE_USERNAME
+    username_env: PROXY_DC_USERNAME
   max_workers: 2
   worker_profiles:
   - semi_aggressive

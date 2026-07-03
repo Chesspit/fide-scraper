@@ -428,7 +428,7 @@ python3 -m scripts.quality_check --report-only
 
 ## 7. Scraping Orchestrator (deployed 2026-05-09, 10-Thread-Setup ab 2026-05-25)
 
-Ein eigenständiges Tool zur Verwaltung des globalen Scrapings via ProxyJet-Proxy.
+Ein eigenständiges Tool zur Verwaltung des globalen Scrapings via Rotating-Proxy (aktuell Webshare, siehe 7.2 — providerneutral gebaut, Wechsel seit 2026-07-03 nur noch Config/Credentials).
 
 ### 7.1 Architektur
 
@@ -437,7 +437,7 @@ orchestrator/
 ├── app.py              ← Dash-Dashboard (7 Tabs, s. 7.5)
 ├── worker.py           ← Worker: Residential-Slots + DC-Threads unabhängig
 ├── queue_manager.py    ← SQLite-Queue, thread_affinity-Filter, Optimistic Locking
-├── proxy_manager.py    ← ProxyJet Proxy (host_override + password_env pro DC-Thread)
+├── proxy_manager.py    ← Rotating-Proxy-Client (Pool-Modus: viele IP:PORT-Einträge + 1 Credential-Paar; oder Single-Host-Modus für Provider mit echtem Gateway)
 ├── profile_manager.py  ← Scrape-Profile + Fuzzy-Auswahl
 ├── generate_groups.py  ← 24.588 Gruppen (Föd. × Jahr × ELO-Band) generieren
 ├── setup_db.py         ← SQLite-Schema (inkl. thread_affinity-Spalte)
@@ -457,18 +457,20 @@ concurrency:
     - {slot: 1, enabled: true, profile: normal}             # T2
     - {slot: 2, enabled: false, profile: semi_conservative} # T3 (bereit)
     - {slot: 3, enabled: false, profile: semi_aggressive}   # T4 (bereit)
-  datacenter_threads:            # 8 DC-Threads mit eigenem Host/Credentials/Timezone
-    - {id: dc_de, slot: 99,  host: proxy-jet.io,    timezone: Europe/Berlin,     federations: [POL,UKR,LAT,LIT,EST,CZE,SVK,FID]}
-    - {id: dc_in, slot: 100, host: in.proxy-jet.io, timezone: Asia/Kolkata,      federations: [IND,IRI]}
-    - {id: dc_uk, slot: 101, host: eu.proxy-jet.io, timezone: Europe/London,     federations: [ENG,SCO,WLS,IRL,NIR,DEN,NOR,SWE,FIN,ISL]}
-    - {id: dc_us, slot: 102, host: ca.proxy-jet.io, timezone: America/New_York,  federations: [USA,CAN]}
-    - {id: dc_hk, slot: 103, host: in.proxy-jet.io, timezone: Asia/Hong_Kong,    federations: [CHN,VIE,...Ozeanien]}
-    - {id: dc_es, slot: 104, host: es.proxy-jet.io, timezone: Europe/Madrid,     federations: [ESP,ITA,POR,AND,GIB]}
-    - {id: dc_mx, slot: 105, host: mx.proxy-jet.io, timezone: America/Mexico_City, federations: [FRA,BEL,NED,LUX]}
-    - {id: dc_ae, slot: 106, host: ae.proxy-jet.io, timezone: Asia/Dubai,        federations: [SRB,CRO,BIH,MKD,MNE,SLO,KOS,ALB,GRE,TUR]}
-    - {id: dc_dach,   slot: 107, host: eu.proxy-jet.io, timezone: Europe/Berlin, federations: [GER,SUI,AUT]}                  # Vollbackfill
-    - {id: dc_update, slot: 108, host: eu.proxy-jet.io, timezone: Europe/Berlin, federations: []}                            # monatliches Update Rest-Population
+  datacenter_threads:            # 10 DC-Threads, alle mit pool_file (Webshare) + eigener Timezone
+    - {id: dc_de, slot: 99,  pool_file: orchestrator/webshare_proxies.txt, timezone: Europe/Berlin,     federations: [POL,UKR,LAT,LIT,EST,CZE,SVK,FID]}  # disabled
+    - {id: dc_in, slot: 100, pool_file: orchestrator/webshare_proxies.txt, timezone: Asia/Kolkata,      federations: [IND,IRI]}
+    - {id: dc_uk, slot: 101, pool_file: orchestrator/webshare_proxies.txt, timezone: Europe/London,     federations: [ENG,SCO,WLS,IRL,NIR,DEN,NOR,SWE,FIN,ISL]}
+    - {id: dc_us, slot: 102, pool_file: orchestrator/webshare_proxies.txt, timezone: America/New_York,  federations: [USA,CAN]}  # disabled
+    - {id: dc_hk, slot: 103, pool_file: orchestrator/webshare_proxies.txt, timezone: Asia/Hong_Kong,    federations: [CHN,VIE,...Ozeanien]}
+    - {id: dc_es, slot: 104, pool_file: orchestrator/webshare_proxies.txt, timezone: Europe/Madrid,     federations: [ESP,ITA,POR,AND,GIB]}  # disabled
+    - {id: dc_mx, slot: 105, pool_file: orchestrator/webshare_proxies.txt, timezone: America/Mexico_City, federations: [FRA,BEL,NED,LUX]}
+    - {id: dc_ae, slot: 106, pool_file: orchestrator/webshare_proxies.txt, timezone: Asia/Dubai,        federations: [SRB,CRO,BIH,MKD,MNE,SLO,KOS,ALB,GRE,TUR]}
+    - {id: dc_dach,     slot: 107, pool_file: orchestrator/webshare_proxies.txt, timezone: Europe/Berlin, federations: [GER,SUI,AUT]}  # Vollbackfill
+    - {id: dc_update_1, slot: 108, pool_file: orchestrator/webshare_proxies.txt, timezone: Europe/Berlin, federations: []}     # P1/P2/P3-Monatsrefresh
 ```
+
+**Proxy-Anbieter (seit 2026-07-03):** Webshare, statische 100-IP-Liste (`orchestrator/webshare_proxies.txt`, git-ignored) statt eines einzelnen Rotating-Gateways wie beim vorherigen Anbieter ProxyJet (Domain-Ausfall 2026-07-03). Alle DC-Threads teilen sich denselben Pool + ein Credential-Paar; `proxy_manager.py::ProxyManager` wählt pro Request zufällig eine `IP:PORT`-Kombination. Details siehe `docs/scraping_orchestrator.md` Abschnitt "Proxy-Integration".
 
 **dc_update — monatliches Update der "Rest"-Population (seit 2026-06-07):**
 Die 4 Update-Jobs (`update_jobs.yaml`: `UP-ELO2300`/`UP-FEMALE`/`UP-GER`/`UP-DACH`) decken nur ~30.000
@@ -508,7 +510,7 @@ Die Datei ist in git versioniert — nach strukturellen Änderungen VPS-Version 
 | `normal` | 3s (±40%) | 20s | T2 |
 | `semi_conservative` | 5,5s (±45%) | 25s | alle DC-Threads |
 
-> **VPS-IP geblockt:** Alle VPS-Requests laufen über ProxyJet. Mac Mini scrapt direkt.
+> **VPS-IP geblockt:** Alle VPS-Requests laufen über den Proxy-Pool (Webshare). Mac Mini scrapt direkt.
 
 ### 7.5 Dashboard
 

@@ -34,32 +34,18 @@ services:
       DATABASE_URL: postgresql://fide:${DB_PASSWORD}@host.docker.internal:5432/fidedb
       ORCHESTRATOR_DATA_DIR: /data
       ORCHESTRATOR_PROFILES: /data/profiles.yaml
-      PROXYJET_USERNAME: ${PROXYJET_USERNAME}
-      PROXYJET_PASSWORD: ${PROXYJET_PASSWORD}
-      PROXYJET_HOST: ${PROXYJET_HOST:-proxy-jet.io}
-      PROXYJET_PORT: ${PROXYJET_PORT:-1010}
-      PROXYJET_DC_USERNAME: ${PROXYJET_DC_USERNAME:-}
-      PROXYJET_DC_IN_USERNAME:  ${PROXYJET_DC_IN_USERNAME:-}
-      PROXYJET_DC_IN_PASSWORD:  ${PROXYJET_DC_IN_PASSWORD:-}
-      PROXYJET_DC_UK_USERNAME:  ${PROXYJET_DC_UK_USERNAME:-}
-      PROXYJET_DC_UK_PASSWORD:  ${PROXYJET_DC_UK_PASSWORD:-}
-      PROXYJET_DC_US_USERNAME:  ${PROXYJET_DC_US_USERNAME:-}
-      PROXYJET_DC_US_PASSWORD:  ${PROXYJET_DC_US_PASSWORD:-}
-      PROXYJET_DC_HK_USERNAME:  ${PROXYJET_DC_HK_USERNAME:-}
-      PROXYJET_DC_HK_PASSWORD:  ${PROXYJET_DC_HK_PASSWORD:-}
-      PROXYJET_DC_ES_USERNAME:  ${PROXYJET_DC_ES_USERNAME:-}
-      PROXYJET_DC_ES_PASSWORD:  ${PROXYJET_DC_ES_PASSWORD:-}
-      PROXYJET_DC_MX_USERNAME:  ${PROXYJET_DC_MX_USERNAME:-}
-      PROXYJET_DC_MX_PASSWORD:  ${PROXYJET_DC_MX_PASSWORD:-}
-      PROXYJET_DC_AE_USERNAME:  ${PROXYJET_DC_AE_USERNAME:-}
-      PROXYJET_DC_AE_PASSWORD:  ${PROXYJET_DC_AE_PASSWORD:-}
-      PROXYJET_DC_DACH_USERNAME: ${PROXYJET_DC_DACH_USERNAME:-}
-      PROXYJET_DC_DACH_PASSWORD: ${PROXYJET_DC_DACH_PASSWORD:-}
-      PROXYJET_DC_UPDATE_USERNAME: ${PROXYJET_DC_UPDATE_USERNAME:-}
-      PROXYJET_DC_UPDATE_PASSWORD: ${PROXYJET_DC_UPDATE_PASSWORD:-}
+      # Webshare: ein gemeinsames Credential-Paar für den ganzen 100-IP-Pool
+      # (siehe orchestrator/webshare_proxies.txt) — ersetzt die 9 separaten
+      # ProxyJet-DC-Thread-Credential-Paare, die es bei Webshare nicht braucht.
+      PROXY_USERNAME: ${PROXY_USERNAME}
+      PROXY_PASSWORD: ${PROXY_PASSWORD}
+      PROXY_POOL_FILE: ${PROXY_POOL_FILE:-orchestrator/webshare_proxies.txt}
+      PROXY_DC_USERNAME: ${PROXY_DC_USERNAME:-}
+      PROXY_DC_PASSWORD: ${PROXY_DC_PASSWORD:-}
     volumes:
       - orchestrator_data:/data
       - ../config.yaml:/app/config.yaml:ro
+      - ../orchestrator/webshare_proxies.txt:/app/orchestrator/webshare_proxies.txt:ro
     ports:
       - "127.0.0.1:8050:8050"
     networks:
@@ -90,34 +76,20 @@ services:
       DATABASE_URL: postgresql://fide:${DB_PASSWORD}@host.docker.internal:5432/fidedb
       ORCHESTRATOR_DATA_DIR: /data
       ORCHESTRATOR_PROFILES: /data/profiles.yaml
-      PROXYJET_USERNAME: ${PROXYJET_USERNAME}
-      PROXYJET_PASSWORD: ${PROXYJET_PASSWORD}
-      PROXYJET_HOST: ${PROXYJET_HOST:-proxy-jet.io}
-      PROXYJET_PORT: ${PROXYJET_PORT:-1010}
-      PROXYJET_DC_USERNAME: ${PROXYJET_DC_USERNAME:-}
-      PROXYJET_DC_IN_USERNAME:  ${PROXYJET_DC_IN_USERNAME:-}
-      PROXYJET_DC_IN_PASSWORD:  ${PROXYJET_DC_IN_PASSWORD:-}
-      PROXYJET_DC_UK_USERNAME:  ${PROXYJET_DC_UK_USERNAME:-}
-      PROXYJET_DC_UK_PASSWORD:  ${PROXYJET_DC_UK_PASSWORD:-}
-      PROXYJET_DC_US_USERNAME:  ${PROXYJET_DC_US_USERNAME:-}
-      PROXYJET_DC_US_PASSWORD:  ${PROXYJET_DC_US_PASSWORD:-}
-      PROXYJET_DC_HK_USERNAME:  ${PROXYJET_DC_HK_USERNAME:-}
-      PROXYJET_DC_HK_PASSWORD:  ${PROXYJET_DC_HK_PASSWORD:-}
-      PROXYJET_DC_ES_USERNAME:  ${PROXYJET_DC_ES_USERNAME:-}
-      PROXYJET_DC_ES_PASSWORD:  ${PROXYJET_DC_ES_PASSWORD:-}
-      PROXYJET_DC_MX_USERNAME:  ${PROXYJET_DC_MX_USERNAME:-}
-      PROXYJET_DC_MX_PASSWORD:  ${PROXYJET_DC_MX_PASSWORD:-}
-      PROXYJET_DC_AE_USERNAME:  ${PROXYJET_DC_AE_USERNAME:-}
-      PROXYJET_DC_AE_PASSWORD:  ${PROXYJET_DC_AE_PASSWORD:-}
-      PROXYJET_DC_DACH_USERNAME: ${PROXYJET_DC_DACH_USERNAME:-}
-      PROXYJET_DC_DACH_PASSWORD: ${PROXYJET_DC_DACH_PASSWORD:-}
-      PROXYJET_DC_UPDATE_USERNAME: ${PROXYJET_DC_UPDATE_USERNAME:-}
-      PROXYJET_DC_UPDATE_PASSWORD: ${PROXYJET_DC_UPDATE_PASSWORD:-}
+      # Webshare: ein gemeinsames Credential-Paar für den ganzen 100-IP-Pool
+      # (siehe orchestrator/webshare_proxies.txt) — ersetzt die 9 separaten
+      # ProxyJet-DC-Thread-Credential-Paare, die es bei Webshare nicht braucht.
+      PROXY_USERNAME: ${PROXY_USERNAME}
+      PROXY_PASSWORD: ${PROXY_PASSWORD}
+      PROXY_POOL_FILE: ${PROXY_POOL_FILE:-orchestrator/webshare_proxies.txt}
+      PROXY_DC_USERNAME: ${PROXY_DC_USERNAME:-}
+      PROXY_DC_PASSWORD: ${PROXY_DC_PASSWORD:-}
       WORKER_DEVICE: ${WORKER_DEVICE:-}
     volumes:
       - orchestrator_data:/data
       - ../config.yaml:/app/config.yaml:ro
       - ../data:/app/data:ro
+      - ../orchestrator/webshare_proxies.txt:/app/orchestrator/webshare_proxies.txt:ro
     networks:
       - fide_net
     # unless-stopped — Worker immer neu starten (auch nach Crash), ausser bei explizitem

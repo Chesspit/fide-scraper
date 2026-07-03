@@ -54,6 +54,10 @@ class ProfileManager:
     def available(self) -> list[str]:
         return list(self._data.get("profiles", {}).keys())
 
+    def dashboard_settings(self) -> dict:
+        """[dashboard]-Sektion aus profiles.yaml (Darstellungs-Konstanten)."""
+        return self._data.get("dashboard", {}) or {}
+
     def all_profiles(self) -> dict[str, dict]:
         return self._data.get("profiles", {})
 

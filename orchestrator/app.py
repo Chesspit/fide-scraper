@@ -53,17 +53,9 @@ COLORSCALE = [
 _DATA_DIR = Path(os.getenv("ORCHESTRATOR_DATA_DIR", Path(__file__).resolve().parent))
 WORKER_STATE_PATH = _DATA_DIR / "worker_state.json"
 
-# Direktspalten + Separator + eine Spalte pro DC-Thread
-# Die DC-Labels müssen den `label`-Feldern in profiles.yaml entsprechen.
-OVERVIEW_FEDERATIONS = ["GER", "SUI", "AUT", "·", "DC-DE", "DC-IN", "DC-UK", "DC-US", "DC-HK", "DC-ES", "DC-MX", "DC-AE"]
-
-# Föderationen die direkt als eigene Spalte erscheinen (kein DC-Aggregat)
-_OV_DIRECT_FEDS = {"GER", "SUI", "AUT"}
-
-# Realer unterer ELO-Rand aller Scraping-Gruppen (siehe groups.elo_min). dc_update-Batches
-# tragen elo_min=0 als Drift-Puffer (REST_ELO_FLOOR in generate_update_batches.py) — ohne
-# diese Klammerung würde die Übersicht leere Buckets weit unterhalb der realen Population zeigen.
-OVERVIEW_ELO_FLOOR = 1400
+# Föderationen die direkt als eigene Spalte erscheinen (kein DC-Aggregat);
+# Reihenfolge = Spaltenreihenfolge links in der Übersichts-Heatmap.
+_OV_DIRECT_FEDS = ("GER", "SUI", "AUT")
 
 pm = ProfileManager()
 
@@ -82,6 +74,31 @@ def _dc_thread_maps() -> tuple[dict[int, str], dict[str, str]]:
     slot_labels = {t["slot"]: t["label"] for t in threads if "slot" in t and "label" in t}
     id_labels = {t["id"]: t["label"] for t in threads if "id" in t and "label" in t}
     return slot_labels, id_labels
+
+
+def _overview_columns() -> list[str]:
+    """Spalten der Übersichts-Heatmap: Direkt-Föderationen + Separator + DC-Threads.
+
+    Live aus der Thread-Config abgeleitet (nach Slot sortiert) statt hartkodiert
+    — neue DC-Threads erscheinen automatisch (Review #7; die frühere feste Liste
+    musste bei jedem neuen Thread manuell nachgezogen werden). Threads ohne
+    eigene Aggregat-Föderationen bleiben draußen, ihre Spalte wäre
+    konstruktionsbedingt leer: dc_dach deckt nur die Direktspalten GER/SUI/AUT
+    ab, dc_update_* haben federations=[] (P1/P2/P3 statt Föderationen).
+    """
+    threads = _get_concurrency_cfg().get("datacenter_threads", [])
+    dc_labels = [
+        t["label"]
+        for t in sorted(threads, key=lambda t: t.get("slot", 99))
+        if t.get("label") and set(t.get("federations", [])) - set(_OV_DIRECT_FEDS)
+    ]
+    return list(_OV_DIRECT_FEDS) + ["·"] + dc_labels
+
+
+def _overview_elo_bounds() -> tuple[int, int]:
+    """(floor, ceiling) der Übersichts-Heatmap aus profiles.yaml [dashboard]."""
+    cfg = pm.dashboard_settings()
+    return int(cfg.get("overview_elo_floor", 1400)), int(cfg.get("overview_elo_ceiling", 2300))
 
 
 def _save_dc_thread_enabled(dc_id: str, enabled: bool) -> None:
@@ -284,6 +301,7 @@ def query_overview() -> list[dict]:
 
     from collections import defaultdict
     bucket_data: dict[tuple, dict] = defaultdict(lambda: {"total": 0, "done": 0})
+    elo_floor, elo_ceiling = _overview_elo_bounds()
 
     for fed, elo_min, elo_max, status in rows:
         # Direkte Spalte oder DC-Aggregat?
@@ -294,10 +312,10 @@ def query_overview() -> list[dict]:
         if target is None:
             continue
 
-        lo_bucket = max((elo_min // 50) * 50, OVERVIEW_ELO_FLOOR)
+        lo_bucket = max((elo_min // 50) * 50, elo_floor)
         hi_bucket = (elo_max // 50) * 50
         for bucket in range(lo_bucket, hi_bucket + 50, 50):
-            if bucket >= 2300:          # ≥ 2300 = Mac Mini → nicht in Übersicht
+            if bucket >= elo_ceiling:   # ≥ ceiling: läuft über P1-Monatsrefresh, nicht Backfill
                 continue
             key = (target, bucket)
             bucket_data[key]["total"] += 1
@@ -692,10 +710,11 @@ def build_overview_figure() -> go.Figure:
     # DC-Thread-Föderationen für Hover-Text (Label → sortierte Feds-Liste)
     dc_map = _get_dc_overview_map()
 
+    overview_cols = _overview_columns()
     z, text = [], []
     for bkt in all_buckets:
         z_row, text_row = [], []
-        for fed in OVERVIEW_FEDERATIONS:
+        for fed in overview_cols:
             if fed == "·":
                 # Visueller Separator — transparent / kein Tooltip
                 z_row.append(float("nan"))
@@ -738,7 +757,7 @@ def build_overview_figure() -> go.Figure:
     height = max(400, 25 * len(all_buckets) + 120)
     fig = go.Figure(go.Heatmap(
         z=z,
-        x=OVERVIEW_FEDERATIONS,
+        x=overview_cols,
         y=bucket_labels,
         text=text,
         hovertemplate="%{text}<extra></extra>",

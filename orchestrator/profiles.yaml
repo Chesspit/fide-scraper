@@ -1,4 +1,17 @@
 active_profile: normal
+
+# Darstellungs-Grenzen der Übersichts-Heatmap (Review #7).
+# overview_elo_floor:   unterster Bucket — reale Backfill-Population beginnt
+#                       bei 1400; Update-Batches tragen elo_min=0 nur als
+#                       Drift-Puffer und würden sonst leere Buckets erzeugen.
+# overview_elo_ceiling: ab hier keine Buckets — ELO >= 2300 wird vom
+#                       P1-Monatsrefresh abgedeckt, nicht vom Backfill-Grid.
+# (Kommentare sind hier seit Review #4 sicher: die UI schreibt diese Datei
+#  nie mehr um, Laufzeit-State liegt in /data/runtime_settings.json.)
+dashboard:
+  overview_elo_floor: 1400
+  overview_elo_ceiling: 2300
+
 concurrency:
   datacenter_threads:
   - active_hours:

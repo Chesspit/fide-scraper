@@ -120,3 +120,66 @@ class TestPoolMode:
         }, clear=False):
             manager = ProxyManager(pool_file=tmp_path / "does_not_exist.txt")
             assert manager.get_proxy() is None
+
+
+class TestPoolHotReload:
+    """mtime-basiertes Hot-Reload: Pool-Datei-Sync ohne Worker-Neustart."""
+
+    @pytest.fixture
+    def pool_file(self, tmp_path):
+        f = tmp_path / "pool.txt"
+        f.write_text("1.2.3.4:1000\n")
+        return f
+
+    @pytest.fixture
+    def pool_pm(self, pool_file, monkeypatch):
+        monkeypatch.setattr(ProxyManager, "POOL_RELOAD_INTERVAL", 0.0)
+        with patch.dict("os.environ", {
+            "PROXY_USERNAME": "testuser",
+            "PROXY_PASSWORD": "testpass",
+        }, clear=False):
+            yield ProxyManager(pool_file=pool_file)
+
+    @staticmethod
+    def _bump_mtime(path):
+        import os
+        st = path.stat()
+        os.utime(path, (st.st_atime, st.st_mtime + 10))
+
+    def test_reloads_on_mtime_change(self, pool_pm, pool_file):
+        assert "1.2.3.4:1000" in pool_pm.get_proxy()["http"]
+        pool_file.write_text("5.6.7.8:2000\n")
+        self._bump_mtime(pool_file)
+        assert "5.6.7.8:2000" in pool_pm.get_proxy()["http"]
+
+    def test_no_reload_when_mtime_unchanged(self, pool_pm, pool_file):
+        pool_pm.get_proxy()
+        # Datei ändern, mtime künstlich auf den alten Wert zurücksetzen
+        import os
+        st = pool_file.stat()
+        pool_file.write_text("5.6.7.8:2000\n")
+        os.utime(pool_file, (st.st_atime, pool_pm._pool_mtime))
+        assert "1.2.3.4:1000" in pool_pm.get_proxy()["http"]
+
+    def test_empty_rewrite_keeps_old_pool(self, pool_pm, pool_file):
+        """Halb geschriebene/leere Datei darf den Pool nicht wegreißen."""
+        pool_file.write_text("# nur ein Kommentar, keine Einträge\n")
+        self._bump_mtime(pool_file)
+        assert "1.2.3.4:1000" in pool_pm.get_proxy()["http"]
+
+    def test_deleted_file_keeps_old_pool(self, pool_pm, pool_file):
+        pool_file.unlink()
+        assert "1.2.3.4:1000" in pool_pm.get_proxy()["http"]
+
+    def test_reload_check_throttled(self, pool_file, monkeypatch):
+        """Innerhalb des Intervalls wird nicht erneut stat()/geparst."""
+        monkeypatch.setattr(ProxyManager, "POOL_RELOAD_INTERVAL", 3600.0)
+        with patch.dict("os.environ", {
+            "PROXY_USERNAME": "testuser",
+            "PROXY_PASSWORD": "testpass",
+        }, clear=False):
+            manager = ProxyManager(pool_file=pool_file)
+        manager.get_proxy()  # setzt _pool_checked
+        pool_file.write_text("5.6.7.8:2000\n")
+        self._bump_mtime(pool_file)
+        assert "1.2.3.4:1000" in manager.get_proxy()["http"]

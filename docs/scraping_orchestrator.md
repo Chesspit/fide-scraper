@@ -258,7 +258,7 @@ class ProxyManager:
 
 **Ersatz-Runde 1 (2026-07-03):** User hat 5 der 12 toten IPs bei Webshare ersetzt (1× Ägypten, 4× Türkei/`166.88.110.x`). Nachgetestet: nur der Ägypten-Ersatz (`154.73.250.233:6134`) funktioniert — **alle 4 Türkei-Ersatz-IPs liegen wieder im selben `166.88.110.0/24`-Subnetz und sind ebenfalls tot.** Hinweis für den nächsten Webshare-Support-Kontakt: nicht einzelne IPs meldenden, sondern explizit erwähnen, dass der gesamte `166.88.110.0/24`-Block von unserem Netzwerkpfad aus unerreichbar ist — sonst ersetzt der Automatismus vermutlich wieder innerhalb desselben kaputten Blocks.
 
-`orchestrator/webshare_proxies.txt` (lokal + VPS) wurde auf den aktuellen Webshare-Stand synchronisiert (100 Einträge, davon weiterhin ~11 tot). Der Pool-Rotation-Mechanismus toleriert das bereits gut (siehe Fix vom selben Tag: frischer Proxy pro Retry-Versuch) — keine Notwendigkeit, tote IPs manuell aus der Datei zu entfernen, nur bei jedem Sync/Tausch **den Worker neu starten** (`docker compose restart worker`), da `ProxyManager` die Pool-Datei nur beim Start einliest, nicht live nachlädt.
+`orchestrator/webshare_proxies.txt` (lokal + VPS) wurde auf den aktuellen Webshare-Stand synchronisiert (100 Einträge, davon weiterhin ~11 tot). Der Pool-Rotation-Mechanismus toleriert das bereits gut (siehe Fix vom selben Tag: frischer Proxy pro Retry-Versuch) — keine Notwendigkeit, tote IPs manuell aus der Datei zu entfernen. ~~Nur bei jedem Sync/Tausch den Worker neu starten~~ **Seit 2026-07-03 (Review #10) überflüssig:** `ProxyManager` lädt die Pool-Datei bei geänderter mtime automatisch neu (Check max. alle 30 s beim nächsten `get_proxy()`), eine leere/halb geschriebene Datei ersetzt den Pool dabei nie.
 
 **Noch offen:** 7 der ursprünglich 12 toten IPs (außerhalb der Türkei-Subnetz-Ersatzrunde) sowie die 4 Türkei-Ersatz-IPs — insgesamt weiterhin ~11 tote Einträge im Pool.
 
@@ -276,7 +276,7 @@ Zuordnung folgt der **konfigurierten `timezone` je Thread** (nicht den `federati
 
 **Umsetzung:** reine Config-Änderung, kein Code-Umbau — `ProxyManager` unterstützt `pool_file` pro Instanz bereits seit der Webshare-Migration. Neue Dateien `orchestrator/webshare_proxies_{americas,europe,mena_asia}.txt` (git-ignored, wie `webshare_proxies.txt`, generiert via GeoIP-Klassifizierung des `webshare_proxies.txt`-Bestands, siehe `.gitignore`-Muster `orchestrator/webshare_proxies_*.txt`), `docker-compose.yml` mountet alle vier Dateien in beide Container, `profiles.yaml` weist pro Thread die passende Datei zu. Deployed und verifiziert (mehrfache Neustarts, durchgehend gesunde Save-Raten, 0 anhaltende Fehlschläge).
 
-**Bei künftigem IP-Tausch:** die passende Region-Datei (nicht nur `webshare_proxies.txt`) aktualisieren, je nachdem in welcher Region die getauschte IP lag — sonst zieht der betroffene Thread weiterhin aus einem veralteten Pool. Nach jedem Sync **Worker neu starten** (Pool wird nur beim Start eingelesen).
+**Bei künftigem IP-Tausch:** die passende Region-Datei (nicht nur `webshare_proxies.txt`) aktualisieren, je nachdem in welcher Region die getauschte IP lag — sonst zieht der betroffene Thread weiterhin aus einem veralteten Pool. Ein Worker-Neustart ist dafür **nicht mehr nötig** (Hot-Reload seit 2026-07-03, siehe oben) — Datei syncen genügt, der Thread übernimmt sie innerhalb von ~30 s.
 
 ---
 

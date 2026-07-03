@@ -1,21 +1,22 @@
 # Scraping-Status
 
-Stand: 2026-07-02 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite, Live-Abfrage)
+Stand: 2026-07-03 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite, Live-Abfrage)
 Raspberry-Pi-Stand aktualisiert: 2026-06-28, ~18:30 Uhr (Tailscale seitdem nicht erneut abgefragt)
 
 ---
 
-## Gesamtstand DB (Live 2026-07-02, ~11:30 UTC)
+## Gesamtstand DB (Live 2026-07-03, ~13:50 UTC)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **9.432.433** |
-| DB-Größe | **~9,46 GB** |
+| Partien gesamt | **9.487.420** |
+| DB-Größe | **~9,48 GB** |
 | Gruppen complete | **107 / 253** (140 pending, 5 partial, 1 skipped) — bezieht sich auf die manuell gepflegten Mac-Mini-Analysegruppen, unabhängig vom neuen P1/P2/P3-System (siehe unten) |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ (Vorbehalt: siehe Top-Spieler-Lückenanalyse unten) |
 | Spieler mit ≥ 1 gescrapter Periode | **141.845** |
-| Neueste published_rating-Periode | **2026-07-01** (heute importiert, `standard_jul26frl.zip`) |
-| Neueste gescrapte Spiel-Periode | **2026-06-01** (läuft gerade über den neuen P1/P2/P3-Prozess nach) |
+| Neueste published_rating-Periode | **2026-07-01** (importiert 2026-07-02, `standard_jul26frl.zip`) |
+| Neueste gescrapte Spiel-Periode | **2026-06-01** (läuft über den P1/P2/P3-Prozess nach, siehe Session-Eintrag 2026-07-03) |
+| P1/P2/P3-Fortschritt | P1 ✅ / P2 ✅ komplett; P3: 11/40 Batches, 41.431 neue Partien bisher |
 
 ---
 
@@ -223,6 +224,26 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 | Spieler-Steckbrief | Aktiv | `/player-profile` | Profil + Rating-History + Spielstatistiken |
 | Partien-Detail | Test | `/games` | Alle Partien eines Spielers, filterbar |
 | GM/IM Entwicklung | Test | `/titles` | Zeitreihe der Titelträger |
+
+---
+
+## Änderungen Session 2026-07-03
+
+### ProxyJet-Ausfall → Wechsel auf Webshare → Region-Split
+| Was | Details |
+|-----|---------|
+| **Problem entdeckt** | Alle DC-Threads standen still, keine erfolgreichen Saves mehr. Diagnose: `proxy-jet.io` und Subdomains vom VPS aus unerreichbar (TCP-Timeout bzw. Read-Timeout selbst bei einfachsten Anfragen), vermutlich Domain-Beschlagnahmung. VPS-eigene Internetverbindung (Google direkt: HTTP 200) und Mac-Mini-Scraping (unproxied) unbetroffen. |
+| **Providerwahl** | Recherche + Kostenvergleich (DataImpulse, IPRoyal, Webshare, Oxylabs) für ~60 GB/6 Monate Nutzungsprofil. User entschied sich für **Webshare** (8 Jahre Marktpräsenz, 1.223+ Trustpilot-Reviews) trotz etwas höherer Kosten als DataImpulse — Priorität: Verlässlichkeit statt kleinstem Preis, nach dem ProxyJet-Vorfall. |
+| **`proxy_manager.py` providerneutral umgebaut** ✅ | `ProxyJetManager` → `ProxyManager`, neuer Pool-Modus (viele `IP:PORT` + 1 Credential-Paar, zufällige Auswahl pro Request) zusätzlich zum bisherigen Single-Host-Modus — nötig weil Webshare eine statische 100-IP-Liste liefert, keinen Rotating-Gateway wie ProxyJet |
+| **Alle Configs umgestellt** ✅ | `profiles.yaml`, `docker-compose.yml`, `.env` (lokal + VPS) — `PROXYJET_*` (25 Vars) → `PROXY_*` (5 Vars), da Webshare nur ein gemeinsames Credential-Paar für alle 100 IPs braucht statt 9 separater DC-Thread-Paare |
+| **Deploy-Stolperstein: `/data/profiles.yaml`-Volume** | Lebt in einem persistenten Docker-Volume, wird nur per `cp -n` (no-clobber) aus der git-Version geseedet — reiner `git pull` + Rebuild reicht bei strukturellen Änderungen nicht. Live-Datei musste manuell nachgezogen werden (unter Beibehaltung der `enabled`-Flags für DC-DE/US/ES) |
+| **Bug gefunden: Proxy-Wiederverwendung über Retries** ✅ gefixt | Nach erstem Deploy: 0 erfolgreiche Saves über mehrere Minuten. Ursache: `_fetch()` zog den Proxy einmal pro Combo und behielt ihn über alle `max_retries`-Versuche bei — bei ~10-12% toten IPs im 100er-Pool verbrannte das den kompletten Retry-Budget an einer einzigen toten Verbindung statt auszuweichen. Fix: frischer Proxy pro Retry-Versuch. Verifiziert: 0 → 26-36 Saves/5min, 0 anhaltende Fehlschläge |
+| **`scripts/check_proxy_pool.py`** ✅ neu | Testet alle Pool-IPs direkt gegen FIDE, listet tote auf. Erster Lauf: 88/100 erreichbar, 12 tot (4 davon im selben `166.88.110.0/24`-Subnetz — Hinweis für Webshare-Support) |
+| **worker.py: Proxy-IP jetzt in Fehler-Logs** ✅ | Vorher ließ sich aus den Logs nicht ablesen, welche IP fehlschlug — jetzt `proxy=host:port` in jeder Warn-/Error-Zeile, für organisches Monitoring toter IPs über die Zeit |
+| **1. Webshare-Ersatzrunde** | User ersetzte 5 der 12 toten IPs. Nachgetestet: nur 1 (Ägypten) funktioniert, die 4 Türkei-Ersatz-IPs landeten wieder im selben kaputten Subnetz |
+| **Geo-Regression erkannt + behoben** ✅ | ProxyJet hatte pro DC-Thread einen regionsspezifischen Host + passende `timezone`/`active_hours` (Anfragen zur lokalen Wachzeit aus plausibler Region). Webshares gemeinsamer Pool hatte das verloren. GeoIP-Klassifizierung (ip-api.com) der 100 IPs → 3 Regions-Pools (User-Entscheidung: Naher Osten + Afrika + Asien-Ozeanien zusammengelegt, da Ägypten/Südafrika UTC+2 nahe an Türkei UTC+3 liegen): Europa (53 IPs → `dc_de`/`dc_uk`/`dc_es`/`dc_dach`/`dc_update_1`, 5 Threads), Naher-Osten+Afrika+Asien-Ozeanien (19 IPs → `dc_in`/`dc_hk`/`dc_ae`, 3 Threads), Amerikas (28 IPs → `dc_us`/`dc_mx`, 2 Threads) |
+| **Alles deployed + verifiziert** ✅ | Mehrere Neustarts, durchgehend gesunde Save-Raten (26-36/5min), 0 anhaltende Fehlschläge nach jedem Schritt |
+| Commits | `d238a81` (Provider-Wechsel), `c035898` (Retry-Fix), `f966cd9` (Logging + Health-Check-Skript), `1385f65`/`7d4497f`/`96fe185` (Doku), `5e49fec` (Region-Split), `29ee081` (DC-UPDATE-1 → Europa) |
 
 ---
 

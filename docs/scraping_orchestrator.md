@@ -223,7 +223,7 @@ class ProxyManager:
 - Bei einem künftigen Provider mit echtem Rotating-Gateway: einfach `host_override` statt `pool_file` setzen, kein Code-Umbau nötig (beide Modi koexistieren in `proxy_manager.py`)
 - Trage `webshare_proxies.txt` und `.env` in `.gitignore` ein (bereits erledigt)
 
-### Bekannte Regression: Geo-Ausrichtung der DC-Threads geht verloren
+### Geo-Ausrichtung der DC-Threads — Regression + Umsetzung (2026-07-03)
 
 **Ursprüngliches Design-Ziel** (ProxyJet-Ära): jeder DC-Thread hatte einen **eigenen, regionsspezifischen** Proxy-Host (`dc_us` → `ca.proxy-jet.io`, `dc_hk`/`dc_in`/`dc_ae` → `in.proxy-jet.io`, `dc_uk`/`dc_es`/`dc_dach` → `eu.proxy-jet.io`), kombiniert mit passender `timezone`+`active_hours` — Ziel: Anfragen aus/für eine Föderation sollten von einer IP in einer plausiblen Region kommen, **zur dortigen Wachzeit** (grob 16h/Tag), damit das Zugriffsmuster menschlich wirkt statt wie automatisiertes Scraping rund um die Uhr aus einer einzigen Quelle.
 
@@ -251,6 +251,22 @@ class ProxyManager:
 `orchestrator/webshare_proxies.txt` (lokal + VPS) wurde auf den aktuellen Webshare-Stand synchronisiert (100 Einträge, davon weiterhin ~11 tot). Der Pool-Rotation-Mechanismus toleriert das bereits gut (siehe Fix vom selben Tag: frischer Proxy pro Retry-Versuch) — keine Notwendigkeit, tote IPs manuell aus der Datei zu entfernen, nur bei jedem Sync/Tausch **den Worker neu starten** (`docker compose restart worker`), da `ProxyManager` die Pool-Datei nur beim Start einliest, nicht live nachlädt.
 
 **Noch offen:** 7 der ursprünglich 12 toten IPs (außerhalb der Türkei-Subnetz-Ersatzrunde) sowie die 4 Türkei-Ersatz-IPs — insgesamt weiterhin ~11 tote Einträge im Pool.
+
+### Umgesetzt: 3-Wege-Regionsaufteilung statt 4 (2026-07-03)
+
+Nach dem Machbarkeits-Check hat der User entschieden: **Naher Osten + Afrika + Asien-Ozeanien zu einer gemeinsamen Region zusammenlegen** (statt getrennt) — Ägypten/Südafrika liegen auf UTC+2, nahe an der Türkei (UTC+3) und damit zeitzonentechnisch näher an dieser Gruppe als an Europa oder Amerika. Ergibt 3 statt 4 Pools, alle praktikabel groß:
+
+| Region (`pool_file`) | DC-Threads | IPs im Pool |
+|---|---|---:|
+| `webshare_proxies_europe.txt` | `dc_de`, `dc_uk`, `dc_es`, `dc_dach`, `dc_update_1` | 53 |
+| `webshare_proxies_mena_asia.txt` | `dc_in`, `dc_hk`, `dc_ae` | 19 |
+| `webshare_proxies_americas.txt` | `dc_us`, `dc_mx` | 28 |
+
+Zuordnung folgt der **konfigurierten `timezone` je Thread** (nicht den `federations` — die sind bei manchen Threads historisch inkonsistent zur Timezone, z.B. `dc_mx` hat `America/Mexico_City` aber europäische Föderationen FRA/BEL/NED/LUX zugewiesen; das ist ein ProxyJet-Ära-Erbe und hier bewusst nicht angefasst). `dc_update_1` (P1/P2/P3-Monatsrefresh, deckt alle Föderationen weltweit ab) wurde ebenfalls der Europa-Gruppe zugeordnet, konsistent mit seiner `Europe/Berlin`-Timezone, auch wenn seine Arbeit nicht regionsgebunden ist.
+
+**Umsetzung:** reine Config-Änderung, kein Code-Umbau — `ProxyManager` unterstützt `pool_file` pro Instanz bereits seit der Webshare-Migration. Neue Dateien `orchestrator/webshare_proxies_{americas,europe,mena_asia}.txt` (git-ignored, wie `webshare_proxies.txt`, generiert via GeoIP-Klassifizierung des `webshare_proxies.txt`-Bestands, siehe `.gitignore`-Muster `orchestrator/webshare_proxies_*.txt`), `docker-compose.yml` mountet alle vier Dateien in beide Container, `profiles.yaml` weist pro Thread die passende Datei zu. Deployed und verifiziert (mehrfache Neustarts, durchgehend gesunde Save-Raten, 0 anhaltende Fehlschläge).
+
+**Bei künftigem IP-Tausch:** die passende Region-Datei (nicht nur `webshare_proxies.txt`) aktualisieren, je nachdem in welcher Region die getauschte IP lag — sonst zieht der betroffene Thread weiterhin aus einem veralteten Pool. Nach jedem Sync **Worker neu starten** (Pool wird nur beim Start eingelesen).
 
 ---
 

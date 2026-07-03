@@ -281,6 +281,14 @@ def valid_periods_for_year(year: int) -> list[str]:
 # HTTP fetch with proxy and profile-based retry
 # ---------------------------------------------------------------------------
 
+def _proxy_label(proxies: dict | None) -> str:
+    """'host:port' from a proxy dict for logging, credentials stripped."""
+    if not proxies:
+        return "direct"
+    url = proxies.get("http", "")
+    return url.rsplit("@", 1)[-1] if "@" in url else url
+
+
 def _fetch(
     fide_id: int,
     period_str: str,
@@ -329,12 +337,12 @@ def _fetch(
 
         except requests.RequestException as exc:
             if attempt == max_retries:
-                logger.error("Giving up on fide_id=%s period=%s after %d attempts: %s",
-                             fide_id, period_str, max_retries, exc)
+                logger.error("Giving up on fide_id=%s period=%s after %d attempts (last proxy=%s): %s",
+                             fide_id, period_str, max_retries, _proxy_label(proxies), exc)
                 return None, 0
             backoff = 4 ** (attempt - 1)
-            logger.warning("Attempt %d/%d failed for fide_id=%s period=%s — retrying in %ds",
-                           attempt, max_retries, fide_id, period_str, backoff)
+            logger.warning("Attempt %d/%d failed for fide_id=%s period=%s proxy=%s — retrying in %ds",
+                           attempt, max_retries, fide_id, period_str, _proxy_label(proxies), backoff)
             time.sleep(backoff)
 
     return None, 0

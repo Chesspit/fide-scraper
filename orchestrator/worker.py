@@ -282,16 +282,22 @@ def valid_periods_for_year(year: int) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def _fetch(
-    session: requests.Session,
     fide_id: int,
     period_str: str,
     profile: dict,
+    proxy_manager: "ProxyManager | None" = None,
 ) -> tuple[str | None, int]:
-    """Fetch FIDE calculations HTML using the given session (with proxy pre-set).
+    """Fetch FIDE calculations HTML, drawing a fresh proxy on every retry attempt.
 
     Returns (html, bytes). html is None on non-fatal error; raises BlockedError on 403.
     On HTTP 429, returns (None, retry_after_seconds) where retry_after_seconds is taken
     from the Retry-After response header if present, else 0 (caller uses profile default).
+
+    Pass proxy_manager=None to always fetch directly (no proxy) — used for the
+    post-429 fallback attempt. Otherwise a new proxy is drawn per attempt: with a
+    pool-based provider (many static IPs, some dead at any given time — see
+    orchestrator/proxy_manager.py) reusing one proxy across all retries would waste
+    the whole retry budget on a single doomed IP instead of failing over to another.
     """
     url = AJAX_URL.format(fide_id=fide_id, period=period_str)
     headers = {
@@ -300,10 +306,12 @@ def _fetch(
     }
     max_retries = profile.get("max_retries", 3)
     timeout = profile.get("timeout_seconds", 20)
+    use_proxy = profile.get("use_proxy", True) and proxy_manager is not None
 
     for attempt in range(1, max_retries + 1):
+        proxies = proxy_manager.get_proxy() if use_proxy else None
         try:
-            resp = session.get(url, headers=headers, timeout=timeout)
+            resp = requests.get(url, headers=headers, timeout=timeout, proxies=proxies)
 
             if resp.status_code == 403:
                 raise BlockedError(f"HTTP 403 fide_id={fide_id} period={period_str}")
@@ -439,14 +447,8 @@ def scrape_group(
 
         period_str = period.isoformat() if isinstance(period, date) else period
 
-        # Build session — proxy nur wenn Profil es erlaubt
-        session = requests.Session()
-        if profile.get("use_proxy", True):
-            proxy = proxy_manager.get_proxy()
-            if proxy:
-                session.proxies.update(proxy)
-
-        html, nbytes = _fetch(session, fide_id, period_str, profile)
+        # proxy_manager zieht pro Retry-Versuch eine frische IP (siehe _fetch-Docstring)
+        html, nbytes = _fetch(fide_id, period_str, profile, proxy_manager)
         _bytes_session += nbytes
 
         if html is None:
@@ -457,7 +459,7 @@ def scrape_group(
             logger.warning("Backing off %ds (%s), dann direkter Retry ohne Proxy",
                            cooldown, f"Retry-After={retry_after}s" if retry_after > 0 else "Profil-Default")
             time.sleep(cooldown)
-            html, nbytes2 = _fetch(requests.Session(), fide_id, period_str, profile)
+            html, nbytes2 = _fetch(fide_id, period_str, profile, None)
             _bytes_session += nbytes2
             if html is None:
                 _consecutive_failures += 1

@@ -223,6 +223,17 @@ class ProxyManager:
 - Bei einem künftigen Provider mit echtem Rotating-Gateway: einfach `host_override` statt `pool_file` setzen, kein Code-Umbau nötig (beide Modi koexistieren in `proxy_manager.py`)
 - Trage `webshare_proxies.txt` und `.env` in `.gitignore` ein (bereits erledigt)
 
+### Bekannte Regression: Geo-Ausrichtung der DC-Threads geht verloren
+
+**Ursprüngliches Design-Ziel** (ProxyJet-Ära): jeder DC-Thread hatte einen **eigenen, regionsspezifischen** Proxy-Host (`dc_us` → `ca.proxy-jet.io`, `dc_hk`/`dc_in`/`dc_ae` → `in.proxy-jet.io`, `dc_uk`/`dc_es`/`dc_dach` → `eu.proxy-jet.io`), kombiniert mit passender `timezone`+`active_hours` — Ziel: Anfragen aus/für eine Föderation sollten von einer IP in einer plausiblen Region kommen, **zur dortigen Wachzeit** (grob 16h/Tag), damit das Zugriffsmuster menschlich wirkt statt wie automatisiertes Scraping rund um die Uhr aus einer einzigen Quelle.
+
+**Mit dem Wechsel auf Webshare geht das verloren:** alle 10 DC-Threads teilen sich denselben 100-IP-Pool (`orchestrator/webshare_proxies.txt`), jede Anfrage zieht eine zufällige IP daraus — die IPs "streuen über mehrere Regionen" (siehe Prüfung oben), aber **ohne Kontrolle darüber, welche Region welchem Thread zugeordnet ist**. `active_hours`+`timezone` pro Thread funktionieren technisch weiterhin (siehe Dashboard-Steuerung), aber die **geografische Plausibilität zwischen Zeitfenster und tatsächlich genutzter IP-Region ist nicht mehr sichergestellt** — ein `dc_us`-Request (zeitlich auf US-Geschäftszeiten getrimmt) kann z.B. über eine IP aus Europa oder Asien laufen.
+
+**Nicht behoben, bewusst offen gelassen** (Stand 2026-07-03) — mögliche künftige Ansätze, falls das priorisiert werden soll:
+1. Prüfen, ob Webshares Dashboard Land-/Regions-Filter beim Erzeugen der IP-Liste anbietet — falls ja, mehrere `pool_file`s (je Region eine) statt eines gemeinsamen Pools, dann pro DC-Thread die passende Datei zuweisen (analog zum alten ProxyJet-Host-Modell, nur mit Pool statt Einzel-Host).
+2. Ohne Regions-Filter: IPs anhand einer GeoIP-Lookup-Bibliothek einmalig klassifizieren und in Buckets pro DC-Thread aufteilen — mehr Aufwand, keine Anbieter-Abhängigkeit.
+3. Bewusst in Kauf nehmen, falls das Muster in der Praxis nicht zu erhöhter Sperr-Rate führt — bisher (siehe Health-Check-Ergebnisse) keine Hinweise auf ein akutes Problem, nur ein Abweichen vom ursprünglichen Design-Ziel.
+
 ---
 
 ## Aufgabe 6 — Deployment auf Hostinger VPS

@@ -234,6 +234,20 @@ class ProxyManager:
 2. Ohne Regions-Filter: IPs anhand einer GeoIP-Lookup-Bibliothek einmalig klassifizieren und in Buckets pro DC-Thread aufteilen — mehr Aufwand, keine Anbieter-Abhängigkeit.
 3. Bewusst in Kauf nehmen, falls das Muster in der Praxis nicht zu erhöhter Sperr-Rate führt — bisher (siehe Health-Check-Ergebnisse) keine Hinweise auf ein akutes Problem, nur ein Abweichen vom ursprünglichen Design-Ziel.
 
+**Machbarkeits-Check (2026-07-03):** GeoIP-Klassifizierung aller 100 Pool-IPs (via ip-api.com Batch-Lookup, Ansatz 2 oben) nach den vom User vorgeschlagenen 4 Regionen — lebend/gesamt (12 zu diesem Zeitpunkt tote IPs, siehe unten, ausgeklammert):
+
+| Region | Lebend | Gesamt | Länder (Top) |
+|---|---:|---:|---|
+| Amerikas | 25 | 28 | USA (15), Kanada (5), Brasilien (4) |
+| Europa | 49 | 53 | Frankreich (6), Italien (5), Deutschland (5), UK (4), Spanien (4), CH (4), + 20 weitere |
+| Asien-Ozeanien | 9 | 9 | Singapur (3), Japan (3), Australien (3) |
+| Naher Osten | **0** | 4 | Türkei (4) — **alle 4 aktuell tot**, zufällig identisch mit dem defekten `166.88.110.x`-Subnetz |
+| (nicht zugeordnet) | — | 6 | Afrika |
+
+**Fazit:** Code-technisch trivial umsetzbar (nur neue `pool_file`s + Zuweisung pro Thread in `profiles.yaml`, `proxy_manager.py` braucht keine Änderung — unterstützt pro-Instanz-Pools bereits). **Praktisch aber noch nicht robust genug** bei nur 100 IPs im Gesamt-Kontingent: Naher Osten hat gerade 0 nutzbare IPs, Asien-Ozeanien nur 9 (dünn für mehrere parallele Threads). Europa und Amerikas sind dagegen gut bestückt. Bevor eine echte Aufteilung sinnvoll ist, entweder (a) bei Webshare gezielt IPs für Naher Osten/Asien-Ozeanien nachkaufen/anfragen, falls das Dashboard das erlaubt, oder (b) die dünnen Regionen vorerst mit der Europa-/Amerikas-Region zusammenlegen statt strikt 4 getrennte Pools zu fahren.
+
+**Offen: Ersatz der 12 toten IPs bei Webshare** — Liste siehe `scripts/check_proxy_pool.py`-Ausgabe vom 2026-07-03 (max. 10 pro Webshare-Anfrage ersetzbar). Nach dem Tausch: `orchestrator/webshare_proxies.txt` lokal + auf dem VPS mit den neuen IPs aktualisieren.
+
 ---
 
 ## Aufgabe 6 — Deployment auf Hostinger VPS

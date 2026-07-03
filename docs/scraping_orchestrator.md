@@ -71,6 +71,16 @@ Implementiere ein Modul `queue_manager.py` mit folgender Logik:
 - Gibt eine Wartezeit zurück: `base_wait * (1 + random.uniform(-jitter, +jitter))`
 - Wartezeit nie unter einem konfigurierbaren Minimum
 
+> **Status-Update (2026-07-03, Architektur-Review #8):** Das Fuzzy-Sampling ist
+> implementiert, aber mit `TIER_WIDTH = 1` (`queue_manager.py`) **bewusst
+> deaktiviert** — die Abarbeitung folgt strikt der Priorität. Grund: die
+> Batch-Generatoren vergeben lückenlos durchnummerierte Prioritäten, und der
+> P1/P2/P3-Monatsrefresh verlangt P1 vollständig vor P2 vor P3; ein
+> Zufallsfenster würde das unterlaufen. Das Ziel "keine erkennbare Reihenfolge"
+> ist damit offiziell aufgegeben — zeitliche Verschleierung leisten weiterhin
+> der Timing-Jitter (oben) und die `active_hours`/`timezone`-Fenster pro
+> DC-Thread. Reaktivierung, falls je gewünscht: nur `TIER_WIDTH` erhöhen.
+
 ---
 
 ## Aufgabe 3 — Scrape-Profile
@@ -270,30 +280,38 @@ Zuordnung folgt der **konfigurierten `timezone` je Thread** (nicht den `federati
 
 ---
 
-## Aufgabe 6 — Deployment auf Hostinger VPS
+## Aufgabe 6 — Deployment auf Hostinger VPS (Stand: Traefik/Coolify)
 
-Erstelle folgende Dateien für den VPS-Betrieb:
+> **Status-Update (2026-07-03, Architektur-Review #9):** Der ursprünglich hier
+> beschriebene Caddy-Reverse-Proxy wurde **nie produktiv genutzt** und ist
+> gelöscht (siehe Git-Historie, `orchestrator/caddy/`). Das reale Deployment
+> läuft über **Traefik**, verwaltet von der auf dem VPS laufenden
+> Coolify-Instanz — die komplette Routing-Konfiguration steht als Labels
+> direkt in `orchestrator/docker-compose.yml`.
 
-### `Dockerfile`
-- Python 3.11 slim
-- Installiert alle Abhängigkeiten aus `requirements.txt`
-- SQLite-Datei in einem gemounteten Volume (`/data/scraper.db`)
+### Tatsächliches Setup
 
-### `docker-compose.yml`
-- Service `dashboard`: Dash-App, Port 8050
-- Service `worker`: Queue-Worker-Loop (separater Prozess)
-- Volume für `/data`
-- Restart-Policy: `unless-stopped`
-
-### `caddy/Caddyfile` (Reverse Proxy)
-```
-deine-domain.example.com {
-    reverse_proxy dashboard:8050
-}
-```
+- **`Dockerfile`**: Python 3.11 slim, Abhängigkeiten aus `orchestrator/requirements.txt`.
+- **`docker-compose.yml`** (in `orchestrator/`, Compose-Projekt „orchestrator"):
+  - Service `dashboard`: Dash-App; Port 8050 nur auf `127.0.0.1` gebunden,
+    öffentlich ausschließlich über Traefik erreichbar.
+  - Service `worker`: Queue-Worker-Loop (separater Prozess, alle Threads).
+  - Named Volume `orchestrator_data` → `/data` (scraper.db, profiles.yaml,
+    worker_state.json). **Achtung:** `profiles.yaml` wird nur beim allerersten
+    Start per `cp -n` aus dem Image geseedet — strukturelle Git-Änderungen
+    müssen manuell in die Live-Datei gepatcht werden (siehe
+    `docs/project_status.md`, Abschnitt 7).
+  - Restart-Policy: `unless-stopped`.
+- **Routing/TLS**: Traefik-Labels am `dashboard`-Service —
+  `Host(scelo.chesspit.net)`, Let's-Encrypt-Zertifikat, Basic-Auth
+  (bcrypt-Hash im Label), Netz `coolify`.
+- **Backup**: täglich 03:45 via Cron auf dem VPS
+  (`scripts/backup_fide_vps.sh` — pg_dump fidedb + SQLite-Online-Backup
+  scraper.db), Offsite-Pull auf den Mac Mini 07:30 via launchd
+  (`scripts/pull_backup_macmini.sh`).
 
 ### `requirements.txt`
-Mindestens: `dash`, `plotly`, `flask`, `requests`, `beautifulsoup4`, `apscheduler`, `pyyaml`, `python-dotenv`
+Mindestens: `dash`, `plotly`, `flask`, `requests`, `beautifulsoup4`, `pyyaml`, `python-dotenv`
 
 ---
 

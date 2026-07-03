@@ -1,8 +1,10 @@
 """Queue manager for the scraping orchestrator.
 
-Selects the next group to scrape using weighted random sampling within the
-top priority tier — so the overall direction (newest year + highest ELO first)
-is deterministic, but the federation order within that tier is unpredictable.
+Group selection is strictly priority-ordered (see TIER_WIDTH below): the
+worker always claims the pending group with the lowest priority value. The
+originally planned fuzzy ordering ("no recognizable scrape pattern") was
+officially retired in 2026-07 — pattern obfuscation now comes from timing
+jitter (get_wait_time) and the per-DC-thread active_hours windows instead.
 """
 
 import random
@@ -14,11 +16,19 @@ from typing import Optional
 
 from orchestrator.setup_db import DB_PATH, create_db
 
-# How many priority values form one "tier" for fuzzy selection.
-# Groups within the same tier are sampled randomly — creates unpredictable
-# federation order while maintaining year/ELO direction.
-# With sequential priorities (1, 2, 3 …): TIER_WIDTH=50 means the worker
-# randomly picks from the top ~50 groups by priority.
+# Breite des Prioritäts-Fensters für die Gruppen-Auswahl.
+#
+# ENTSCHEIDUNG 2026-07-03 (Architektur-Review, Punkt #8): bewusst 1 = strikt
+# deterministische Abarbeitung nach Priorität. Die Prioritäten werden von den
+# Batch-Generatoren lückenlos durchnummeriert, und der P1/P2/P3-Monatsrefresh
+# verlangt, dass P1 vollständig vor P2 vor P3 läuft — ein Zufallsfenster würde
+# das unterlaufen. Das ursprüngliche Design-Ziel "zufällige, nicht erkennbare
+# Reihenfolge" (docs/scraping_orchestrator.md, Aufgabe 2) ist damit offiziell
+# aufgegeben; zeitliche Verschleierung leisten Timing-Jitter (get_wait_time)
+# und die active_hours/Timezone-Fenster der DC-Threads.
+#
+# TIER_WIDTH > 1 reaktiviert das gewichtete Zufalls-Sampling innerhalb des
+# Fensters (Gewicht = player_count), falls das je wieder gewünscht ist.
 TIER_WIDTH = 1
 
 # Auto-Retry: failed-Gruppen mit Rest-Budget werden automatisch wieder

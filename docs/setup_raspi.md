@@ -184,12 +184,16 @@ bash scripts/tunnel.sh &
 # Gruppen-Backfill:
 bash scripts/run_local_backfill.sh female_1800_01 2012-08-01
 
-# Monatliches Update (UP-Jobs):
-bash scripts/run_update_job.sh UP-GER
-bash scripts/run_update_job.sh UP-FEMALE
-
 # Female Chain:
 bash scripts/run_female_chain.sh female_1800_01
+```
+
+Hinweis: Das monatliche Update läuft seit 2026-07 komplett auf dem
+VPS-Orchestrator (P1/P2/P3-Tiers, siehe `orchestrator/monthly_refresh_tiers.py`)
+— die früheren UP-Jobs (`run_update_job.sh`, `update_jobs.yaml`) sind gelöscht.
+Der Pi bleibt auf historische Backfills beschränkt.
+
+```bash
 ```
 
 ---

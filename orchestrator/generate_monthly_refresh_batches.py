@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Generate monthly-refresh batches for the P1/P2/P3 priority tiers.
 
-Ersetzt orchestrator/generate_update_batches.py (superseded, siehe dessen
-Docstring). Statt föderationsbasierter Batches für nur die "Rest"-Population
-werden hier drei geschlechtsunabhängige, nicht-überlappende Prioritätsstufen
-abgedeckt (siehe orchestrator/monthly_refresh_tiers.py):
+Ersetzt das frühere generate_update_batches.py (föderationsbasierte Batches
+nur für die "Rest"-Population; 2026-07 gelöscht, siehe Git-Historie). Statt
+dessen werden hier drei geschlechtsunabhängige, nicht-überlappende
+Prioritätsstufen abgedeckt (siehe orchestrator/monthly_refresh_tiers.py):
 
     P1  ELO >= 2300, alle Föderationen
     P2  DACH (GER/SUI/AUT), ELO < 2300
@@ -77,9 +77,7 @@ def _split_chunks(ratings_desc: list[int]) -> list[list[int]]:
     Populations within the target range stay a single chunk. Larger
     populations are split into the fewest possible roughly-equal chunks that
     stay within TIER_TARGET_MAX (and, where possible, at or above
-    TIER_TARGET_MIN). Identical logic to generate_update_batches.py's
-    _split_chunks(), parameterized on the tier target instead of the fixed
-    federation-batch target.
+    TIER_TARGET_MIN).
     """
     n = len(ratings_desc)
     if n <= TIER_TARGET_MAX:
@@ -105,8 +103,8 @@ def build_tier_bands(ratings_desc: list[int], tier: str, year: int, sqlite_conn)
     elo_min must be unique per (federation, year) — the tier sentinel
     ('P1'/'P2'/'P3') is stored in the federation column, so this UNIQUE
     constraint scopes cleanly per tier. Boundaries are threaded top-down from
-    the tier's elo_ceil, same nudge-on-collision approach as
-    generate_update_batches.py::build_federation_bands().
+    the tier's elo_ceil; on collision with an existing elo_min the candidate
+    is nudged down by 1 until free.
     """
     elo_floor, elo_ceil = TIER_BOUNDS[tier]
     chunks = _split_chunks(ratings_desc)

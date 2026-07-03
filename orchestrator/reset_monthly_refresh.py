@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Reset done P1/P2/P3 monthly-refresh scrape_groups back to pending.
 
-Ersetzt orchestrator/reset_current_year.py (superseded, siehe dessen
-Docstring) — der bisherige Reset setzte pauschal ALLE done-Gruppen des
+Ersetzt das frühere reset_current_year.py (2026-07 gelöscht, siehe
+Git-Historie) — der bisherige Reset setzte pauschal ALLE done-Gruppen des
 Jahres zurück, was versehentlich auch den völlig separaten, laufenden
 Welt-Backfill (dc_ae/de/es/hk/in/mx/uk/us/dach, echte Föderationscodes)
 mit-requeuete. Dieses Skript trifft ausschließlich die drei Tier-Sentinel

@@ -484,7 +484,7 @@ Drei geschlechtsunabhängige Prioritätsstufen statt vormals 4 Kategorien (ELO23
 residential (`NULL`). DC-Threads claimen nur ihre eigenen Gruppen; Residential-Threads claimen
 nur `thread_affinity IS NULL`.
 
-**profiles.yaml — Achtung, kein reiner Bind-Mount:** Die git-Version (`/opt/fide-scraper/orchestrator/profiles.yaml`) dient nur als **Seed-Template**. Die tatsächliche Laufzeit-Config liegt in einem separaten, persistenten Docker-Volume (`/data/profiles.yaml` im Container), das beim Container-Start per `cp -n` (no-clobber) aus der git-Version befüllt wird — **nur falls die Datei dort noch nicht existiert**. UI-Toggle-Änderungen landen direkt in `/data/profiles.yaml` und bleiben über Rebuilds erhalten. Nach strukturellen git-Änderungen (z.B. neue Threads, umbenannte Felder) reicht ein `git pull` + Rebuild **nicht** — die Live-Datei muss manuell nachgezogen werden (z.B. `docker compose exec worker sh -c 'cat > /data/profiles.yaml'` mit dem transformierten Inhalt), sonst greift die Änderung nie.
+**profiles.yaml — seit 2026-07-04 rein statisch (Review #4):** Die git-Version wird ins Image gebacken und ist die alleinige Quelle für Profile, fuzzy_weights und Thread-Topologie — Änderungen greifen per `git pull` + Rebuild, kein manuelles Nachziehen mehr. Alles zur Laufzeit Veränderliche (enabled/active_hours/max_hours pro Thread/Slot, active_profile) liegt in **`/data/runtime_settings.json`** (gemeinsames Volume, atomar geschrieben); UI-Toggles schreiben nur noch dorthin und überleben Rebuilds. Fehlende Einträge fallen auf die YAML-Defaults zurück. Das frühere `cp -n`-Seeding nach `/data/profiles.yaml` ist abgeschafft (Alt-Datei liegt als `/data/profiles.yaml.pre-review4.bak`).
 
 ### 7.3 DC-Modi
 

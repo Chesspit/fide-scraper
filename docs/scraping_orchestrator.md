@@ -298,11 +298,12 @@ Zuordnung folgt der **konfigurierten `timezone` je Thread** (nicht den `federati
   - Service `dashboard`: Dash-App; Port 8050 nur auf `127.0.0.1` gebunden,
     öffentlich ausschließlich über Traefik erreichbar.
   - Service `worker`: Queue-Worker-Loop (separater Prozess, alle Threads).
-  - Named Volume `orchestrator_data` → `/data` (scraper.db, profiles.yaml,
-    worker_state.json). **Achtung:** `profiles.yaml` wird nur beim allerersten
-    Start per `cp -n` aus dem Image geseedet — strukturelle Git-Änderungen
-    müssen manuell in die Live-Datei gepatcht werden (siehe
-    `docs/project_status.md`, Abschnitt 7).
+  - Named Volume `orchestrator_data` → `/data` (scraper.db,
+    runtime_settings.json, worker_state.json). `profiles.yaml` ist seit
+    2026-07-04 (Review #4) rein statisch aus dem Image (Git = Wahrheit,
+    Änderungen per Rebuild); Laufzeit-State (enabled/active_hours/max_hours/
+    active_profile) liegt in `/data/runtime_settings.json` — atomar
+    geschrieben, von Dashboard und Worker geteilt.
   - Restart-Policy: `unless-stopped`.
 - **Routing/TLS**: Traefik-Labels am `dashboard`-Service —
   `Host(scelo.chesspit.net)`, Let's-Encrypt-Zertifikat, Basic-Auth

@@ -243,7 +243,7 @@ Letzter offener Review-Punkt umgesetzt: die Orchestrator-Queue (`scrape_groups`/
 | **Backup** | `backup_fide_vps.sh`: SQLite-Teil entfernt — pg_dump fidedb enthält die Queue automatisch; Queue-only-Restore: `pg_restore --schema=orchestrator` |
 | **Tests** | `tests/conftest.py` neu: PG-Test-Fixture (`ORCH_TEST_DATABASE_URL` oder abgeleitete `fide_orch_test`-DB; skippt ohne erreichbare PG); test_queue_manager + test_store portiert, +3 neue Tests (DC-Affinity-Claim, reset_stale_running, duration/rate) — 35 passed |
 
-**Deploy-Schritte (VPS):** Worker stoppen → Image bauen → `migrate_queue_to_pg.py --sqlite /data/scraper.db` → `up -d --no-deps` beide Container → Dashboard + Claim verifizieren → scraper.db im Volume als `.migrated`-Archiv belassen.
+**Deployed + verifiziert 2026-07-04 ~08:05 UTC:** Worker gestoppt → Build → Migration (24.714 Gruppen + 4.234 Runs, alle Status-Zähler identisch) → `up -d --no-deps`. Neuer Code im Container bestätigt, Worker claimt aus PG (7 unterbrochene running → pending → 6 neu geclaimt), Dashboard HTTP 200 ohne Fehler, Backup-Testlauf OK (856-MB-Dump enthält Schema `orchestrator` inkl. Sequenzen), kein Pi-Sync-Cron vorhanden. Alte DB archiviert als `/data/scraper.db.migrated-20260704` (+`-wal`/`-shm`).
 
 ---
 

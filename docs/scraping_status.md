@@ -1,23 +1,23 @@
 # Scraping-Status
 
-Stand: 2026-07-04 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite, Live-Abfrage)
+Stand: 2026-07-04 (Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
 Raspberry-Pi-Stand aktualisiert: 2026-06-28, ~18:30 Uhr (Tailscale seitdem nicht erneut abgefragt)
 
 ---
 
-## Gesamtstand DB (Live 2026-07-03, ~17:20 UTC)
+## Gesamtstand DB (Live 2026-07-04, ~08:30 UTC)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **9.506.714** |
-| DB-Größe | **~9,49 GB** |
+| Partien gesamt | **9.535.209** |
+| DB-Größe | **~9,51 GB** |
 | Gruppen complete | **107 / 253** (140 pending, 5 partial, 1 skipped) — bezieht sich auf die manuell gepflegten Mac-Mini-Analysegruppen, unabhängig vom neuen P1/P2/P3-System (siehe unten) |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ (Vorbehalt: siehe Top-Spieler-Lückenanalyse unten) |
-| Spieler mit ≥ 1 gescrapter Periode | **141.845** |
+| Spieler mit ≥ 1 gescrapter Periode | **141.845** (Stand 2026-07-03) |
 | Neueste published_rating-Periode | **2026-07-01** (importiert 2026-07-02, `standard_jul26frl.zip`) |
 | Neueste gescrapte Spiel-Periode | **2026-06-01** (läuft über den P1/P2/P3-Prozess nach, siehe Session-Eintrag 2026-07-03) |
-| P1/P2/P3-Fortschritt | P1 ✅ / P2 ✅ komplett; P3: 13/40 Batches, 48.045 neue Partien bisher |
-| VPS-Orchestrator-Queue gesamt | 4.142 done, 20.564 pending, 7 running, **1 failed** (21 vom ProxyJet-Ausfall betroffene Gruppen am 2026-07-03 zurückgesetzt + priorisiert, siehe Session-Eintrag; 1 unabhängige Alt-Gruppe (USA/2019) bewusst nicht angefasst) |
+| P1/P2/P3-Fortschritt | P1 ✅ (2 Batches, 4.189 Spieler) / P2 ✅ (7 Batches, 19.481 Spieler) komplett; P3: **19/40 Batches done + 1 running** (56.088 von 118.066 Spielern, ~48 %), 62.700 neue Partien bisher |
+| VPS-Orchestrator-Queue gesamt | 4.174 done, 20.533 pending, 6 running, **1 failed** (USA/2019, bewusst auf manual hold) — seit 2026-07-04 in PG (Schema `orchestrator`) |
 
 ---
 

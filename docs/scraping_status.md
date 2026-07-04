@@ -1,6 +1,6 @@
 # Scraping-Status
 
-Stand: 2026-07-03 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite, Live-Abfrage)
+Stand: 2026-07-04 (Quelle: `groups`-Tabelle DB + Orchestrator SQLite, Live-Abfrage)
 Raspberry-Pi-Stand aktualisiert: 2026-06-28, ~18:30 Uhr (Tailscale seitdem nicht erneut abgefragt)
 
 ---
@@ -225,6 +225,27 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 | Spieler-Steckbrief | Aktiv | `/player-profile` | Profil + Rating-History + Spielstatistiken |
 | Partien-Detail | Test | `/games` | Alle Partien eines Spielers, filterbar |
 | GM/IM Entwicklung | Test | `/titles` | Zeitreihe der Titelträger |
+
+---
+
+## Änderungen Session 2026-07-03/04 (Abend) — Architektur-Review-Umsetzung
+
+Architektur-Review mit Fable-Modell durchgeführt (`review-elo-dashboard-2026-07-03.md` im Repo-Root, 11 priorisierte Punkte) und direkt **9 von 10 umsetzbaren Punkten** abgearbeitet — alle deployed und live verifiziert:
+
+| # | Was | Details |
+|---|-----|---------|
+| 1 ✅ | **Backup-Regime** | VPS-Cron 03:45: `scripts/backup_fide_vps.sh` (pg_dump fidedb ~854 MB + SQLite-Online-Backup scraper.db ~4 MB, Rotation 7/30 Tage, TimescaleDB-Restore-Weg im Header). Offsite: Mac-Mini-Pull 07:30 via launchd (`pull_backup_macmini.sh`, Retention 5 Tage). Beide Wege getestet, Integrität verifiziert. |
+| 2 ✅ | **Auto-Retry failed-Gruppen** | `requeue_failed()`: retries < 3 + letzter Versuch > 2 h → automatisch pending (Worker-Start + Leerlauf); stündliche WARNING für Gruppen ohne Retry-Budget. USA/2019-Anomalie per `retries=3` + Notiz bewusst ausgenommen (manual hold). |
+| 3 ✅ | **429-Fallback** | `DIRECT_FALLBACK_ON_429=false` auf VPS: nie mehr direkt (ohne Proxy) von der FIDE-geblockten VPS-IP fetchen — weder als 429-Fallback noch implizit im Pool-Cooldown. |
+| 4 ✅ | **profiles.yaml statisch** | Laufzeit-State (enabled/active_hours/max_hours/active_profile) in `/data/runtime_settings.json` (`orchestrator/runtime_settings.py`, atomar); `cp -n`-Volume-Seeding abgeschafft, Git/Image = Wahrheit, YAML jetzt kommentierbar. Alt-Datei: `/data/profiles.yaml.pre-review4.bak`. |
+| 6 ✅ | **store.py + state_io.py** | Kompletter DB-Zugriff aus app.py extrahiert (app.py 2626→2191 Zeilen); eine atomare worker_state-Implementierung für beide Container (app.pys Truncation-Race-Kopien entfernt); 9 Tests inkl. DC-UPDATE-1-Regressionstest. |
+| 7 ✅ | **Heatmap dynamisch** | Übersichts-Spalten live aus Thread-Config (`_overview_columns()`); ELO-Floor/Ceiling in neuer `[dashboard]`-Sektion der profiles.yaml. |
+| 8 ✅ | **Fuzzy-Queue** | `TIER_WIDTH=1` als offizielle Design-Entscheidung dokumentiert (deterministisch nach Priorität, von P1→P2→P3 verlangt); Doku angepasst. |
+| 9 ✅ | **Aufräumen** | Caddy-Verzeichnis + alte UP-Job-Pipeline gelöscht (−621 Zeilen: `reset_current_year.py`, `generate_update_batches.py`, `update_jobs.yaml`, `run_update_job*.sh`); Doku Aufgabe 6 auf Traefik/Coolify. **Lektion:** Dockerfile kopierte gelöschte Datei → Build brach still, Deploy lief mit altem Image (Fix `a86a89f`) — nach Löschungen Dockerfile-COPYs prüfen, nach Deploys Code-im-Container verifizieren. |
+| 10 ✅ | **Pool-Hot-Reload** | `ProxyManager` lädt Pool-Dateien bei mtime-Änderung selbst nach (30s-Drossel, leerer Parse ersetzt nie) — IP-Tausch ohne Worker-Neustart; live bewiesen. **Wichtig:** Pool-Dateien in-place syncen (scp/cat >), nicht rsync/mv (Bind-Mount-Inode). |
+| 5 ⏳ | **Queue → PostgreSQL** | Einziger offener Punkt (1–2 Tage); dank #6 nur noch `store.py` + `queue_manager.py` + Generatoren betroffen. Plan im Session-Handoff-Memory. |
+
+Tests: 111 passed (+1 bekannter Alt-Fehler `test_retry_on_429`, unabhängig). Commits: `1804820` … `65026cc`.
 
 ---
 

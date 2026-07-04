@@ -42,7 +42,7 @@ Trotz "51/51 Global-Gruppen complete" sind **nicht 100 % aller Top-Spieler gescr
 
 Föderationsverteilung der fehlenden 171 (Top 5): **RUS (16), UKR (14), SRB (14), HUN (9), CRO (9)**. Teils historische/verstorbene Top-Spieler, die im `active`-Flag noch als aktiv geführt werden (z. B. Vugar Gashimov, 2737, gest. 2014).
 
-**TODO:** Gruppe für die 171 (mind. die 57 nie angefassten) fehlenden Top-Spieler anlegen und seeden, um die 2300er-Range wirklich lückenlos zu machen.
+**Update 2026-07-04:** Gruppe **`top_gap_2300`** angelegt und geseeded (170 Spieler — einer der 171 wurde zwischenzeitlich geschlossen; alle per SQL-Bedingung `active ∧ ≥2300 ∧ keine game_results ∧ analysis_group IS NULL`). Detailanalyse: 57 nie angefasst, 113 mit ø 57 versuchten Perioden — **alle 4.799 Versuche `no_data`** (viele verstorben/gesperrt trotz active-Flag: Gashimov †2014, Wojtkiewicz †2006, Lerner †2011, Rausis-Sperre; 46 ohne Rating-Bewegung seit 2012-08). published_rating vollständig vorhanden, es fehlen nur Partien + Scraper-Ro. Backfill 2008-04→2026-06 (23.082 offene Kombos, nur nie versuchte Perioden) läuft seit 10:33 lokal auf dem Mac Mini. Erwartung: Lückenschluss v. a. bei den 57 + in Perioden vor 2012-08; wer vor 2008-04 aufhörte, bleibt endgültig leer (FIDE-Datenbeginn).
 
 ---
 

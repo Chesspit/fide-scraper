@@ -5,19 +5,19 @@ Raspberry-Pi-Stand aktualisiert: 2026-06-28, ~18:30 Uhr (Tailscale seitdem nicht
 
 ---
 
-## Gesamtstand DB (Live 2026-07-04, ~08:30 UTC)
+## Gesamtstand DB (Live 2026-07-04, ~20:45 UTC)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **9.535.209** |
-| DB-Größe | **~9,51 GB** |
+| Partien gesamt | **9.630.787** |
+| DB-Größe | **~9,55 GB** |
 | Gruppen complete | **107 / 253** (140 pending, 5 partial, 1 skipped) — bezieht sich auf die manuell gepflegten Mac-Mini-Analysegruppen, unabhängig vom neuen P1/P2/P3-System (siehe unten) |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ (Vorbehalt: siehe Top-Spieler-Lückenanalyse unten) |
 | Spieler mit ≥ 1 gescrapter Periode | **141.845** (Stand 2026-07-03) |
 | Neueste published_rating-Periode | **2026-07-01** (importiert 2026-07-02, `standard_jul26frl.zip`) |
 | Neueste gescrapte Spiel-Periode | **2026-06-01** (läuft über den P1/P2/P3-Prozess nach, siehe Session-Eintrag 2026-07-03) |
-| P1/P2/P3-Fortschritt | P1 ✅ (2 Batches, 4.189 Spieler) / P2 ✅ (7 Batches, 19.481 Spieler) komplett; P3: **19/40 Batches done + 1 running** (56.088 von 118.066 Spielern, ~48 %), 62.700 neue Partien bisher |
-| VPS-Orchestrator-Queue gesamt | 4.174 done, 20.533 pending, 6 running, **1 failed** (USA/2019, bewusst auf manual hold) — seit 2026-07-04 in PG (Schema `orchestrator`) |
+| P1/P2/P3-Fortschritt | P1 ✅ (2 Batches, 4.189 Spieler) / P2 ✅ (7 Batches, 19.481 Spieler) komplett; P3: **27/40 Batches done + 1 running, 12 pending** (79.703 von 118.066 Spielern, ~68 %), 84.239 neue Partien bisher — deutlicher Sprung seit Aktivierung aller 10 DC-Threads (siehe unten) |
+| VPS-Orchestrator-Queue gesamt | 4.208 done, 20.499 pending, 7 running, **0 failed** (USA/2019-Anomalie am 2026-07-04 abends aufgeklärt, siehe unten) — seit 2026-07-04 in PG (Schema `orchestrator`) |
 
 ---
 
@@ -42,7 +42,20 @@ Trotz "51/51 Global-Gruppen complete" sind **nicht 100 % aller Top-Spieler gescr
 
 Föderationsverteilung der fehlenden 171 (Top 5): **RUS (16), UKR (14), SRB (14), HUN (9), CRO (9)**. Teils historische/verstorbene Top-Spieler, die im `active`-Flag noch als aktiv geführt werden (z. B. Vugar Gashimov, 2737, gest. 2014).
 
-**Update 2026-07-04:** Gruppe **`top_gap_2300`** angelegt und geseeded (170 Spieler — einer der 171 wurde zwischenzeitlich geschlossen; alle per SQL-Bedingung `active ∧ ≥2300 ∧ keine game_results ∧ analysis_group IS NULL`). Detailanalyse: 57 nie angefasst, 113 mit ø 57 versuchten Perioden — **alle 4.799 Versuche `no_data`** (viele verstorben/gesperrt trotz active-Flag: Gashimov †2014, Wojtkiewicz †2006, Lerner †2011, Rausis-Sperre; 46 ohne Rating-Bewegung seit 2012-08). published_rating vollständig vorhanden, es fehlen nur Partien + Scraper-Ro. Backfill 2008-04→2026-06 (23.082 offene Kombos, nur nie versuchte Perioden) läuft seit 10:33 lokal auf dem Mac Mini. Erwartung: Lückenschluss v. a. bei den 57 + in Perioden vor 2012-08; wer vor 2008-04 aufhörte, bleibt endgültig leer (FIDE-Datenbeginn).
+**Update 2026-07-04 — ✅ abgeschlossen:** Gruppe **`top_gap_2300`** angelegt, geseeded (170 Spieler) und per Backfill 2008-04→2026-06 lokal auf dem Mac Mini abgearbeitet (23.082 Kombos, 10:33–17:16 Uhr, 23.081 erfolgreich/1 Fehler, 0 Blockierungen). **Ergebnis: 121 von 170 (71 %) haben jetzt Partien** (2.601 neue Perioden gespeichert) — der Rückstand von 170 auf **49 endgültig leere Fälle** reduziert. Diese 49 wurden lückenlos für alle 191–193 Perioden seit 2008-04 versucht und liefern durchweg `no_data`: historische GM/IM, die vor dem FIDE-Datenbeginn ihre letzte Aktivität hatten oder verstorben sind (u. a. Wojtkiewicz †2006, Unzicker †2006, Kholmov, Savon, Vaulin) — kein Scraping-Loch mehr, sondern realer Datenbestand bei FIDE. `groups.backfill_status='complete'`.
+
+**Gesamt-Bilanz Top-Spieler-Lücke:** von ursprünglich 171 fehlenden Top-Spielern (96,1 % Coverage) sind jetzt nur noch **49 dauerhaft leere Fälle** übrig (~98,9 % effektive Coverage unter Berücksichtigung historischer/verstorbener Spieler) — TODO aus 2026-07-01 damit erledigt.
+
+---
+
+## USA/2019-Anomalie aufgeklärt (2026-07-04, abends)
+
+Die einzige `failed`-Gruppe der Orchestrator-Queue (USA/2019/1599–1623, ID 10362, seit 2026-07-01 auf „manual hold") wurde diagnostiziert und abgeschlossen:
+
+- **Befund:** Kein einziger Eintrag in `scrape_runs` für diese Gruppe — technisch unmöglich, wenn sie über den normalen Worker-Fehlerpfad gescheitert wäre (jedes `mark_failed()` im Code ist zwingend mit einem `log_run()` gekoppelt, in allen drei Worker-Codepfaden). Der `failed`-Status + `retries=3` wurde daher vermutlich am 1. Juli manuell per SQL gesetzt, um sie vom Auto-Retry auszunehmen — keine echte Scraping-Störung.
+- **Stichprobentest:** 3 Spieler × 3 Perioden direkt vom Mac Mini abgerufen — durchweg normale „No records found"-Antworten, kein Fehler, kein Block.
+- **Gezielter Backfill** (Mac Mini, 185 Spieler der ELO-Band, Jahr 2019, 1.110 Kombos): **0 Fehler**, 11 von 185 Spielern hatten Partien (51 neue Partie-Zeilen), 174 echtes `no_data` — normal für dieses niedrige ELO-Band mit geringer Turnierfrequenz.
+- Gruppe manuell auf `status='done'`, `records_found=51` gesetzt. **Damit steht die Queue jetzt bei 0 failed-Gruppen.**
 
 ---
 
@@ -102,7 +115,7 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 | | |
 |---|---|
 | Dashboard | **https://scelo.chesspit.net** (BasicAuth) |
-| Modus | **bis zu 10 Threads (2 Residential + 9 DC); aktuell 6 DC aktiv (DC-DE + DC-US + DC-ES disabled)** |
+| Modus | **bis zu 10 Threads (2 Residential + 9 DC); seit 2026-07-04 ~12:20 alle 9 DC aktiv** (DC-DE/DC-US/DC-ES nachträglich eingeschaltet, User-Entscheidung — Health-Check danach: nur 5 echte 429-Events in 4h, kein IP-Blocking erkennbar) |
 | DC-Modus | Individuelle Von/Bis-Zeit pro Karte (Ortszeit, Timezone-basiert) |
 
 ### Alle Threads
@@ -111,12 +124,12 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 |--------|-----|--------|--------------|----------|--------|
 | T1 | Residential | semi_aggressive | DACH (Priority) | — | ✅ aktiv |
 | T2 | Residential | normal | DACH (Priority) | — | ✅ aktiv |
-| DC-DE (Slot 99) | Datacenter | semi_conservative | POL, UKR, LAT, LIT, EST, CZE, SVK, FID | Europe/Berlin | ⏸ disabled |
+| DC-DE (Slot 99) | Datacenter | semi_conservative | POL, UKR, LAT, LIT, EST, CZE, SVK, FID | Europe/Berlin | ✅ aktiv (seit 2026-07-04) |
 | DC-IN (Slot 100) | Datacenter | semi_conservative | IND, IRI | Asia/Kolkata | ✅ aktiv |
 | DC-UK (Slot 101) | Datacenter | semi_conservative | ENG, SCO, WLS, IRL, NIR, DEN, NOR, SWE, FIN, ISL | Europe/London | ✅ aktiv |
-| DC-US (Slot 102) | Datacenter | semi_conservative | USA, CAN | America/New_York | ⏸ disabled |
+| DC-US (Slot 102) | Datacenter | semi_conservative | USA, CAN | America/New_York | ✅ aktiv (seit 2026-07-04) |
 | DC-HK (Slot 103) | Datacenter | semi_conservative | CHN, VIE + Ozeanien | Asia/Hong_Kong | ✅ aktiv |
-| DC-ES (Slot 104) | Datacenter | semi_conservative | ESP, ITA, POR, AND, GIB | Europe/Madrid | ⏸ disabled |
+| DC-ES (Slot 104) | Datacenter | semi_conservative | ESP, ITA, POR, AND, GIB | Europe/Madrid | ✅ aktiv (seit 2026-07-04) |
 | DC-MX (Slot 105) | Datacenter | semi_conservative | FRA, BEL, NED, LUX | America/Mexico_City | ✅ aktiv |
 | DC-AE (Slot 106) | Datacenter | semi_conservative | SRB, CRO, BIH, MKD, MNE, SLO, KOS, ALB, GRE, TUR | Asia/Dubai | ✅ aktiv |
 | DC-DACH (Slot 107) | Datacenter | semi_conservative | GER, SUI, AUT (Vollbackfill) | Europe/Berlin | ✅ aktiv |
@@ -124,7 +137,7 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 
 **DC-UPDATE-1 ersetzt seit 2026-07-02 den alten `dc_update`-Thread** — siehe Session-Änderungen unten. Läuft aktuell die 40 P3-Batches ab (P1+P2 bereits fertig).
 
-### P1/P2/P3-Monatsrefresh — Fortschritt (Stand 2026-07-02, ~19:25 UTC)
+### P1/P2/P3-Monatsrefresh — Fortschritt (Stand 2026-07-04, abends)
 
 Ersetzt die alten 4 UP-Jobs (lokal, Mac Mini) + föderationsbasierte `dc_update`-Rest-Batches durch drei geschlechtsunabhängige Prioritätsstufen, komplett auf dem VPS (siehe `orchestrator/monthly_refresh_tiers.py`):
 
@@ -132,9 +145,9 @@ Ersetzt die alten 4 UP-Jobs (lokal, Mac Mini) + föderationsbasierte `dc_update`
 |---|---|---:|---:|---|
 | P1 | ELO ≥ 2300, alle Föderationen | 4.189 | 2 | ✅ komplett fertig |
 | P2 | GER/SUI/AUT, ELO < 2300 | 19.481 | 7 | ✅ komplett fertig |
-| P3 | Rest (alle übrigen ≥1×gescrapten Spieler) | 118.066 | 40 | 🔄 7/40 fertig, 1 läuft (27.806 neue Partien bisher) |
+| P3 | Rest (alle übrigen ≥1×gescrapten Spieler) | 118.066 | 40 | 🔄 **27/40 fertig, 1 läuft, 12 pending** (84.239 neue Partien bisher) |
 
-P1 und P2 waren größtenteils bereits durch den Mac-Mini-Ad-hoc-Lauf bzw. den laufenden DC-DACH-Vollbackfill abgedeckt und liefen daher sehr schnell durch. P3 läuft seit ~11:30 Uhr deutlich schneller als ursprünglich geschätzt (~66 Min/Batch statt ~4h) — vermutlich Überschneidung mit den parallel laufenden Welt-Backfill-Threads (DC-AE/IN/HK/MX/UK) in den höheren ELO-Bändern. Hochrechnung: alle 40 Batches evtl. in ~1–1,5 Tagen statt der befürchteten fast einer Woche fertig; muss sich bei den unteren ELO-Bändern noch bestätigen. Bei Bedarf per zweitem `dc_update_2`-Thread weiter beschleunigbar (siehe `monthly_refresh_tiers.DC_UPDATE_POOL`).
+P1 und P2 waren größtenteils bereits durch den Mac-Mini-Ad-hoc-Lauf bzw. den laufenden DC-DACH-Vollbackfill abgedeckt und liefen daher sehr schnell durch. P3 hat seit der Aktivierung aller 10 DC-Threads (2026-07-04 ~12:20) nochmal deutlich an Tempo zugelegt — von 19/40 morgens auf 27/40 abends. Bei Bedarf per zweitem `dc_update_2`-Thread weiter beschleunigbar (siehe `monthly_refresh_tiers.DC_UPDATE_POOL`).
 
 ---
 
@@ -142,18 +155,21 @@ P1 und P2 waren größtenteils bereits durch den Mac-Mini-Ad-hoc-Lauf bzw. den l
 
 Raspberry Pi 500 als drittes Scraping-Gerät beim Bruder (Remote-Zugang via Tailscale).
 
+> ⚠️ **Status-Sync seit 2026-07-04 ~08:04 UTC gebrochen** (Review-#5-Deploy): `merge_pi_status.py` + `sync_pi_to_vps.sh` wurden planmäßig gelöscht (Queue-Migration SQLite→PostgreSQL), da sie auf die alte VPS-`scraper.db` zielten, die es nicht mehr gibt. Das Pi-**Scraping selbst läuft vermutlich unbeeinflusst weiter** (schreibt Partien direkt nach PG), aber Dashboard-Slot 50 und die zentrale done-Markierung von `device='raspi'`-Gruppen frieren auf dem Stand von heute Morgen (~07:50 UTC) ein. Fix: Pi direkt an die PG-Queue anbinden (braucht vorher eine `claimed_by`-Spalte, siehe Caveat unten) oder Sync-Mechanik neu aufbauen. Noch nicht behoben — Pi war am 2026-07-04 via Tailscale vom Mac Mini aus nicht erreichbar (Timeout), Prüfung/Fix nur vom MacBook Pro aus möglich.
+
 | | |
 |---|---|
 | Gerät | Raspberry Pi 500 (Pi 5, ARM64, 8 GB), Benutzer `pit1` |
 | Tailscale-IP | `100.125.193.29` |
 | Profil | `normal` (1 Thread, kein Proxy — residential IP) |
 | Queue | 1247 Gruppen (`device='raspi'`), Jahr 2020, ELO 1400–2840, alle Föderationen |
-| Sync | `sync_pi_to_vps.sh` alle 5 Min → `merge_pi_status.py` → thread_slot 50 im Dashboard |
-| **Fortschritt (2026-06-28)** | **362 done / 1 running (SWE) / 884 pending — ~29 %** |
+| Sync | ~~`sync_pi_to_vps.sh` alle 5 Min → `merge_pi_status.py`~~ **gebrochen seit 2026-07-04, siehe Warnhinweis oben** |
+| **Fortschritt (zentral zuletzt, 2026-07-04 ~07:50 UTC)** | **452 done / 794 pending — ~36 %** (lokal auf dem Pi vermutlich weiter fortgeschritten, aber nicht mehr sichtbar) |
 
-**Fortschritt:** 17/1246 am 12.06. → 362/1247 am 28.06. (~21,5 Gruppen/Tag) → Rest ~6 Wochen (Anfang August). Worker + Sync aktiv (Periode 2020-03-01).
+**Fortschritt (letzter verlässlicher zentraler Stand):** 17/1246 am 12.06. → 362/1247 am 28.06. → 452/1246 am 04.07. morgens (~15–18 Gruppen/Tag) → Rest ~45–55 Tage bei fortgesetztem Tempo.
 
 **Status abfragen** (Tailscale `up`, NordVPN aus; Pi-SQLite unter `orchestrator/pi_data/scraper.db`, kein `sqlite3`-CLI → Python):
+**Diese Abfrage ist seit dem gebrochenen Sync (siehe Warnhinweis oben) der einzige Weg an den echten Fortschritt** — sie fragt die Pi-eigene lokale `scraper.db` direkt ab, unabhängig vom kaputten VPS-Sync:
 ```bash
 ssh pit1@100.125.193.29 "python3 -c \"import sqlite3; c=sqlite3.connect('/home/pit1/fide-scraper/orchestrator/pi_data/scraper.db'); print(list(c.execute('SELECT status,COUNT(*) FROM scrape_groups GROUP BY status')))\""
 ```
@@ -194,17 +210,19 @@ ssh pit1@100.125.193.29 "cd ~/fide-scraper && source .venv/bin/activate && kill 
 
 Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DESC / ELO DESC
 
+Stand 2026-07-04 abends, alle Threads aktiv:
+
 | DC-Thread | Gruppen done | Gruppen pending | Jahresbereich |
 |-----------|-------------:|----------------:|---------------|
-| DC-DE *(disabled)* | 327 | ~1.608 | 2009–2026 |
-| DC-IN | 408 | ~1.937 | 2009–2026 |
-| DC-UK | 308 | ~1.051 | 2009–2026 |
-| DC-US *(disabled)* | 280 | ~410 | 2009–2026 |
-| DC-HK | 213 | ~329 | 2009–2026 |
-| DC-ES *(disabled)* | 329 | ~2.458 | 2009–2026 |
-| DC-MX | 294 | ~2.662 | 2009–2026 |
-| DC-AE | 340 | ~1.121 | 2009–2026 |
-| DC-DACH | 313 | ~1.084 | 2009–2026 |
+| DC-DE | 330 | ~1.605 | 2009–2026 |
+| DC-IN | 418 | ~1.928 | 2009–2026 |
+| DC-UK | 318 | ~1.041 | 2009–2026 |
+| DC-US | 282 | ~408 | 2009–2026 |
+| DC-HK | 221 | ~322 | 2009–2026 |
+| DC-ES | 331 | ~2.457 | 2009–2026 |
+| DC-MX | 303 | ~2.654 | 2009–2026 |
+| DC-AE | 350 | ~1.111 | 2009–2026 |
+| DC-DACH | 330 | ~1.067 | 2009–2026 |
 
 ---
 
@@ -244,6 +262,20 @@ Letzter offener Review-Punkt umgesetzt: die Orchestrator-Queue (`scrape_groups`/
 | **Tests** | `tests/conftest.py` neu: PG-Test-Fixture (`ORCH_TEST_DATABASE_URL` oder abgeleitete `fide_orch_test`-DB; skippt ohne erreichbare PG); test_queue_manager + test_store portiert, +3 neue Tests (DC-Affinity-Claim, reset_stale_running, duration/rate) — 35 passed |
 
 **Deployed + verifiziert 2026-07-04 ~08:05 UTC:** Worker gestoppt → Build → Migration (24.714 Gruppen + 4.234 Runs, alle Status-Zähler identisch) → `up -d --no-deps`. Neuer Code im Container bestätigt, Worker claimt aus PG (7 unterbrochene running → pending → 6 neu geclaimt), Dashboard HTTP 200 ohne Fehler, Backup-Testlauf OK (856-MB-Dump enthält Schema `orchestrator` inkl. Sequenzen), kein Pi-Sync-Cron vorhanden. Alte DB archiviert als `/data/scraper.db.migrated-20260704` (+`-wal`/`-shm`).
+
+**Nachwirkung entdeckt (abends):** Das Löschen von `merge_pi_status.py`/`sync_pi_to_vps.sh` bricht den Raspberry-Pi-Status-Sync (Pi zielte auf die jetzt archivierte VPS-`scraper.db`) — siehe Warnhinweis im Pi-Abschnitt oben. Noch nicht behoben.
+
+---
+
+## Änderungen Session 2026-07-04 (Fortsetzung, nachmittags/abends)
+
+| Was | Details |
+|-----|---------|
+| **top_gap_2300 abgeschlossen** | 170 fehlende Top-Spieler (ELO≥2300) geseeded + Mac-Mini-Backfill 2008-04→2026-06; 121/170 (71%) haben jetzt Partien, 49 endgültig leer. Details siehe Abschnitt „Top-Spieler-Lückenanalyse" oben. |
+| **Alle 10 DC-Scraper aktiviert** | User-Entscheidung ~12:20 Uhr: DC-DE/DC-US/DC-ES zusätzlich zu den bereits laufenden 7 eingeschaltet, Worker neu gestartet. Sauberer Respawn (alle Threads claimten sofort neue Gruppen), Health-Check nach mehreren Stunden: nur 5 echte 429/Cooldown-Events in 4h, 0-mal Direktfetch-Fallback — kein Anzeichen von IP-Blocking. P3-Fortschritt dadurch spürbar beschleunigt (19/40 → 27/40 Batches an einem Nachmittag). |
+| **USA/2019-Anomalie aufgeklärt** | Einzige `failed`-Gruppe der Queue diagnostiziert und aufgelöst — Details siehe eigener Abschnitt oben. Queue steht jetzt bei 0 failed. |
+| **Backup-Skript gehärtet** | `scripts/pull_backup_macmini.sh`: `KEEP_MIN=2`-Schutz ergänzt (die 2 neuesten lokalen Dumps werden nie gelöscht, unabhängig vom Alter — schützt bei langem Mac-Aus/Urlaub); Bash-3.2-kompatibel (kein `mapfile`, macOS liefert nur diese uralte Version aus Lizenzgründen). |
+| **Projekt umgezogen** | Live (ohne Session-Neustart) von `/Users/macminipit/Projekte/fide-scraper` nach `/Users/macminipit/PARA/1_Projects/fide-scraper` (PARA-Struktur). launchd-Plist + Claude-Memory-Ordner mitgezogen, `.venv`/Git/Tests danach verifiziert. **Alle Pfade in dieser Doku und in Skripten beziehen sich ab jetzt auf den neuen Standort.** |
 
 ---
 

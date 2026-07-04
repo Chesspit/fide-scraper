@@ -12,7 +12,8 @@ COPY scraper/     ./scraper/
 COPY scripts/     ./scripts/
 COPY config.yaml  .
 
-# SQLite DB and worker_state.json live in /data (mounted volume)
+# worker_state.json + runtime_settings.json live in /data (mounted volume);
+# die Queue selbst liegt seit Review #5 in PostgreSQL (Schema "orchestrator")
 ENV ORCHESTRATOR_DATA_DIR=/data
 
 EXPOSE 8050

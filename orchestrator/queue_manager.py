@@ -5,16 +5,24 @@ worker always claims the pending group with the lowest priority value. The
 originally planned fuzzy ordering ("no recognizable scrape pattern") was
 officially retired in 2026-07 — pattern obfuscation now comes from timing
 jitter (get_wait_time) and the per-DC-thread active_hours windows instead.
+
+Seit Review #5 liegt die Queue in PostgreSQL (Schema "orchestrator" der
+fidedb, siehe setup_db.py) statt in der SQLite scraper.db. Die Verbindung
+ist Autocommit; jeder Statuswechsel ist ein einzelnes atomares UPDATE, der
+Claim bleibt optimistisch (UPDATE ... WHERE status='pending' + rowcount).
+Bei Verbindungsabrissen (Tunnel-Drop, PG-Neustart) wird transparent neu
+verbunden — Retry-Parameter in setup_db.connect().
 """
 
 import random
-import sqlite3
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
-from orchestrator.setup_db import DB_PATH, create_db
+import psycopg2
+import psycopg2.extras
+
+from orchestrator.setup_db import connect
 
 # Breite des Prioritäts-Fensters für die Gruppen-Auswahl.
 #
@@ -55,20 +63,37 @@ class Group:
 
 
 class QueueManager:
-    def __init__(self, db_path: Path = DB_PATH):
-        self._db_path = db_path
-        self._conn: Optional[sqlite3.Connection] = None
+    def __init__(self, dsn: str | None = None):
+        self._dsn = dsn
+        self._conn = None
 
-    def _connect(self) -> sqlite3.Connection:
-        if self._conn is None:
-            self._conn = create_db(self._db_path)
-            self._conn.row_factory = sqlite3.Row
+    def _connect(self):
+        if self._conn is None or self._conn.closed:
+            self._conn = connect(self._dsn)
         return self._conn
 
     def close(self) -> None:
-        if self._conn:
+        if self._conn is not None and not self._conn.closed:
             self._conn.close()
-            self._conn = None
+        self._conn = None
+
+    def _execute(self, sql: str, params: tuple = ()):
+        """Execute mit einmaligem Reconnect bei abgerissener Verbindung.
+
+        Autocommit + Einzelstatements: nach einem Abriss geht kein
+        Transaktionskontext verloren, Wiederholen ist gefahrlos (Status-
+        UPDATEs sind idempotent, der Claim prüft ohnehin per rowcount).
+        """
+        for attempt in (1, 2):
+            try:
+                conn = self._connect()
+                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur.execute(sql, params)
+                return cur
+            except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                self.close()
+                if attempt == 2:
+                    raise
 
     # ------------------------------------------------------------------
     # Group selection
@@ -102,20 +127,19 @@ class QueueManager:
     def _try_claim_next(self, device: str | None, dc_affinity: str | None) -> Optional[Group]:
         """One attempt: fuzzy-select + atomic claim. Returns None if queue empty
         or if another worker claimed the chosen group between SELECT and UPDATE."""
-        conn = self._connect()
 
         # Thread-Affinitäts-Filter:
         # DC-Thread → nur Gruppen mit passender thread_affinity
         # Residential → nur Gruppen ohne thread_affinity (kein DC-Pool)
         if dc_affinity:
-            affinity_filter = "AND thread_affinity = ?"
+            affinity_filter = "AND thread_affinity = %s"
             affinity_params: tuple = (dc_affinity,)
         else:
             affinity_filter = "AND (thread_affinity IS NULL)"
             affinity_params = ()
 
         if device:
-            device_filter = "AND (device IS NULL OR device = ?)"
+            device_filter = "AND (device IS NULL OR device = %s)"
             device_params: tuple = (device,)
         else:
             device_filter = ""
@@ -123,21 +147,22 @@ class QueueManager:
 
         all_params = affinity_params + device_params
 
-        row = conn.execute(
-            f"SELECT MIN(priority) FROM scrape_groups WHERE status = 'pending' {affinity_filter} {device_filter}",
+        cur = self._execute(
+            f"SELECT MIN(priority) AS p FROM scrape_groups WHERE status = 'pending' {affinity_filter} {device_filter}",
             all_params,
-        ).fetchone()
-        if row[0] is None:
+        )
+        row = cur.fetchone()
+        if row["p"] is None:
             return None  # queue empty
 
-        tier_max = row[0] + TIER_WIDTH
+        tier_max = row["p"] + TIER_WIDTH
 
-        candidates = conn.execute(
+        candidates = self._execute(
             f"""
             SELECT id, federation, continent, year, elo_min, elo_max,
                    player_count, priority, device, profile, thread_affinity, update_only
             FROM scrape_groups
-            WHERE status = 'pending' AND priority <= ?
+            WHERE status = 'pending' AND priority <= %s
               {affinity_filter} {device_filter}
             """,
             (tier_max,) + all_params,
@@ -150,11 +175,10 @@ class QueueManager:
         chosen = random.choices(candidates, weights=weights, k=1)[0]
 
         # Atomic claim: only succeeds if status is still 'pending'
-        cur = conn.execute(
-            "UPDATE scrape_groups SET status='running', last_run_at=? WHERE id=? AND status='pending'",
+        cur = self._execute(
+            "UPDATE scrape_groups SET status='running', last_run_at=%s WHERE id=%s AND status='pending'",
             (_now(), chosen["id"]),
         )
-        conn.commit()
 
         if cur.rowcount == 0:
             return None  # another worker was faster — caller retries
@@ -162,62 +186,54 @@ class QueueManager:
         return Group(**dict(chosen))
 
     def pending_count(self) -> int:
-        return self._connect().execute(
-            "SELECT COUNT(*) FROM scrape_groups WHERE status = 'pending'"
-        ).fetchone()[0]
+        return self._execute(
+            "SELECT COUNT(*) AS n FROM scrape_groups WHERE status = 'pending'"
+        ).fetchone()["n"]
 
     def done_count(self) -> int:
-        return self._connect().execute(
-            "SELECT COUNT(*) FROM scrape_groups WHERE status = 'done'"
-        ).fetchone()[0]
+        return self._execute(
+            "SELECT COUNT(*) AS n FROM scrape_groups WHERE status = 'done'"
+        ).fetchone()["n"]
 
     def stats(self) -> dict:
-        rows = self._connect().execute(
+        rows = self._execute(
             "SELECT status, COUNT(*) AS n FROM scrape_groups GROUP BY status"
         ).fetchall()
         return {r["status"]: r["n"] for r in rows}
 
     # ------------------------------------------------------------------
-    # Status transitions  (atomic SQLite updates)
+    # Status transitions  (atomare Einzel-UPDATEs, Autocommit)
     # ------------------------------------------------------------------
 
     def mark_running(self, group_id: int) -> None:
-        conn = self._connect()
-        conn.execute(
-            "UPDATE scrape_groups SET status='running', last_run_at=? WHERE id=?",
+        self._execute(
+            "UPDATE scrape_groups SET status='running', last_run_at=%s WHERE id=%s",
             (_now(), group_id),
         )
-        conn.commit()
 
     def mark_done(self, group_id: int, records_found: int) -> None:
-        conn = self._connect()
-        conn.execute(
+        self._execute(
             """UPDATE scrape_groups
-               SET status='done', records_found=?, last_run_at=?
-               WHERE id=?""",
+               SET status='done', records_found=%s, last_run_at=%s
+               WHERE id=%s""",
             (records_found, _now(), group_id),
         )
-        conn.commit()
 
     def mark_failed(self, group_id: int, error_msg: str) -> None:
-        conn = self._connect()
-        conn.execute(
+        self._execute(
             """UPDATE scrape_groups
                SET status='failed', retries=retries+1,
-                   notes=?, last_run_at=?
-               WHERE id=?""",
+                   notes=%s, last_run_at=%s
+               WHERE id=%s""",
             (error_msg[:500], _now(), group_id),
         )
-        conn.commit()
 
     def reset_to_pending(self, group_id: int) -> None:
         """Re-queue a failed group for retry."""
-        conn = self._connect()
-        conn.execute(
-            "UPDATE scrape_groups SET status='pending' WHERE id=?",
+        self._execute(
+            "UPDATE scrape_groups SET status='pending' WHERE id=%s",
             (group_id,),
         )
-        conn.commit()
 
     def requeue_failed(
         self,
@@ -235,49 +251,41 @@ class QueueManager:
         Returns the number of re-queued groups. Idempotent and safe to call
         from multiple threads (single atomic UPDATE).
         """
-        conn = self._connect()
-        cur = conn.execute(
+        cur = self._execute(
             """UPDATE scrape_groups
                SET status='pending'
                WHERE status='failed'
-                 AND retries < ?
+                 AND retries < %s
                  AND (last_run_at IS NULL
-                      OR last_run_at < datetime('now','localtime', ?))""",
-            (max_retries, f"-{min_age_hours} hours"),
+                      OR last_run_at < localtimestamp - %s * interval '1 hour')""",
+            (max_retries, min_age_hours),
         )
-        conn.commit()
         return cur.rowcount
 
     def count_exhausted_failed(self, max_retries: int = AUTO_RETRY_MAX) -> int:
         """Failed groups without retry budget — these need a human."""
-        return self._connect().execute(
-            "SELECT COUNT(*) FROM scrape_groups WHERE status='failed' AND retries >= ?",
+        return self._execute(
+            "SELECT COUNT(*) AS n FROM scrape_groups WHERE status='failed' AND retries >= %s",
             (max_retries,),
-        ).fetchone()[0]
+        ).fetchone()["n"]
 
     def skip(self, group_id: int, reason: str = "") -> None:
-        conn = self._connect()
-        conn.execute(
-            "UPDATE scrape_groups SET status='skipped', notes=? WHERE id=?",
+        self._execute(
+            "UPDATE scrape_groups SET status='skipped', notes=%s WHERE id=%s",
             (reason[:500], group_id),
         )
-        conn.commit()
 
     def update_profile(self, group_id: int, profile: str | None) -> None:
-        conn = self._connect()
-        conn.execute(
-            "UPDATE scrape_groups SET profile=? WHERE id=?",
+        self._execute(
+            "UPDATE scrape_groups SET profile=%s WHERE id=%s",
             (profile if profile else None, group_id),
         )
-        conn.commit()
 
     def update_thread_affinity(self, group_id: int, thread_affinity: str | None) -> None:
-        conn = self._connect()
-        conn.execute(
-            "UPDATE scrape_groups SET thread_affinity=? WHERE id=?",
+        self._execute(
+            "UPDATE scrape_groups SET thread_affinity=%s WHERE id=%s",
             (thread_affinity if thread_affinity else None, group_id),
         )
-        conn.commit()
 
     # ------------------------------------------------------------------
     # Run logging
@@ -295,28 +303,32 @@ class QueueManager:
         mb_downloaded: float = 0.0,
         thread_slot: int | None = None,
     ) -> None:
-        conn = self._connect()
-        conn.execute(
+        self._execute(
             """INSERT INTO scrape_runs
                (group_id, started_at, finished_at, status,
                 records_found, error_msg, proxy_used, profile_used, mb_downloaded, thread_slot)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (group_id, started_at, _now(), status,
              records_found, error_msg[:500], proxy_used, profile_used, mb_downloaded, thread_slot),
         )
-        conn.commit()
 
     # ------------------------------------------------------------------
     # Timing
     # ------------------------------------------------------------------
 
     def reset_stale_running(self) -> int:
-        """Reset any 'running' groups to 'pending' (called on worker startup)."""
-        conn = self._connect()
-        cur = conn.execute(
+        """Reset any 'running' groups to 'pending' (called on worker startup).
+
+        ACHTUNG (seit der PG-Migration): die Queue ist jetzt geräteübergreifend
+        geteilt. Solange nur der VPS-Worker sie nutzt (Stand 2026-07), ist der
+        globale Reset korrekt. Sobald ein zweites Gerät (Mac Mini/Pi) als
+        Orchestrator-Worker andockt, würde dessen Start hier die laufenden
+        Gruppen des VPS zurücksetzen — dann braucht der Claim eine
+        claimed_by-Spalte und dieser Reset einen Geräte-Scope.
+        """
+        cur = self._execute(
             "UPDATE scrape_groups SET status='pending' WHERE status='running'"
         )
-        conn.commit()
         return cur.rowcount
 
     def get_wait_time(self, profile: dict) -> float:

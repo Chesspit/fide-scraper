@@ -2118,7 +2118,7 @@ def refresh_bericht(_, active_tab):
     Input("main-tabs", "active_tab"),
 )
 def update_bericht2_raw(_, active_tab):
-    """Lädt Rohdaten aus SQLite in den Store (alle 5 Min oder bei Tab-Wechsel)."""
+    """Lädt Rohdaten aus der Queue-DB in den Store (alle 5 Min oder bei Tab-Wechsel)."""
     if active_tab != "tab-bericht2":
         return dash.no_update
     return _query_laender_data()

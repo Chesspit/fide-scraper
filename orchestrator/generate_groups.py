@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Generate scrape groups (federation × year × ELO-band) and populate SQLite.
+"""Generate scrape groups (federation × year × ELO-band) and populate the queue.
 
 ELO bands are computed dynamically per federation, targeting 50–250 players/band.
 Years 2009–2026 with FIDE-valid periods per year (from is_valid_fide_period logic).
+Ziel ist seit Review #5 das Schema "orchestrator" in PostgreSQL (DATABASE_URL).
 
 Usage:
-    python orchestrator/generate_groups.py [--preview] [--db PATH]
+    python orchestrator/generate_groups.py [--preview]
 """
 
 import argparse
@@ -18,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from orchestrator.setup_db import DB_PATH, create_db
+from orchestrator.setup_db import connect
 from scripts.seed_players import load_players_from_file
 
 # ---------------------------------------------------------------------------
@@ -242,27 +243,28 @@ def generate_groups(txt_path: Path, years: range) -> list[dict]:
     return groups
 
 
-def insert_groups(groups: list[dict], db_path: Path) -> tuple[int, int]:
-    """Insert groups into SQLite. Returns (inserted, skipped)."""
-    conn = create_db(db_path)
+def insert_groups(groups: list[dict]) -> tuple[int, int]:
+    """Insert groups into orchestrator.scrape_groups. Returns (inserted, skipped)."""
+    conn = connect()
     inserted = skipped = 0
-    for g in groups:
-        try:
-            conn.execute(
+    with conn.cursor() as cur:
+        for g in groups:
+            cur.execute(
                 """
                 INSERT INTO scrape_groups
                     (federation, continent, year, elo_min, elo_max,
                      player_count, status, priority)
-                VALUES (?,?,?,?,?,?,?,?)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (federation, year, elo_min) DO NOTHING
                 """,
                 (g["federation"], g["continent"], g["year"],
                  g["elo_min"], g["elo_max"], g["player_count"],
                  g["status"], g["priority"]),
             )
-            inserted += 1
-        except Exception:
-            skipped += 1
-    conn.commit()
+            if cur.rowcount:
+                inserted += 1
+            else:
+                skipped += 1
     conn.close()
     return inserted, skipped
 
@@ -306,10 +308,6 @@ def main() -> None:
         help="Print statistics without writing to DB",
     )
     parser.add_argument(
-        "--db", type=Path, default=DB_PATH,
-        help="Path to SQLite DB (default: orchestrator/scraper.db)",
-    )
-    parser.add_argument(
         "--txt", type=Path,
         default=Path("data/players_list_foa_2026-04.txt"),
         help="Path to FIDE TXT player list",
@@ -335,8 +333,8 @@ def main() -> None:
         print("\n[Preview mode — nothing written to DB]")
         return
 
-    print(f"\nWriting to {args.db} ...")
-    inserted, skipped = insert_groups(groups, args.db)
+    print("\nWriting to PostgreSQL (orchestrator.scrape_groups) ...")
+    inserted, skipped = insert_groups(groups)
     print(f"Done: {inserted:,} inserted, {skipped:,} skipped (already exist)")
 
 

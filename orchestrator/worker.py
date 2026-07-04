@@ -1,8 +1,9 @@
 """Scraping orchestrator worker.
 
-Reads the queue from SQLite, fetches FIDE data via a rotating proxy (see
-orchestrator/proxy_manager.py), and writes results to the existing
-PostgreSQL database using the scraper's parser and DB modules.
+Reads the queue from PostgreSQL (Schema "orchestrator", seit Review #5),
+fetches FIDE data via a rotating proxy (see orchestrator/proxy_manager.py),
+and writes results to the same PostgreSQL database using the scraper's
+parser and DB modules.
 
 Run:
     python orchestrator/worker.py [--profile conservative|normal|aggressive]
@@ -12,7 +13,8 @@ Control (from dashboard or terminal):
 
 Parallel mode (configured via profiles.yaml [concurrency]):
     max_workers > 1 spawns N threads, each claiming its own group from the queue.
-    Each thread runs independently with its own PostgreSQL + SQLite connection.
+    Each thread runs independently with its own PostgreSQL connections
+    (Spieldaten + Queue).
 """
 
 import logging
@@ -500,7 +502,7 @@ def run_slot(
 ) -> None:
     """Thread function: continuously claims and processes groups from the queue.
 
-    Each thread has its own PostgreSQL connection, SQLite QueueManager, and
+    Each thread has its own PostgreSQL connection, QueueManager, and
     ProfileManager instance — no shared mutable state except proxy_manager
     (which is thread-safe) and the worker_state.json (protected by _state_lock).
     """

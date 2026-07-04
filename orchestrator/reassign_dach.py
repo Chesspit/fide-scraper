@@ -6,37 +6,38 @@ Betrifft nur Gruppen mit status='pending' (noch nicht gescrapt);
 laufende/abgeschlossene Gruppen bleiben unangetastet.
 
 Ausführen im Container:
-  docker compose exec dashboard python3 reassign_dach.py
+  docker compose exec dashboard python3 -m orchestrator.reassign_dach
 """
-import sqlite3, os
+from orchestrator.setup_db import connect
 
-db = os.environ.get('ORCHESTRATOR_DATA_DIR', '/data') + '/scraper.db'
-conn = sqlite3.connect(db)
+conn = connect()
+cur = conn.cursor()
 
 print('--- Vorher ---')
-for row in conn.execute(
+cur.execute(
     "SELECT federation, thread_affinity, status, count(*) FROM scrape_groups "
     "WHERE federation IN ('GER','SUI','AUT') "
     "GROUP BY federation, thread_affinity, status "
     "ORDER BY federation, thread_affinity, status"
-):
+)
+for row in cur.fetchall():
     print(row)
 
-r = conn.execute(
+cur.execute(
     "UPDATE scrape_groups SET thread_affinity='dc_dach' "
     "WHERE federation IN ('GER','SUI','AUT') AND status='pending' "
     "AND (thread_affinity IS NULL OR thread_affinity != 'dc_dach')"
 )
-print(f"\nUmgestellt auf dc_dach: {r.rowcount} Gruppen")
-conn.commit()
+print(f"\nUmgestellt auf dc_dach: {cur.rowcount} Gruppen")
 
 print('\n--- Nachher ---')
-for row in conn.execute(
+cur.execute(
     "SELECT federation, thread_affinity, status, count(*) FROM scrape_groups "
     "WHERE federation IN ('GER','SUI','AUT') "
     "GROUP BY federation, thread_affinity, status "
     "ORDER BY federation, thread_affinity, status"
-):
+)
+for row in cur.fetchall():
     print(row)
 
 conn.close()

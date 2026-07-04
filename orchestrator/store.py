@@ -1,37 +1,70 @@
-"""Datenzugriff des Dashboards — alle SQLite/PostgreSQL-Queries an einem Ort.
+"""Datenzugriff des Dashboards — alle Queue- und PG-Queries an einem Ort.
 
 Extrahiert aus app.py (Review #6): app.py behält Layout, Callbacks und
-Figures; dieses Modul kapselt jede Query gegen die Orchestrator-SQLite
-(scrape_groups/scrape_runs) und die eine PG-Query (Spielerzahlen je
-Föderation). Config-abhängige Werte (DC-Thread-Label-Maps, ELO-Grenzen,
+Figures; dieses Modul kapselt jede Query gegen die Orchestrator-Queue
+(scrape_groups/scrape_runs, seit Review #5 im Schema "orchestrator" der
+fidedb statt in der SQLite scraper.db) und die PG-Query auf Spielerzahlen
+je Föderation. Config-abhängige Werte (DC-Thread-Label-Maps, ELO-Grenzen,
 Worker-Thread-Livestatus) werden als Parameter hineingereicht statt aus
-app-Interna gelesen — dadurch ist die Bucket-/Aggregations-Logik erstmals
-mit einer Wegwerf-SQLite testbar (tests/test_store.py).
+app-Interna gelesen — dadurch ist die Bucket-/Aggregations-Logik mit einer
+Wegwerf-PG-Testdatenbank testbar (tests/test_store.py).
 
-Für Review #5 (Queue-Migration nach PostgreSQL) ist dieses Modul neben
-queue_manager.py die einzige Stelle, die umgestellt werden muss.
+Verbindung: pro Aufruf eine frische Autocommit-Verbindung (setup_db.connect,
+search_path=orchestrator,public). Dashboard-Callbacks dürfen bei DB-Ausfall
+nicht minutenlang hängen, daher retries=1.
 """
 
-import sqlite3
 import time
 from datetime import datetime
 
-from orchestrator.setup_db import DB_PATH, create_db
+import psycopg2.extras
+
+from orchestrator.setup_db import connect
 
 
-def get_conn(db_path=None):
-    conn = create_db(db_path or DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def get_conn(dsn=None):
+    return connect(dsn, retries=1)
 
 
-def fmt_dt(s: str | None) -> str:
-    if not s:
-        return "–"
+def _fetch_dicts(sql: str, params: tuple = ()) -> list[dict]:
+    conn = get_conn()
     try:
-        return datetime.fromisoformat(s.replace("T", " ")[:16]).strftime("%d.%m.%Y %H:%M")
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params)
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def _fetch_rows(sql: str, params: tuple = ()) -> list[tuple]:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def _execute(sql: str, params: tuple = ()) -> None:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+    finally:
+        conn.close()
+
+
+def fmt_dt(value) -> str:
+    """ISO-String, datetime oder None → 'DD.MM.YYYY HH:MM' (PG liefert datetime)."""
+    if not value:
+        return "–"
+    if isinstance(value, datetime):
+        return value.strftime("%d.%m.%Y %H:%M")
+    try:
+        return datetime.fromisoformat(str(value).replace("T", " ")[:16]).strftime("%d.%m.%Y %H:%M")
     except Exception:
-        return s
+        return str(value)
 
 
 # ---------------------------------------------------------------------------
@@ -39,21 +72,17 @@ def fmt_dt(s: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 def query_continents() -> list[str]:
-    conn = get_conn()
-    rows = conn.execute(
+    rows = _fetch_rows(
         "SELECT DISTINCT continent FROM scrape_groups ORDER BY continent"
-    ).fetchall()
-    conn.close()
+    )
     return [r[0] for r in rows]
 
 
 def query_federations(continent: str) -> list[str]:
-    conn = get_conn()
-    rows = conn.execute(
-        "SELECT DISTINCT federation FROM scrape_groups WHERE continent=? ORDER BY federation",
+    rows = _fetch_rows(
+        "SELECT DISTINCT federation FROM scrape_groups WHERE continent=%s ORDER BY federation",
         (continent,),
-    ).fetchall()
-    conn.close()
+    )
     return [r[0] for r in rows]
 
 
@@ -69,15 +98,12 @@ def query_overview(fed_to_column: dict[str, str], elo_floor: int, elo_ceiling: i
     if not fed_to_column:
         return []
 
-    placeholders = ",".join("?" * len(fed_to_column))
-    conn = get_conn()
-    rows = conn.execute(
-        f"""SELECT federation, elo_min, elo_max, status
-            FROM scrape_groups
-            WHERE federation IN ({placeholders})""",
-        list(fed_to_column),
-    ).fetchall()
-    conn.close()
+    rows = _fetch_rows(
+        """SELECT federation, elo_min, elo_max, status
+           FROM scrape_groups
+           WHERE federation = ANY(%s)""",
+        (list(fed_to_column),),
+    )
 
     from collections import defaultdict
     bucket_data: dict[tuple, dict] = defaultdict(lambda: {"total": 0, "done": 0})
@@ -103,26 +129,31 @@ def query_overview(fed_to_column: dict[str, str], elo_floor: int, elo_ceiling: i
     ]
 
 
+def _iso(value) -> str | None:
+    """PG-datetime → ISO-String wie ihn SQLite lieferte (Anzeige + JSON-sicher)."""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%dT%H:%M:%S")
+    return value
+
+
 def query_grid(federation: str) -> list[dict]:
-    conn = get_conn()
-    rows = conn.execute(
+    rows = _fetch_dicts(
         """SELECT year, elo_min, elo_max, status, player_count,
                   records_found, retries, last_run_at, id
            FROM scrape_groups
-           WHERE federation = ?
+           WHERE federation = %s
            ORDER BY elo_min DESC, year""",
         (federation,),
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    )
+    for r in rows:
+        r["last_run_at"] = _iso(r["last_run_at"])
+    return rows
 
 
 def query_global_stats() -> dict:
-    conn = get_conn()
-    rows = conn.execute(
-        "SELECT status, COUNT(*) n FROM scrape_groups GROUP BY status"
-    ).fetchall()
-    conn.close()
+    rows = _fetch_rows(
+        "SELECT status, COUNT(*) FROM scrape_groups GROUP BY status"
+    )
     d = {r[0]: r[1] for r in rows}
     total = sum(d.values())
     return {
@@ -136,30 +167,25 @@ def query_global_stats() -> dict:
 
 
 def query_group_by_id(group_id: int) -> dict | None:
-    conn = get_conn()
-    row = conn.execute(
-        "SELECT * FROM scrape_groups WHERE id=?", (group_id,)
-    ).fetchone()
-    conn.close()
-    return dict(row) if row else None
+    rows = _fetch_dicts(
+        "SELECT * FROM scrape_groups WHERE id=%s", (group_id,)
+    )
+    if not rows:
+        return None
+    rows[0]["last_run_at"] = _iso(rows[0]["last_run_at"])
+    return rows[0]
 
 
 def update_group_status(group_id: int, new_status: str) -> None:
-    conn = get_conn()
-    conn.execute(
-        "UPDATE scrape_groups SET status=? WHERE id=?", (new_status, group_id)
+    _execute(
+        "UPDATE scrape_groups SET status=%s WHERE id=%s", (new_status, group_id)
     )
-    conn.commit()
-    conn.close()
 
 
 def update_group_priority(group_id: int, new_priority: int) -> None:
-    conn = get_conn()
-    conn.execute(
-        "UPDATE scrape_groups SET priority=? WHERE id=?", (new_priority, group_id)
+    _execute(
+        "UPDATE scrape_groups SET priority=%s WHERE id=%s", (new_priority, group_id)
     )
-    conn.commit()
-    conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -180,17 +206,16 @@ def query_queue(
       '<dc_id>'  → nur dieser DC-Thread (jeder Key aus id_labels)
       'residential' → thread_affinity IS NULL AND device IS NULL
       'mac_mini' / 'raspi' → device-Filter
-
     slot_labels/id_labels: DC-Thread-Maps (aus profiles.yaml, siehe app.py).
     worker_threads: live threads-Liste aus worker_state.json für die
     ▶-Laufanzeige.
     """
-    conn = get_conn()
-
+    where_params: tuple = ()
     if affinity_filter == "dc":
         where_extra = "AND thread_affinity IS NOT NULL"
     elif affinity_filter in id_labels:
-        where_extra = f"AND thread_affinity = '{affinity_filter}'"
+        where_extra = "AND thread_affinity = %s"
+        where_params = (affinity_filter,)
     elif affinity_filter == "residential":
         where_extra = "AND thread_affinity IS NULL AND (device IS NULL OR device = '')"
     elif affinity_filter == "mac_mini":
@@ -200,12 +225,12 @@ def query_queue(
     else:
         where_extra = ""
 
-    rows = conn.execute(
+    result = _fetch_dicts(
         f"""SELECT id, priority, federation, continent, year,
-                  elo_min || '–' || elo_max AS elo_band,
+                  elo_min::text || '–' || elo_max::text AS elo_band,
                   player_count, status, retries,
                   COALESCE(device, '') AS device,
-                  COALESCE(last_run_at, '–') AS last_run_at,
+                  last_run_at,
                   COALESCE(thread_affinity, '') AS thread_affinity
            FROM scrape_groups
            WHERE status IN ('pending', 'running', 'failed')
@@ -213,9 +238,8 @@ def query_queue(
            ORDER BY CASE WHEN status='running' THEN 0 ELSE 1 END ASC,
                     priority ASC, federation ASC
            LIMIT 500""",
-    ).fetchall()
-    conn.close()
-    result = [dict(r) for r in rows]
+        where_params,
+    )
 
     # Thread-Anzeige: live Slot ODER konfigurierte Affinität → eine Spalte
     thread_map = {}  # group_label → "▶ T2" / "▶ DC-IN"
@@ -244,23 +268,17 @@ def query_queue(
 
 
 def update_group_thread_affinity(group_id: int, affinity: str) -> None:
-    conn = get_conn()
-    conn.execute(
-        "UPDATE scrape_groups SET thread_affinity=? WHERE id=?",
+    _execute(
+        "UPDATE scrape_groups SET thread_affinity=%s WHERE id=%s",
         (affinity if affinity else None, group_id),
     )
-    conn.commit()
-    conn.close()
 
 
 def update_group_device(group_id: int, device: str) -> None:
-    conn = get_conn()
-    conn.execute(
-        "UPDATE scrape_groups SET device=? WHERE id=?",
+    _execute(
+        "UPDATE scrape_groups SET device=%s WHERE id=%s",
         (device if device else None, group_id),
     )
-    conn.commit()
-    conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -269,17 +287,16 @@ def update_group_device(group_id: int, device: str) -> None:
 
 def query_completed(slot_labels: dict[int, str]) -> list[dict]:
     """Done groups with scraping stats from scrape_runs."""
-    conn = get_conn()
     _dc_slot_case = "\n".join(
         f"                           WHEN {slot} THEN '{label}'"
         for slot, label in sorted(slot_labels.items())
     )
-    rows = conn.execute(
+    result = _fetch_dicts(
         f"""SELECT
                g.federation,
                g.continent,
                g.year,
-               g.elo_min || '–' || g.elo_max               AS elo_band,
+               g.elo_min::text || '–' || g.elo_max::text    AS elo_band,
                g.player_count,
                g.records_found,
                r.profile_used,
@@ -289,27 +306,27 @@ def query_completed(slot_labels: dict[int, str]) -> list[dict]:
 {_dc_slot_case}
                            ELSE 'DC'
                        END
-                   WHEN r.thread_slot IS NOT NULL THEN 'T' || (r.thread_slot + 1)
+                   WHEN r.thread_slot IS NOT NULL THEN 'T' || (r.thread_slot + 1)::text
                    ELSE '–'
                END                                          AS thread_slot,
                CASE
                    WHEN g.player_count > 0 AND g.records_found > 0
-                   THEN ROUND(CAST(g.records_found AS REAL) / g.player_count, 1)
+                   THEN ROUND(g.records_found::numeric / g.player_count, 1)::float
                    ELSE NULL
                END                                          AS partien_per_spieler,
-               ROUND(COALESCE(r.mb_downloaded, 0), 1)      AS mb,
+               ROUND(COALESCE(r.mb_downloaded, 0)::numeric, 1)::float AS mb,
                g.last_run_at,
                ROUND(
-                   (julianday(r.finished_at) - julianday(r.started_at)) * 24, 2
-               )                                            AS duration_h,
+                   (EXTRACT(EPOCH FROM (r.finished_at - r.started_at)) / 3600.0)::numeric, 2
+               )::float                                     AS duration_h,
                CASE
                    WHEN r.finished_at IS NOT NULL
                         AND r.started_at IS NOT NULL
-                        AND (julianday(r.finished_at) - julianday(r.started_at)) > 0
+                        AND r.finished_at > r.started_at
                    THEN ROUND(
-                       r.records_found /
-                       ((julianday(r.finished_at) - julianday(r.started_at)) * 24),
-                       0)
+                       (r.records_found /
+                        (EXTRACT(EPOCH FROM (r.finished_at - r.started_at)) / 3600.0))::numeric,
+                       0)::float
                    ELSE NULL
                END                                          AS rate_per_h,
                g.id
@@ -326,9 +343,7 @@ def query_completed(slot_labels: dict[int, str]) -> list[dict]:
            ) r ON r.group_id = g.id AND r.rn = 1
            WHERE g.status = 'done'
            ORDER BY g.last_run_at DESC""",
-    ).fetchall()
-    conn.close()
-    result = [dict(r) for r in rows]
+    )
     for row in result:
         row["last_run_at"] = fmt_dt(row.get("last_run_at"))
     return result
@@ -345,26 +360,24 @@ def query_bericht_data(slot_label_map: dict[int, str]) -> list[dict]:
         {"day": "2026-05-25", "slot_label": "T0", "mb": 13.52}
     Slots ohne Daten werden nicht zurückgegeben (fehlende Bars = 0).
     """
-    conn = get_conn()
-    rows = conn.execute(
+    rows = _fetch_dicts(
         """
         SELECT
-            DATE(started_at)   AS day,
+            started_at::date   AS day,
             thread_slot,
-            ROUND(SUM(mb_downloaded), 2) AS mb
+            ROUND(SUM(mb_downloaded)::numeric, 2)::float AS mb
         FROM   scrape_runs
         WHERE  mb_downloaded > 0
           AND  started_at IS NOT NULL
         GROUP  BY day, thread_slot
         ORDER  BY day ASC, thread_slot ASC
         """
-    ).fetchall()
-    conn.close()
+    )
     result = []
     for r in rows:
         slot = r["thread_slot"]
         label = slot_label_map.get(slot, f"Slot-{slot}")
-        result.append({"day": r["day"], "slot_label": label, "mb": r["mb"] or 0.0})
+        result.append({"day": r["day"].isoformat(), "slot_label": label, "mb": r["mb"] or 0.0})
     return result
 
 
@@ -425,12 +438,12 @@ def query_pg_players() -> dict[str, tuple[int, int]]:
 def query_laender_data() -> list[dict]:
     """Aggregiert scrape_groups + scrape_runs nach Föderation (VPS-Sicht).
 
-    Datenquelle: SQLite scrape_groups/scrape_runs des VPS-Orchestrators.
+    Datenquelle: scrape_groups/scrape_runs des VPS-Orchestrators.
     Mac-Mini-Backfills (global_XX, female) schreiben nur nach PostgreSQL
-    und tauchen hier NICHT auf — alle Werte sind rein VPS-basiert.
+    (public-Schema) und tauchen hier NICHT auf — alle Werte sind rein
+    VPS-basiert.
     """
-    conn = get_conn()
-    rows = conn.execute(
+    rows = _fetch_dicts(
         """
         SELECT
             sg.federation,
@@ -455,10 +468,9 @@ def query_laender_data() -> list[dict]:
         ) sr ON sr.group_id = sg.id
         GROUP BY sg.federation
         HAVING COUNT(sg.id) > 0
-        ORDER BY continent, sg.federation
+        ORDER BY MAX(sg.continent), sg.federation
         """
-    ).fetchall()
-    conn.close()
+    )
 
     def _yrng(y0, y1):
         if y0 is None: return "—"
@@ -471,7 +483,7 @@ def query_laender_data() -> list[dict]:
         total_g   = r["total_groups"]   or 1
         done_g    = r["done_groups"]    or 0
         running_g = r["running_groups"] or 0
-        mb        = round(r["total_mb"], 1)
+        mb        = round(float(r["total_mb"]), 1)
         laufend   = str(r["year_running"]) if r["year_running"] is not None else ""
         fed              = r["federation"] or "—"
         scraped, total_a = pg_aktiv.get(fed, (0, 0))

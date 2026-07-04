@@ -228,6 +228,25 @@ Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DE
 
 ---
 
+## Änderungen Session 2026-07-04 — Review #5: Queue-Migration SQLite → PostgreSQL
+
+Letzter offener Review-Punkt umgesetzt: die Orchestrator-Queue (`scrape_groups`/`scrape_runs`) zieht aus der SQLite `/data/scraper.db` ins **Schema `orchestrator` der fidedb** (Migration `013_orchestrator_queue.sql`).
+
+| Was | Details |
+|-----|---------|
+| **setup_db.py** | Jetzt PG-Verbindungsmodul: `connect()` mit `search_path=orchestrator,public`, Autocommit, Reconnect-Retry (10×, Backoff bis 60 s — Tunnel-Drops/PG-Neustarts töten den Worker nicht); Schema-DDL idempotent selbstprovisionierend |
+| **queue_manager.py** | `?`→`%s`, `datetime('now','localtime')`→`localtimestamp`; Claim bleibt optimistisch (atomares UPDATE + rowcount); Interface unverändert → worker.py brauchte keine Änderung. **Caveat dokumentiert:** `reset_stale_running()` ist global — sobald ein zweites Gerät die geteilte Queue nutzt, braucht es claimed_by + Geräte-Scope |
+| **store.py** | `julianday()`→`EXTRACT(EPOCH …)`, `int || text`-Casts, `ROUND(x::numeric,n)::float` (kein Decimal in Dash-JSON), datetime→ISO-String-Normalisierung; Verbindung pro Aufruf mit retries=1 (Dashboard darf nicht hängen) |
+| **Generatoren** | `generate_groups.py` (ohne `--db`, `ON CONFLICT DO NOTHING`), `generate_monthly_refresh_batches.py`, `reset_monthly_refresh.py`, `sync_done_groups.py` (jetzt eine einzige PG-Verbindung), `reassign_dach.py` |
+| **Datenübernahme** | `scripts/migrate_queue_to_pg.py`: SQLite → PG mit ID-Erhalt, eine Transaktion, Sequenz-`setval`, automatische Verifikation (Zeilenzahlen + Status-Verteilung); Generalprobe mit lokaler scraper.db-Kopie (24.588 Gruppen) erfolgreich |
+| **Gelöscht** | `export_pi_groups.py`, `merge_pi_status.py`, `setup_pi_worker.sh`, `sync_pi_to_vps.sh` — Geräte sprechen künftig direkt mit PG, kein SQLite-Export/Merge mehr |
+| **Backup** | `backup_fide_vps.sh`: SQLite-Teil entfernt — pg_dump fidedb enthält die Queue automatisch; Queue-only-Restore: `pg_restore --schema=orchestrator` |
+| **Tests** | `tests/conftest.py` neu: PG-Test-Fixture (`ORCH_TEST_DATABASE_URL` oder abgeleitete `fide_orch_test`-DB; skippt ohne erreichbare PG); test_queue_manager + test_store portiert, +3 neue Tests (DC-Affinity-Claim, reset_stale_running, duration/rate) — 35 passed |
+
+**Deploy-Schritte (VPS):** Worker stoppen → Image bauen → `migrate_queue_to_pg.py --sqlite /data/scraper.db` → `up -d --no-deps` beide Container → Dashboard + Claim verifizieren → scraper.db im Volume als `.migrated`-Archiv belassen.
+
+---
+
 ## Änderungen Session 2026-07-03/04 (Abend) — Architektur-Review-Umsetzung
 
 Architektur-Review mit Fable-Modell durchgeführt (`review-elo-dashboard-2026-07-03.md` im Repo-Root, 11 priorisierte Punkte) und direkt **9 von 10 umsetzbaren Punkten** abgearbeitet — alle deployed und live verifiziert:
@@ -243,7 +262,7 @@ Architektur-Review mit Fable-Modell durchgeführt (`review-elo-dashboard-2026-07
 | 8 ✅ | **Fuzzy-Queue** | `TIER_WIDTH=1` als offizielle Design-Entscheidung dokumentiert (deterministisch nach Priorität, von P1→P2→P3 verlangt); Doku angepasst. |
 | 9 ✅ | **Aufräumen** | Caddy-Verzeichnis + alte UP-Job-Pipeline gelöscht (−621 Zeilen: `reset_current_year.py`, `generate_update_batches.py`, `update_jobs.yaml`, `run_update_job*.sh`); Doku Aufgabe 6 auf Traefik/Coolify. **Lektion:** Dockerfile kopierte gelöschte Datei → Build brach still, Deploy lief mit altem Image (Fix `a86a89f`) — nach Löschungen Dockerfile-COPYs prüfen, nach Deploys Code-im-Container verifizieren. |
 | 10 ✅ | **Pool-Hot-Reload** | `ProxyManager` lädt Pool-Dateien bei mtime-Änderung selbst nach (30s-Drossel, leerer Parse ersetzt nie) — IP-Tausch ohne Worker-Neustart; live bewiesen. **Wichtig:** Pool-Dateien in-place syncen (scp/cat >), nicht rsync/mv (Bind-Mount-Inode). |
-| 5 ⏳ | **Queue → PostgreSQL** | Einziger offener Punkt (1–2 Tage); dank #6 nur noch `store.py` + `queue_manager.py` + Generatoren betroffen. Plan im Session-Handoff-Memory. |
+| 5 ⏳ | **Queue → PostgreSQL** | Einziger offener Punkt (1–2 Tage); dank #6 nur noch `store.py` + `queue_manager.py` + Generatoren betroffen. *(→ umgesetzt 2026-07-04, siehe Session-Eintrag oben)* |
 
 Tests: 111 passed (+1 bekannter Alt-Fehler `test_retry_on_429`, unabhängig). Commits: `1804820` … `65026cc`.
 

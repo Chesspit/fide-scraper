@@ -21,8 +21,11 @@ monthly_refresh_tiers.py) per Greedy-Load-Balancing (LPT: größte Batches
 zuerst, jeweils dem Pool-Thread mit aktuell kleinster Summe zuweisen), und
 update_only=1 (nur bereits gescrapte Spieler, kein Vollbackfill-Risiko).
 
+Seit Review #5 liegt die Queue im Schema "orchestrator" derselben PostgreSQL
+(DATABASE_URL) wie die Spielerdaten — ein --db-Pfad entfällt.
+
 Usage:
-    python orchestrator/generate_monthly_refresh_batches.py [--dry-run] [--db PATH] [--year YYYY]
+    python orchestrator/generate_monthly_refresh_batches.py [--dry-run] [--year YYYY]
 """
 
 import argparse
@@ -44,7 +47,7 @@ from orchestrator.monthly_refresh_tiers import (
     TIER_TARGET_MIN,
     TIERS,
 )
-from orchestrator.setup_db import DB_PATH, create_db
+from orchestrator.setup_db import connect
 from scraper.config import get_database_url
 
 
@@ -97,7 +100,7 @@ def _split_chunks(ratings_desc: list[int]) -> list[list[int]]:
     return chunks
 
 
-def build_tier_bands(ratings_desc: list[int], tier: str, year: int, sqlite_conn) -> list[dict]:
+def build_tier_bands(ratings_desc: list[int], tier: str, year: int, queue_conn) -> list[dict]:
     """Build contiguous, non-overlapping ELO bands for one tier.
 
     elo_min must be unique per (federation, year) — the tier sentinel
@@ -109,12 +112,12 @@ def build_tier_bands(ratings_desc: list[int], tier: str, year: int, sqlite_conn)
     elo_floor, elo_ceil = TIER_BOUNDS[tier]
     chunks = _split_chunks(ratings_desc)
 
-    existing = {
-        row[0] for row in sqlite_conn.execute(
-            "SELECT elo_min FROM scrape_groups WHERE federation = ? AND year = ?",
+    with queue_conn.cursor() as cur:
+        cur.execute(
+            "SELECT elo_min FROM scrape_groups WHERE federation = %s AND year = %s",
             (tier, year),
-        ).fetchall()
-    }
+        )
+        existing = {row[0] for row in cur.fetchall()}
     taken: set[int] = set()
 
     def unique_elo_min(candidate: int) -> int:
@@ -146,12 +149,12 @@ def _assign_thread_affinity(groups: list[dict]) -> None:
         load[thread] += g["player_count"]
 
 
-def build_groups(year: int, sqlite_conn) -> list[dict]:
+def build_groups(year: int, queue_conn) -> list[dict]:
     groups = []
 
     for tier in TIERS:
         ratings = load_tier_population(tier)
-        bands = build_tier_bands(ratings, tier, year, sqlite_conn)
+        bands = build_tier_bands(ratings, tier, year, queue_conn)
         for band in bands:
             groups.append({
                 "federation": tier,
@@ -172,34 +175,35 @@ def build_groups(year: int, sqlite_conn) -> list[dict]:
     # Innerhalb eines Tiers: größere Batches zuerst (laufen länger, sollen früh starten).
     tier_rank = {tier: i for i, tier in enumerate(TIERS)}
     groups.sort(key=lambda g: (tier_rank[g["federation"]], -g["player_count"]))
-    base = sqlite_conn.execute("SELECT COALESCE(MAX(priority), 0) FROM scrape_groups").fetchone()[0]
+    with queue_conn.cursor() as cur:
+        cur.execute("SELECT COALESCE(MAX(priority), 0) FROM scrape_groups")
+        base = cur.fetchone()[0]
     for rank, g in enumerate(groups, start=1):
         g["priority"] = base + rank
 
     return groups
 
 
-def insert_groups(groups: list[dict], db_path: Path) -> tuple[int, int]:
-    conn = create_db(db_path)
+def insert_groups(groups: list[dict], queue_conn) -> tuple[int, int]:
     inserted = skipped = 0
-    for g in groups:
-        try:
-            conn.execute(
+    with queue_conn.cursor() as cur:
+        for g in groups:
+            cur.execute(
                 """
                 INSERT INTO scrape_groups
                     (federation, continent, year, elo_min, elo_max, player_count,
                      status, priority, thread_affinity, update_only)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (federation, year, elo_min) DO NOTHING
                 """,
                 (g["federation"], g["continent"], g["year"], g["elo_min"], g["elo_max"],
                  g["player_count"], g["status"], g["priority"],
                  g["thread_affinity"], g["update_only"]),
             )
-            inserted += 1
-        except Exception:
-            skipped += 1
-    conn.commit()
-    conn.close()
+            if cur.rowcount:
+                inserted += 1
+            else:
+                skipped += 1
     return inserted, skipped
 
 
@@ -250,24 +254,23 @@ def print_preview(groups: list[dict]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate P1/P2/P3 monthly-refresh batches")
     parser.add_argument("--dry-run", action="store_true", help="Nur anzeigen, nicht schreiben")
-    parser.add_argument("--db", type=Path, default=DB_PATH, help="Pfad zur SQLite-DB")
     parser.add_argument("--year", type=int, default=date.today().year)
     args = parser.parse_args()
 
-    sqlite_conn = create_db(args.db)
+    queue_conn = connect()
 
     print("Lade P1/P2/P3-Populationen aus PostgreSQL ...")
-    groups = build_groups(args.year, sqlite_conn)
+    groups = build_groups(args.year, queue_conn)
     print_preview(groups)
 
     if args.dry_run:
-        sqlite_conn.close()
+        queue_conn.close()
         print("\n[--dry-run: nichts geschrieben]")
         return 0
 
-    sqlite_conn.close()
-    print(f"\nSchreibe nach {args.db} ...")
-    inserted, skipped = insert_groups(groups, args.db)
+    print("\nSchreibe nach orchestrator.scrape_groups ...")
+    inserted, skipped = insert_groups(groups, queue_conn)
+    queue_conn.close()
     print(f"Fertig: {inserted:,} eingefügt, {skipped:,} übersprungen (existieren bereits)")
     return 0
 

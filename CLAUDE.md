@@ -87,6 +87,7 @@ Summary-Zeile `<tr bgcolor=#e6e6e6>`: Spalte 1 = **Ro** → `rating_history.std_
 | `groups` | 175 Scraping-Gruppen — **einzige Quelle der Wahrheit** für ELO-Range + Federation |
 | `rating_corrections` | FIDE-Einmalkorrekturen (März 2024: +0,4×(2000−rating) für <2000er) |
 | `qc_rating_check` | QC-Fenster-Ergebnisse |
+| `orchestrator.scrape_groups` / `.scrape_runs` | Orchestrator-Queue (seit Review #5 in PG statt SQLite scraper.db; Migration 013) |
 
 **Wichtig:** Analysen immer nach `p.active = TRUE` filtern (21 inaktive female_top, 44 male_control).
 

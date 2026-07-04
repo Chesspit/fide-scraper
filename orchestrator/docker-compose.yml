@@ -1,7 +1,8 @@
 ## Erster Start auf dem VPS
 ## ─────────────────────────────────────────────────────────────────────────────
-## scraper.db ist NICHT im Git (runtime-State, ändert sich mit jedem Scraping-Lauf).
-## Vor dem ersten 'docker compose up' das Volume initialisieren:
+## Die Queue (scrape_groups/scrape_runs) liegt seit Review #5 im Schema
+## "orchestrator" der fidedb (PostgreSQL) — Migration migrations/013,
+## setup_db.py provisioniert das Schema auch selbst (idempotent).
 ##
 ##   # 1. Image bauen
 ##   docker compose build
@@ -9,7 +10,6 @@
 ##   # 2. Gruppen generieren (braucht data/players_list_foa_2026-04.txt im Projektverzeichnis)
 ##   docker compose run --rm worker \
 ##     python orchestrator/generate_groups.py \
-##     --db /data/scraper.db \
 ##     --txt data/players_list_foa_2026-04.txt
 ##
 ##   # 3. Netzwerkname prüfen und ggf. DOCKER_NETWORK in .env anpassen

@@ -15,7 +15,10 @@ Lies vor dem Start alle relevanten Dateien im Projekt — insbesondere die Verte
 
 ## Aufgabe 1 — Gruppen-Modell & Datenbank
 
-Erstelle ein SQLite-Schema mit mindestens folgenden Tabellen:
+Erstelle ein SQLite-Schema mit mindestens folgenden Tabellen
+(*Update 2026-07: seit Review #5 liegt die Queue in PostgreSQL, Schema
+`orchestrator` der fidedb — Struktur unverändert, siehe
+`migrations/013_orchestrator_queue.sql`*):
 
 ```sql
 scrape_groups (
@@ -298,8 +301,10 @@ Zuordnung folgt der **konfigurierten `timezone` je Thread** (nicht den `federati
   - Service `dashboard`: Dash-App; Port 8050 nur auf `127.0.0.1` gebunden,
     öffentlich ausschließlich über Traefik erreichbar.
   - Service `worker`: Queue-Worker-Loop (separater Prozess, alle Threads).
-  - Named Volume `orchestrator_data` → `/data` (scraper.db,
-    runtime_settings.json, worker_state.json). `profiles.yaml` ist seit
+  - Named Volume `orchestrator_data` → `/data` (runtime_settings.json,
+    worker_state.json). Die Queue (scrape_groups/scrape_runs) liegt seit
+    2026-07 (Review #5) im PostgreSQL-Schema `orchestrator` der fidedb —
+    die frühere SQLite scraper.db entfällt. `profiles.yaml` ist seit
     2026-07-04 (Review #4) rein statisch aus dem Image (Git = Wahrheit,
     Änderungen per Rebuild); Laufzeit-State (enabled/active_hours/max_hours/
     active_profile) liegt in `/data/runtime_settings.json` — atomar
@@ -309,9 +314,9 @@ Zuordnung folgt der **konfigurierten `timezone` je Thread** (nicht den `federati
   `Host(scelo.chesspit.net)`, Let's-Encrypt-Zertifikat, Basic-Auth
   (bcrypt-Hash im Label), Netz `coolify`.
 - **Backup**: täglich 03:45 via Cron auf dem VPS
-  (`scripts/backup_fide_vps.sh` — pg_dump fidedb + SQLite-Online-Backup
-  scraper.db), Offsite-Pull auf den Mac Mini 07:30 via launchd
-  (`scripts/pull_backup_macmini.sh`).
+  (`scripts/backup_fide_vps.sh` — pg_dump fidedb, enthält seit Review #5
+  auch die Queue im Schema `orchestrator`), Offsite-Pull auf den Mac Mini
+  07:30 via launchd (`scripts/pull_backup_macmini.sh`).
 
 ### `requirements.txt`
 Mindestens: `dash`, `plotly`, `flask`, `requests`, `beautifulsoup4`, `pyyaml`, `python-dotenv`

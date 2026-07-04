@@ -20,7 +20,6 @@ Verwendung:
 """
 
 import argparse
-import sqlite3
 import sys
 from datetime import date
 from pathlib import Path
@@ -28,9 +27,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from orchestrator.monthly_refresh_tiers import TIERS
-from orchestrator.setup_db import DB_PATH
+from orchestrator.setup_db import connect
 
-_TIER_PLACEHOLDERS = ",".join("?" * len(TIERS))
+_TIER_PLACEHOLDERS = ",".join(["%s"] * len(TIERS))
 
 
 def main() -> int:
@@ -43,13 +42,7 @@ def main() -> int:
                         help="Nur anzeigen, nicht ändern")
     args = parser.parse_args()
 
-    db_path = DB_PATH
-    if not db_path.exists():
-        print(f"FEHLER: SQLite-DB nicht gefunden: {db_path}")
-        return 1
-
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = connect()
     cur = conn.cursor()
 
     cur.execute(
@@ -58,7 +51,7 @@ def main() -> int:
     )
     done_count = cur.fetchone()[0]
     cur.execute(
-        f"SELECT COUNT(*) FROM scrape_groups WHERE federation IN ({_TIER_PLACEHOLDERS}) AND year != ?",
+        f"SELECT COUNT(*) FROM scrape_groups WHERE federation IN ({_TIER_PLACEHOLDERS}) AND year != %s",
         (*TIERS, args.year),
     )
     stale_year_count = cur.fetchone()[0]
@@ -79,15 +72,15 @@ def main() -> int:
         )
         rows = cur.fetchall()
         print(f"Beispiele (erste 15 von {done_count}):")
-        for r in rows:
-            print(f"  {r['federation']}  ELO {r['elo_min']:4d}–{r['elo_max']:4d}"
-                  f"  ({r['records_found'] or 0} Partien, Jahr {r['year']})")
+        for federation, elo_min, elo_max, records_found, year in rows:
+            print(f"  {federation}  ELO {elo_min:4d}–{elo_max:4d}"
+                  f"  ({records_found or 0} Partien, Jahr {year})")
         print("--dry-run: keine Änderungen vorgenommen.")
         conn.close()
         return 0
 
     cur.execute(
-        f"UPDATE scrape_groups SET year = ? WHERE federation IN ({_TIER_PLACEHOLDERS})",
+        f"UPDATE scrape_groups SET year = %s WHERE federation IN ({_TIER_PLACEHOLDERS})",
         (args.year, *TIERS),
     )
     year_updated = cur.rowcount
@@ -98,8 +91,6 @@ def main() -> int:
         TIERS,
     )
     reset_count = cur.rowcount
-
-    conn.commit()
     print(f"{year_updated} P1/P2/P3-Gruppen auf Jahr {args.year} gezogen.")
     print(f"{reset_count} Gruppen auf pending zurückgesetzt.")
     print("Historischer Welt-Backfill (dc_ae/de/es/hk/in/mx/uk/us/dach) unangetastet.")

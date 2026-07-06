@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # fide-scraper — Offsite-Kopie der VPS-Backups auf den Mac Mini.
 #
-# Läuft täglich 07:30 via launchd (net.chesspit.fide-backup-pull, siehe
-# scripts/net.chesspit.fide-backup-pull.plist) — launchd holt einen wegen
-# Schlafmodus verpassten Lauf nach dem Aufwachen nach, cron nicht.
+# Läuft via launchd (net.chesspit.fide-backup-pull, siehe
+# scripts/net.chesspit.fide-backup-pull.plist): RunAtLoad bei jedem Boot
+# (der Mac Mini fährt nachts komplett runter statt zu schlafen, daher greift
+# ein reines StartCalendarInterval nicht zuverlässig) + 09:30 als Fallback.
 #
 # Zieht /home/pit/backups/fide-scraper/ vom VPS (Dumps + backup.log) und
 # rotiert lokal knapper als der VPS (Mac-Platte ist kleiner): die VPS-Seite

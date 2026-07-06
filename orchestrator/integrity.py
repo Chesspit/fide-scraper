@@ -151,13 +151,19 @@ def check_done_groups_missing_combos(conn, threshold_pct: float = 2.0, **_) -> l
     Rating-Drift-Caveat: Band-Zugehörigkeit wird mit HEUTIGEN Ratings
     berechnet, nicht denen zum Scrape-Zeitpunkt (dasselbe akzeptierte Muster
     wie sync_done_groups.py) — deshalb Schwellwert statt 0-Toleranz.
-    P1/P2/P3-Refresh-Batches sind ausgenommen (dynamische Tier-Population).
+
+    Ausgenommen: P1/P2/P3-Refresh-Batches (dynamische Tier-Population) und
+    update_only-Gruppen (deren Soll-Menge war "zum Claim-Zeitpunkt bereits
+    gescrapte Spieler" — rückwirkend nicht reproduzierbar; ein Audit gegen
+    alle aktiven Spieler würde sie systematisch als unvollständig melden).
     """
     with conn.cursor() as cur:
         cur.execute("""
             SELECT id, federation, year, elo_min, elo_max
             FROM scrape_groups
-            WHERE status = 'done' AND federation NOT IN %s
+            WHERE status = 'done'
+              AND federation NOT IN %s
+              AND COALESCE(update_only, 0) = 0
         """, (_TIER_SENTINELS,))
         groups = cur.fetchall()
 

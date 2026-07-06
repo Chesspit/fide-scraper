@@ -124,6 +124,16 @@ class TestDoneGroupsMissingCombos:
                              elo_min=0, elo_max=2299, status="done")
         assert check_done_groups_missing_combos(conn) == []
 
+    def test_update_only_groups_excluded(self, data_db, conn):
+        # update_only-Batches (alte dc_update-Ära): Soll-Menge war "bereits
+        # gescrapte Spieler zum Claim-Zeitpunkt" — Audit gegen alle aktiven
+        # Spieler wäre systematisch falsch-positiv (73 solcher Treffer im
+        # ersten Live-Lauf 2026-07-06).
+        data_db.insert_group(federation="GER", year=2024, elo_min=2000,
+                             elo_max=2099, status="done", update_only=1)
+        data_db.insert_player(1, federation="GER", std_rating=2050)  # nie gescrapt
+        assert check_done_groups_missing_combos(conn) == []
+
     def test_pending_groups_not_audited(self, data_db, conn):
         self._seed_group(data_db, n_players=3, scraped_players=[])
         data_db.execute("UPDATE orchestrator.scrape_groups SET status='pending'")

@@ -287,9 +287,9 @@ Letzter offener Review-Punkt umgesetzt: die Orchestrator-Queue (`scrape_groups`/
 
 ---
 
-## Reconciliation-Tool (Branch `fable-test/reconciliation-check`, Session 2026-07-06) — NICHT gemerged
+## Reconciliation-Tool (Session 2026-07-06) — ✅ gemerged
 
-Neues eigenständiges QC-Tool gebaut und gegen die Live-DB validiert. **Liegt bewusst nur auf dem Branch** (Commit `73e3a96`); Merge-Entscheidung steht aus.
+Neues eigenständiges QC-Tool gebaut und gegen die Live-DB validiert. Zunächst auf Branch `fable-test/reconciliation-check` entwickelt (Commit `73e3a96`), **am selben Abend nach master gemerged** — zusammen mit den Orchestrator-Tools aus `fable-test/orchestrator-redesign` (Coverage-Report + Integritätsprüfung, siehe `docs/orchestrator_redesign_2026-07.md`); beide Test-Branches danach gelöscht.
 
 | Was | Details |
 |-----|---------|

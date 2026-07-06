@@ -283,6 +283,23 @@ Letzter offener Review-Punkt umgesetzt: die Orchestrator-Queue (`scrape_groups`/
 |-----|---------|
 | **Projekt umgezogen** | Von `/Users/macminipit/PARA/1_Projects/fide-scraper` nach `/Users/macminipit/PARA/1_Projects_Git/fide-scraper` — PARA-Reorg trennt git-Repos (`1_Projects_Git`) von sonstigen Projektordnern (`1_Projects`). launchd-Plist (`net.chesspit.fide-backup-pull`) + Claude-Memory-Ordner mitgezogen (umbenannt, nicht kopiert — Lehre aus einem Nachbarfall, wo ein paralleles Kopieren zu einem divergierenden zweiten Memory-Ordner führte). Sofort verifiziert: `runs=1`, `last exit code=0`, frischer Pull-Log-Eintrag. **Alle Pfade in dieser Doku und in Skripten beziehen sich ab jetzt auf den neuen Standort.** |
 | **Mac-Mini-Offsite-Pull-Bug gefunden + behoben** | `launchctl print` zeigte `runs=0` seit Setup (03.07.) — der Mac Mini fährt nachts komplett runter (echter Shutdown, kein Sleep) und bootet erst gegen 08–09 Uhr, das reine `StartCalendarInterval` auf 07:30 lief daher nie. Fix: `RunAtLoad` ergänzt (feuert bei jedem Boot), Fallback-Zeit auf 09:30 verschoben. |
+| **`.venv` nach Umzug neu gebaut** | Venvs sind pfadgebunden und überleben Ordner-Umzüge nicht — am neuen Standort fehlte `.venv` komplett; neu erstellt aus `scraper/requirements.txt`, Tunnel + DB-Verbindung danach verifiziert. |
+
+---
+
+## Reconciliation-Tool (Branch `fable-test/reconciliation-check`, Session 2026-07-06) — NICHT gemerged
+
+Neues eigenständiges QC-Tool gebaut und gegen die Live-DB validiert. **Liegt bewusst nur auf dem Branch** (Commit `73e3a96`); Merge-Entscheidung steht aus.
+
+| Was | Details |
+|-----|---------|
+| **`scripts/reconcile_ratings.py`** | Prüft pro Spieler, ob Σ gescrapte `rating_change_weighted` die Differenzen der offiziellen Listen (`published_rating`) erklärt. Zwei Kommandos: `run` (Audit, `--group/--tolerance/--windows/--csv`) und `verify-names` (Fuzzy-Abgleich Gegnernamen ↔ offizielle Liste, rapidfuzz, Buckets exact/high/uncertain/unmatched — nichts wird still verworfen). |
+| **Erweiterbare Regel-Schicht** | Benannte Regeln mit `adjust()`/`explain()`-Hooks: `KnownCorrectionRule` (rating_corrections, z. B. FIDE März 2024), `NoGameDataRule` (Fenster vor 2008-04 unprüfbar), `ToleranceRule` (±1 Elo), `RollingWindowRule` (Monatsverschiebung, kumulativ 2/12 Monate, überbrückt erklärte Ruhemonate). Neuer Sonderfall = neue Regelklasse, Kern bleibt unberührt. |
+| **20 Tests ohne DB** | `tests/test_reconcile_ratings.py` — Toleranz, Verschiebung, Namensabgleich, Regel-Erweiterbarkeit; laufen in <1 s ohne PG. |
+| **Validierungslauf** | female_top + male_control (71 Spieler, 13.235 Fenster): **99,9 % erklärt**, 7 unerklärt. Namensabgleich-Stichprobe (100 Namen gegen 1,83 Mio): 89 % exact, 4 % high, 5 % uncertain, 2 % unmatched. |
+| **7 offene Fenster nachgescrapt → FIDE-seitig bestätigt** | Alle 8 betroffenen Perioden (Berkvens, Bodek, Grib×2, Saduakassova, Mihalichenko×3) per erzwungenem Re-Scrape (scrape_periods-Delete + Backfill, Live-DB!) neu geholt: **identische Daten, 0 Fehler** — keine Scraping-Lücke, sondern Inkonsistenzen in den offiziellen FIDE-Listen selbst (5 von 7 Residuen nur 1,1–1,4 Elo ≈ Rundung; Mihalichenko 2009 +5,7 vermutlich stille FIDE-Anpassung). |
+
+**Offene Entscheidungen (bei Merge):** Ergebnispersistenz in Tabelle analog `qc_rating_check`; `VerifiedInconsistencyRule` für die 7 geprüften Fälle; Einbau als Schritt 4 in `monthly_update.sh` (Vormonat prüfen, da Refresh Tage läuft).
 
 ---
 

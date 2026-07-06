@@ -285,6 +285,18 @@ Letzter offener Review-Punkt umgesetzt: die Orchestrator-Queue (`scrape_groups`/
 | **Mac-Mini-Offsite-Pull-Bug gefunden + behoben** | `launchctl print` zeigte `runs=0` seit Setup (03.07.) — der Mac Mini fährt nachts komplett runter (echter Shutdown, kein Sleep) und bootet erst gegen 08–09 Uhr, das reine `StartCalendarInterval` auf 07:30 lief daher nie. Fix: `RunAtLoad` ergänzt (feuert bei jedem Boot), Fallback-Zeit auf 09:30 verschoben. |
 | **`.venv` nach Umzug neu gebaut** | Venvs sind pfadgebunden und überleben Ordner-Umzüge nicht — am neuen Standort fehlte `.venv` komplett; neu erstellt aus `scraper/requirements.txt`, Tunnel + DB-Verbindung danach verifiziert. |
 
+### Abend: Zwei neue QC-/Analyse-Werkzeugpakete (Fable-Test-Branches, beide gemerged)
+
+| Was | Details |
+|-----|---------|
+| **Reconciliation-Tool** (Ziel: stimmen die *Inhalte*?) | `scripts/reconcile_ratings.py` + 20 Tests — prüft, ob Σ gescrapte Partie-Änderungen die Deltas der offiziellen Listen erklärt (Regel-Schicht: Toleranz ±1, rollierendes 2/12-Monats-Fenster, FIDE-Korrekturen, Pre-2008; Fuzzy-Namensabgleich mit Confidence-Buckets). Validierung female_top+male_control: 13.235 Fenster, 99,9 % erklärt. Die 7 unerklärten Fenster per erzwungenem Re-Scrape (8 Perioden) geprüft: identische Daten → FIDE-seitige Listen-Inkonsistenzen, keine Scraping-Lücken. |
+| **Orchestrator: Ist-Soll-Analyse + Redesign** | `docs/orchestrator_redesign_2026-07.md` — Top-3-Schwachstellen nach Review #5: (1) Completion behauptungs- statt evidenzbasiert, (2) Coverage-Blindheit entlang der Ground Truth, (3) Multi-Device-Queue ohne claimed_by. Phasenplan B (claimed_by → Pi), C (Perioden-Retry-Semantik: error/429-Zeilen blockieren Retry strukturell dauerhaft), D (optional). |
+| **Coverage-Report** (Ziel 2) | `orchestrator/coverage.py` + `scripts/coverage_report.py` — ground-truth-basiert (players ⨯ scrape_periods ⨯ game_results), Dimensionen Federation / analysis_group / ELO-Band × Jahr. analysis_group-Coverage gab es vorher nirgends. Machte das Zukunftsmonate-Artefakt erstmals messbar (elite_2600/2026: 100,8 %). |
+| **Integritätsprüfung** (Ziel 3, False Positives) | `orchestrator/integrity.py` + `scripts/verify_scrape_integrity.py` — 5 benannte Checks (Registry, erweiterbar), report-only, Exit-Code für Cron. **Erster Live-Lauf (~17 Min, kompletter Bestand): Perioden-Buchführung 100 % konsistent** (0 Findings bei ok_without_games / no_data_with_games / blocked_error_rows / orphan_games); done-Gruppen: 294 weiche Findings (2–4 %), Stichprobe bestätigt Rating-Drift (AUS-Band: exakt 6 nachgedriftete Spieler = 72 Kombos). Lehre eingebaut: update_only-Gruppen vom Audit ausgenommen (Erstlauf hatte 73 falsch-harte Treffer = alte dc_update-Batches). |
+| **Tests** | conftest um `data_db`-Fixture erweitert (public-Tabellen minimal in Test-DB); Gesamtsuite 142 passed + bekannter Alt-Fehler `test_retry_on_429`. Test-PG braucht Wegwerf-Container (fide-User darf auf VPS-PG kein CREATE DATABASE). |
+| **Beide Branches gemerged + gelöscht** | User-Entscheidung am Abend: erst `fable-test/orchestrator-redesign`, dann `fable-test/reconciliation-check` nach master (je konfliktfrei/Fast-Forward), gepusht bis `62dac9e`, Branches lokal + remote entfernt. |
+| **Offene Kür** (kein Handlungsdruck) | `VerifiedInconsistencyRule` für die 7 geprüften Reconciliation-Fälle; Ergebnispersistenz analog `qc_rating_check`; Reconciliation/Integritätsprüfung als Schritt 4 in `monthly_update.sh` (Vormonat prüfen); Redesign-Phasen B + C; Bulk-Prioritäts-CLI. |
+
 ---
 
 ## Reconciliation-Tool (Session 2026-07-06) — ✅ gemerged

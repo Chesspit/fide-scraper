@@ -279,6 +279,15 @@ Letzter offener Review-Punkt umgesetzt: die Orchestrator-Queue (`scrape_groups`/
 
 ---
 
+## Änderungen Session 2026-07-06 — Projekt erneut umgezogen (PARA-Reorg: Git-Repos separiert)
+
+| Was | Details |
+|-----|---------|
+| **Projekt umgezogen** | Von `/Users/macminipit/PARA/1_Projects/fide-scraper` nach `/Users/macminipit/PARA/1_Projects_Git/fide-scraper` — PARA-Reorg trennt git-Repos (`1_Projects_Git`) von sonstigen Projektordnern (`1_Projects`). launchd-Plist (`net.chesspit.fide-backup-pull`) + Claude-Memory-Ordner mitgezogen (umbenannt, nicht kopiert — Lehre aus einem Nachbarfall, wo ein paralleles Kopieren zu einem divergierenden zweiten Memory-Ordner führte). Sofort verifiziert: `runs=1`, `last exit code=0`, frischer Pull-Log-Eintrag. **Alle Pfade in dieser Doku und in Skripten beziehen sich ab jetzt auf den neuen Standort.** |
+| **Mac-Mini-Offsite-Pull-Bug gefunden + behoben** | `launchctl print` zeigte `runs=0` seit Setup (03.07.) — der Mac Mini fährt nachts komplett runter (echter Shutdown, kein Sleep) und bootet erst gegen 08–09 Uhr, das reine `StartCalendarInterval` auf 07:30 lief daher nie. Fix: `RunAtLoad` ergänzt (feuert bei jedem Boot), Fallback-Zeit auf 09:30 verschoben. |
+
+---
+
 ## Änderungen Session 2026-07-03/04 (Abend) — Architektur-Review-Umsetzung
 
 Architektur-Review mit Fable-Modell durchgeführt (`review-elo-dashboard-2026-07-03.md` im Repo-Root, 11 priorisierte Punkte) und direkt **9 von 10 umsetzbaren Punkten** abgearbeitet — alle deployed und live verifiziert:

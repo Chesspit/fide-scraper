@@ -133,9 +133,9 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 | DC-MX (Slot 105) | Datacenter | semi_conservative | FRA, BEL, NED, LUX | America/Mexico_City | ✅ aktiv |
 | DC-AE (Slot 106) | Datacenter | semi_conservative | SRB, CRO, BIH, MKD, MNE, SLO, KOS, ALB, GRE, TUR | Asia/Dubai | ✅ aktiv |
 | DC-DACH (Slot 107) | Datacenter | semi_conservative | GER, SUI, AUT (Vollbackfill) | Europe/Berlin | ✅ aktiv |
-| DC-UPDATE-1 (Slot 108) | Datacenter | semi_conservative | alle (P1/P2/P3-Monatsrefresh, `update_only=1`) | Europe/Berlin | ✅ aktiv |
+| DC-UPDATE-1 (Slot 108) | Datacenter | semi_conservative | P1/P2/P3-Monatsrefresh (`update_only=1`) **+ seit 2026-07-06 DACH-Backfill-Mithilfe** (596 pending GER/SUI/AUT via `thread_affinity`, siehe Session unten) | Europe/Berlin | ✅ aktiv |
 
-**DC-UPDATE-1 ersetzt seit 2026-07-02 den alten `dc_update`-Thread** — siehe Session-Änderungen unten. Läuft aktuell die 40 P3-Batches ab (P1+P2 bereits fertig).
+**DC-UPDATE-1 ersetzt seit 2026-07-02 den alten `dc_update`-Thread** — siehe Session-Änderungen unten. Nach Abschluss des Monats-Refreshs hilft er seit 2026-07-06 als **zweiter DACH-Backfiller** (50/50-Split der pending DACH-Gruppen mit `dc_dach`), da er zwischen den monatlichen Update-Läufen sonst leerläuft.
 
 ### P1/P2/P3-Monatsrefresh — Fortschritt (Stand 2026-07-04, abends)
 
@@ -285,6 +285,17 @@ Letzter offener Review-Punkt umgesetzt: die Orchestrator-Queue (`scrape_groups`/
 |-----|---------|
 | **Projekt umgezogen** | Von `/Users/macminipit/PARA/1_Projects/fide-scraper` nach `/Users/macminipit/PARA/1_Projects_Git/fide-scraper` — PARA-Reorg trennt git-Repos (`1_Projects_Git`) von sonstigen Projektordnern (`1_Projects`). launchd-Plist (`net.chesspit.fide-backup-pull`) + Claude-Memory-Ordner mitgezogen (umbenannt, nicht kopiert — Lehre aus einem Nachbarfall, wo ein paralleles Kopieren zu einem divergierenden zweiten Memory-Ordner führte). Sofort verifiziert: `runs=1`, `last exit code=0`, frischer Pull-Log-Eintrag. **Alle Pfade in dieser Doku und in Skripten beziehen sich ab jetzt auf den neuen Standort.** |
 | **Mac-Mini-Offsite-Pull-Bug gefunden + behoben** | `launchctl print` zeigte `runs=0` seit Setup (03.07.) — der Mac Mini fährt nachts komplett runter (echter Shutdown, kein Sleep) und bootet erst gegen 08–09 Uhr, das reine `StartCalendarInterval` auf 07:30 lief daher nie. Fix: `RunAtLoad` ergänzt (feuert bei jedem Boot), Fallback-Zeit auf 09:30 verschoben. |
+
+### Orchestrator-Wartung (Mac Pro, nachmittags) — Live-Snapshot ~16:40 UTC
+
+**DB-Stand:** 9.911.808 Partien · 9.009.037 gescrapte Perioden · Queue: 4.252 done / 20.453 pending / 9 running / **0 failed**.
+
+| Was | Details |
+|-----|---------|
+| **Monats-Refresh (P1/P2/P3) neu gestartet** | Der vorige Update-Zyklus (07.06.–06.07.) war komplett `done` (49 Batches: P1 2 / P2 7 / P3 40). Auf Wunsch per `python orchestrator/reset_monthly_refresh.py` neu angestoßen (49 done→pending, Jahr auf 2026 gezogen = No-Op, Welt-Backfill unangetastet). Der Lauf scrapt **2026-01…2026-06** nach (Juli erst ab August, `valid_periods_for_year()` deckelt beim Vormonat) — im Kern ein **schneller Re-Scrape** bereits erfasster (fide_id, Periode)-Kombis, zieht alle Tiers einheitlich bis Juni. P1+P2 (~21k Spieler) in ~20 Min durch; Restlaufzeit für P3 grob 1–3 h. **Kein Cron dafür** — der Reset ist reine Handarbeit (nur DB-Backups sind geplant). |
+| **Failed-Gruppe #6449 entklemmt** | BEL/2022/1517–1570, `server closed the connection unexpectedly` (retries=1, terminal) → `pending`, retries=0, notes=NULL. Wird vom Worker neu versucht. Queue danach 0 failed. |
+| **DACH-Backfill auf 2 Threads verdoppelt** | `dc_update_1` (Slot 108) ist infrastrukturell ein **Klon von `dc_dach`** (gleicher Europa-Proxy-Pool, `semi_conservative`, Europe/Berlin) und nach dem monatlichen Update faktisch arbeitslos. Deshalb **~50 % der pending DACH-Gruppen von `thread_affinity='dc_dach'` auf `'dc_update_1'` umgetaggt** (nur `status='pending'`, Split nach Gruppen-ID-Parität: gerade IDs → dc_update_1). Ergebnis: `dc_dach` 460 Gr./75.290 Spieler · `dc_update_1` 596 Gr./101.080 Spieler. Beide Threads ziehen jetzt parallel aus dem DACH-Bestand → grob **~2× Durchsatz (~8–9 statt ~17 Tage)**. `dc_update_1` beendet per priority zuerst die restlichen Update-Gruppen, wechselt dann automatisch auf DACH. **Kein Profil-Edit / Neustart nötig, voll reversibel** (zurücktaggen). ⚠️ Drei Europa-Threads (dc_uk + dc_dach + dc_update_1) teilen sich nun denselben Proxy-Pool — bei steigenden 429/Timeouts Split zugunsten dc_dach verschieben. |
+| **Gotcha bestätigt: `running`-Status = In-Flight-Lock** | Der Worker markiert `scrape_groups.status='running'` als Lock und schreibt eine `scrape_runs`-Zeile **erst bei Abschluss** (success/failed). Eine `running`-Gruppe **ohne** zugehörigen `running`-Run in `scrape_runs` ist daher **normal**, kein verwaister Lock/Absturz. `last_run_at` = Claim-Zeitpunkt (streut bei parallelen Threads über Stunden). Nicht als „stuck" fehldeuten und zurücksetzen — erst Worker-Log prüfen. |
 
 ---
 

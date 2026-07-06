@@ -133,3 +133,106 @@ def queue_db(queue_dsn, monkeypatch) -> QueueTestDB:
         "TRUNCATE orchestrator.scrape_runs, orchestrator.scrape_groups RESTART IDENTITY CASCADE"
     )
     return db
+
+
+# ── Scrape-Daten-Fixture (Coverage-/Integritäts-Tests) ───────────────────────
+# Minimal-Nachbau der vier public-Tabellen in der Test-DB: nur die Spalten,
+# die coverage.py/integrity.py abfragen, ohne FK-Constraints (Tests müssen
+# gezielt inkonsistente Zustände seeden können).
+
+_DATA_DDL = """
+CREATE TABLE IF NOT EXISTS public.players (
+    fide_id         INTEGER PRIMARY KEY,
+    name            TEXT,
+    federation      CHAR(3),
+    std_rating      INTEGER,
+    active          BOOLEAN DEFAULT TRUE,
+    analysis_group  TEXT
+);
+CREATE TABLE IF NOT EXISTS public.scrape_periods (
+    fide_id         INTEGER NOT NULL,
+    period          DATE NOT NULL,
+    status          TEXT NOT NULL,
+    k_factor        INTEGER,
+    http_status     INTEGER,
+    no_data_reason  TEXT,
+    scraped_at      TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (fide_id, period)
+);
+CREATE TABLE IF NOT EXISTS public.game_results (
+    id                      BIGSERIAL PRIMARY KEY,
+    fide_id                 INTEGER NOT NULL,
+    period                  DATE NOT NULL,
+    game_index              INTEGER,
+    rating_change_weighted  NUMERIC(5,2)
+);
+CREATE TABLE IF NOT EXISTS public.rating_history (
+    fide_id           INTEGER NOT NULL,
+    period            DATE NOT NULL,
+    published_rating  INTEGER,
+    num_games         INTEGER,
+    PRIMARY KEY (fide_id, period)
+);
+"""
+
+
+class DataTestDB(QueueTestDB):
+    """QueueTestDB + Insert-Helper für die Scrape-Daten-Tabellen."""
+
+    def insert_player(self, fide_id: int, **kwargs) -> int:
+        defaults = dict(name=f"Player {fide_id}", federation="GER",
+                        std_rating=2000, active=True, analysis_group=None)
+        defaults.update(kwargs)
+        self.execute(
+            """INSERT INTO public.players
+               (fide_id, name, federation, std_rating, active, analysis_group)
+               VALUES (%(fide_id)s,%(name)s,%(federation)s,%(std_rating)s,
+                       %(active)s,%(analysis_group)s)""",
+            {"fide_id": fide_id, **defaults},
+        )
+        return fide_id
+
+    def insert_period(self, fide_id: int, period: str, **kwargs) -> None:
+        defaults = dict(status="ok", k_factor=20, http_status=None, no_data_reason=None)
+        defaults.update(kwargs)
+        self.execute(
+            """INSERT INTO public.scrape_periods
+               (fide_id, period, status, k_factor, http_status, no_data_reason)
+               VALUES (%(fide_id)s,%(period)s,%(status)s,%(k_factor)s,
+                       %(http_status)s,%(no_data_reason)s)""",
+            {"fide_id": fide_id, "period": period, **defaults},
+        )
+
+    def insert_game(self, fide_id: int, period: str, game_index: int = 1,
+                    rating_change_weighted: float = 2.5) -> None:
+        self.execute(
+            """INSERT INTO public.game_results
+               (fide_id, period, game_index, rating_change_weighted)
+               VALUES (%s,%s,%s,%s)""",
+            (fide_id, period, game_index, rating_change_weighted),
+        )
+
+    def insert_rating(self, fide_id: int, period: str,
+                      published_rating: int = 2000, num_games: int | None = None) -> None:
+        self.execute(
+            """INSERT INTO public.rating_history
+               (fide_id, period, published_rating, num_games)
+               VALUES (%s,%s,%s,%s)""",
+            (fide_id, period, published_rating, num_games),
+        )
+
+
+@pytest.fixture
+def data_db(queue_dsn, monkeypatch) -> DataTestDB:
+    """Leere Queue- UND Scrape-Daten-Tabellen in der Test-DB."""
+    monkeypatch.setenv("DATABASE_URL", queue_dsn)
+    db = DataTestDB(queue_dsn)
+    db.execute(_DATA_DDL)
+    db.execute(
+        "TRUNCATE orchestrator.scrape_runs, orchestrator.scrape_groups RESTART IDENTITY CASCADE"
+    )
+    db.execute(
+        "TRUNCATE public.players, public.scrape_periods, public.game_results, "
+        "public.rating_history RESTART IDENTITY CASCADE"
+    )
+    return db

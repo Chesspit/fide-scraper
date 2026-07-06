@@ -1,23 +1,21 @@
 # Scraping-Status
 
-Stand: 2026-07-04 (Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
+Stand: 2026-07-06 (Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
 Raspberry-Pi-Stand aktualisiert: 2026-06-28, ~18:30 Uhr (Tailscale seitdem nicht erneut abgefragt)
 
 ---
 
-## Gesamtstand DB (Live 2026-07-04, ~20:45 UTC)
+## Gesamtstand DB (Live 2026-07-06)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **9.630.787** |
-| DB-Größe | **~9,55 GB** |
-| Gruppen complete | **107 / 253** (140 pending, 5 partial, 1 skipped) — bezieht sich auf die manuell gepflegten Mac-Mini-Analysegruppen, unabhängig vom neuen P1/P2/P3-System (siehe unten) |
+| Partien gesamt | **9.889.374** |
+| DB-Größe | **9.658 MB** |
+| Gruppen complete | **108 / 253** (140 pending, 5 partial, 1 skipped) — bezieht sich auf die manuell gepflegten Mac-Mini-Analysegruppen, unabhängig vom neuen P1/P2/P3-System (siehe unten) |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ (Vorbehalt: siehe Top-Spieler-Lückenanalyse unten) |
-| Spieler mit ≥ 1 gescrapter Periode | **141.845** (Stand 2026-07-03) |
 | Neueste published_rating-Periode | **2026-07-01** (importiert 2026-07-02, `standard_jul26frl.zip`) |
-| Neueste gescrapte Spiel-Periode | **2026-06-01** (läuft über den P1/P2/P3-Prozess nach, siehe Session-Eintrag 2026-07-03) |
-| P1/P2/P3-Fortschritt | P1 ✅ (2 Batches, 4.189 Spieler) / P2 ✅ (7 Batches, 19.481 Spieler) komplett; P3: **27/40 Batches done + 1 running, 12 pending** (79.703 von 118.066 Spielern, ~68 %), 84.239 neue Partien bisher — deutlicher Sprung seit Aktivierung aller 10 DC-Threads (siehe unten) |
-| VPS-Orchestrator-Queue gesamt | 4.208 done, 20.499 pending, 7 running, **0 failed** (USA/2019-Anomalie am 2026-07-04 abends aufgeklärt, siehe unten) — seit 2026-07-04 in PG (Schema `orchestrator`) |
+| P1/P2/P3-Fortschritt | P1 ✅ (2 Batches) / P2 ✅ (7 Batches) komplett; P3: **39/40 Batches done + 1 running** (114.999 neue Partien bisher, seit dem 04.07. von 27/40 auf 39/40 gestiegen) |
+| VPS-Orchestrator-Queue gesamt | 4.286 done, 20.419 pending, 9 running, **0 failed** — seit 2026-07-04 in PG (Schema `orchestrator`) |
 
 ---
 
@@ -210,19 +208,19 @@ ssh pit1@100.125.193.29 "cd ~/fide-scraper && source .venv/bin/activate && kill 
 
 Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DESC / ELO DESC
 
-Stand 2026-07-04 abends, alle Threads aktiv:
+Stand 2026-07-06, alle Threads aktiv:
 
 | DC-Thread | Gruppen done | Gruppen pending | Jahresbereich |
 |-----------|-------------:|----------------:|---------------|
-| DC-DE | 330 | ~1.605 | 2009–2026 |
-| DC-IN | 418 | ~1.928 | 2009–2026 |
-| DC-UK | 318 | ~1.041 | 2009–2026 |
-| DC-US | 282 | ~408 | 2009–2026 |
-| DC-HK | 221 | ~322 | 2009–2026 |
-| DC-ES | 331 | ~2.457 | 2009–2026 |
-| DC-MX | 303 | ~2.654 | 2009–2026 |
-| DC-AE | 350 | ~1.111 | 2009–2026 |
-| DC-DACH | 330 | ~1.067 | 2009–2026 |
+| DC-DE | 334 | ~1.600 | 2009–2026 |
+| DC-IN | 426 | ~1.919 | 2009–2026 |
+| DC-UK | 328 | ~1.031 | 2009–2026 |
+| DC-US | 288 | ~402 | 2009–2026 |
+| DC-HK | 227 | ~316 | 2009–2026 |
+| DC-ES | 336 | ~2.451 | 2009–2026 |
+| DC-MX | 308 | ~2.650 | 2009–2026 |
+| DC-AE | 362 | ~1.099 | 2009–2026 |
+| DC-DACH | 340 | ~1.057 | 2009–2026 |
 
 ---
 

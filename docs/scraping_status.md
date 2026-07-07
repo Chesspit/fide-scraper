@@ -1,21 +1,21 @@
 # Scraping-Status
 
-Stand: 2026-07-06 (Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
+Stand: 2026-07-07 (Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
 Raspberry-Pi-Stand aktualisiert: 2026-06-28, ~18:30 Uhr (Tailscale seitdem nicht erneut abgefragt)
 
 ---
 
-## Gesamtstand DB (Live 2026-07-06)
+## Gesamtstand DB (Live 2026-07-07)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **9.889.374** |
-| DB-Größe | **9.658 MB** |
+| Partien gesamt | **9.972.029** (+82.655 seit 06.07.; Tageszuwachs zuletzt: 179 Tsd. am 05.07., 119 Tsd. am 06.07.) |
+| DB-Größe | **9.694 MB** |
 | Gruppen complete | **108 / 253** (140 pending, 5 partial, 1 skipped) — bezieht sich auf die manuell gepflegten Mac-Mini-Analysegruppen, unabhängig vom neuen P1/P2/P3-System (siehe unten) |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ (Vorbehalt: siehe Top-Spieler-Lückenanalyse unten) |
 | Neueste published_rating-Periode | **2026-07-01** (importiert 2026-07-02, `standard_jul26frl.zip`) |
-| P1/P2/P3-Fortschritt | P1 ✅ (2 Batches) / P2 ✅ (7 Batches) komplett; P3: **39/40 Batches done + 1 running** (114.999 neue Partien bisher, seit dem 04.07. von 27/40 auf 39/40 gestiegen) |
-| VPS-Orchestrator-Queue gesamt | 4.286 done, 20.419 pending, 9 running, **0 failed** — seit 2026-07-04 in PG (Schema `orchestrator`) |
+| P1/P2/P3-Fortschritt | **Erster Juli-Durchlauf ✅ komplett** (letzter P3-Batch am 06.07. 16:35 gestartet, 22:04 fertig, +4.745 Partien); Zyklus am 06.07. ~16:30 zurückgesetzt (`last_run` genullt) — **zweiter Durchlauf: P1 ✅ 2/2, P2 6/7, P3 1/40** (P1/P2-Batches liefen mit 0 neuen Partien sofort durch) |
+| VPS-Orchestrator-Queue gesamt | 4.273 done, 20.432 pending, 9 running, **0 failed** — seit 2026-07-04 in PG (Schema `orchestrator`); done-Rückgang ggü. 06.07. (4.286→4.273) = P1/P2/P3-Reset |
 
 ---
 
@@ -133,19 +133,19 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 | DC-DACH (Slot 107) | Datacenter | semi_conservative | GER, SUI, AUT (Vollbackfill) | Europe/Berlin | ✅ aktiv |
 | DC-UPDATE-1 (Slot 108) | Datacenter | semi_conservative | alle (P1/P2/P3-Monatsrefresh, `update_only=1`) | Europe/Berlin | ✅ aktiv |
 
-**DC-UPDATE-1 ersetzt seit 2026-07-02 den alten `dc_update`-Thread** — siehe Session-Änderungen unten. Läuft aktuell die 40 P3-Batches ab (P1+P2 bereits fertig).
+**DC-UPDATE-1 ersetzt seit 2026-07-02 den alten `dc_update`-Thread** — siehe Session-Änderungen unten. Seit 06./07.07. zusätzlich mit ~594 DACH-Backfill-Gruppen bestückt (von dc_dach umgehängt).
 
-### P1/P2/P3-Monatsrefresh — Fortschritt (Stand 2026-07-04, abends)
+### P1/P2/P3-Monatsrefresh — Fortschritt (Stand 2026-07-07)
 
 Ersetzt die alten 4 UP-Jobs (lokal, Mac Mini) + föderationsbasierte `dc_update`-Rest-Batches durch drei geschlechtsunabhängige Prioritätsstufen, komplett auf dem VPS (siehe `orchestrator/monthly_refresh_tiers.py`):
 
 | Tier | Filter | Spieler | Batches | Status |
 |---|---|---:|---:|---|
-| P1 | ELO ≥ 2300, alle Föderationen | 4.189 | 2 | ✅ komplett fertig |
-| P2 | GER/SUI/AUT, ELO < 2300 | 19.481 | 7 | ✅ komplett fertig |
-| P3 | Rest (alle übrigen ≥1×gescrapten Spieler) | 118.066 | 40 | 🔄 **27/40 fertig, 1 läuft, 12 pending** (84.239 neue Partien bisher) |
+| P1 | ELO ≥ 2300, alle Föderationen | 4.189 | 2 | ✅ 1. Durchlauf fertig; 2. Durchlauf ✅ 2/2 (0 neue Partien) |
+| P2 | GER/SUI/AUT, ELO < 2300 | 19.481 | 7 | ✅ 1. Durchlauf fertig; 2. Durchlauf 🔄 6/7 (0 neue Partien) |
+| P3 | Rest (alle übrigen ≥1×gescrapten Spieler) | 118.066 | 40 | ✅ **1. Durchlauf komplett 06.07.** (~116 Tsd. neue Partien); 2. Durchlauf 🔄 1/40 (+4.745) |
 
-P1 und P2 waren größtenteils bereits durch den Mac-Mini-Ad-hoc-Lauf bzw. den laufenden DC-DACH-Vollbackfill abgedeckt und liefen daher sehr schnell durch. P3 hat seit der Aktivierung aller 10 DC-Threads (2026-07-04 ~12:20) nochmal deutlich an Tempo zugelegt — von 19/40 morgens auf 27/40 abends. Bei Bedarf per zweitem `dc_update_2`-Thread weiter beschleunigbar (siehe `monthly_refresh_tiers.DC_UPDATE_POOL`).
+**Erster Juli-Durchlauf am 06.07. abgeschlossen** (letzter P3-Batch 16:35–22:04 Uhr). Der Zyklus wurde am 06.07. ~16:30 zurückgesetzt (`last_run_at` genullt, `records_found` der pending-Batches blieb erhalten); der zweite Durchlauf läuft seither nebenher — P1/P2 gingen mangels neuer Daten in Minuten durch. Bei Bedarf per zweitem `dc_update_2`-Thread beschleunigbar (siehe `monthly_refresh_tiers.DC_UPDATE_POOL`).
 
 ---
 
@@ -208,19 +208,22 @@ ssh pit1@100.125.193.29 "cd ~/fide-scraper && source .venv/bin/activate && kill 
 
 Jeder DC-Thread hat eigenen Pool (`thread_affinity`), Prio: 2026→2009, Jahr DESC / ELO DESC
 
-Stand 2026-07-06, alle Threads aktiv:
+Stand 2026-07-07, alle Threads aktiv:
 
 | DC-Thread | Gruppen done | Gruppen pending | Jahresbereich |
 |-----------|-------------:|----------------:|---------------|
-| DC-DE | 334 | ~1.600 | 2009–2026 |
-| DC-IN | 426 | ~1.919 | 2009–2026 |
-| DC-UK | 328 | ~1.031 | 2009–2026 |
-| DC-US | 288 | ~402 | 2009–2026 |
-| DC-HK | 227 | ~316 | 2009–2026 |
-| DC-ES | 336 | ~2.451 | 2009–2026 |
-| DC-MX | 308 | ~2.650 | 2009–2026 |
-| DC-AE | 362 | ~1.099 | 2009–2026 |
-| DC-DACH | 340 | ~1.057 | 2009–2026 |
+| DC-DE | 336 | ~1.598 | 2009–2026 |
+| DC-IN | 429 | ~1.916 | 2009–2026 |
+| DC-UK | 332 | ~1.027 | 2009–2026 |
+| DC-US | 291 | ~399 | 2009–2026 |
+| DC-HK | 229 | ~314 | 2009–2026 |
+| DC-ES | 337 | ~2.450 | 2009–2026 |
+| DC-MX | 309 | ~2.649 | 2009–2026 |
+| DC-AE | 368 | ~1.093 | 2009–2026 |
+| DC-DACH | 344 | ~457 | 2009–2026 |
+| DC-UPDATE-1 | 1 | ~594 | 2009–2026 (Backfill-Anteil) |
+
+**Umverteilung 06./07.07.:** ~594 DACH-Backfill-Gruppen (`update_only=0`) wurden von `dc_dach` auf `dc_update_1` umgehängt (dc_dach pending: ~1.057 → ~457) — DC-UPDATE-1 arbeitet zwischen den Refresh-Zyklen jetzt am DACH-Vollbackfill mit (aktuell AUT/2017).
 
 ---
 

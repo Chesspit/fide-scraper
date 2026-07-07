@@ -47,8 +47,13 @@ _SCHEMA_SQL = f"""
         profile         TEXT,
         thread_affinity TEXT,
         update_only     INTEGER NOT NULL DEFAULT 0,
+        claimed_by      TEXT,
         UNIQUE (federation, year, elo_min)
     );
+
+    -- Phase B (Multi-Device): nachrüstbar auf Bestandsinstallationen,
+    -- CREATE TABLE IF NOT EXISTS ändert existierende Tabellen nicht.
+    ALTER TABLE {SCHEMA}.scrape_groups ADD COLUMN IF NOT EXISTS claimed_by TEXT;
 
     CREATE INDEX IF NOT EXISTS idx_groups_status_priority
         ON {SCHEMA}.scrape_groups (status, priority);

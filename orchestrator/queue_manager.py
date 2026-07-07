@@ -14,7 +14,9 @@ Bei Verbindungsabrissen (Tunnel-Drop, PG-Neustart) wird transparent neu
 verbunden — Retry-Parameter in setup_db.connect().
 """
 
+import os
 import random
+import socket
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -23,6 +25,17 @@ import psycopg2
 import psycopg2.extras
 
 from orchestrator.setup_db import connect
+
+
+def get_device_id() -> str:
+    """Stabile Identität dieses Workers für claimed_by (Phase B, Multi-Device).
+
+    WORKER_DEVICE_ID explizit setzen, wo der Hostname nicht stabil ist —
+    Docker-Container bekommen bei jedem Recreate einen neuen Hash-Hostnamen,
+    womit reset_stale_running() die eigenen Leichen nicht mehr fände
+    (VPS-Compose setzt deshalb WORKER_DEVICE_ID=vps).
+    """
+    return os.getenv("WORKER_DEVICE_ID") or socket.gethostname()
 
 # Breite des Prioritäts-Fensters für die Gruppen-Auswahl.
 #
@@ -63,9 +76,10 @@ class Group:
 
 
 class QueueManager:
-    def __init__(self, dsn: str | None = None):
+    def __init__(self, dsn: str | None = None, device_id: str | None = None):
         self._dsn = dsn
         self._conn = None
+        self._device_id = device_id or get_device_id()
 
     def _connect(self):
         if self._conn is None or self._conn.closed:
@@ -174,10 +188,14 @@ class QueueManager:
         weights = [max(1, r["player_count"]) for r in candidates]
         chosen = random.choices(candidates, weights=weights, k=1)[0]
 
-        # Atomic claim: only succeeds if status is still 'pending'
+        # Atomic claim: only succeeds if status is still 'pending'.
+        # claimed_by = dieses Gerät — reset_stale_running() räumt nur eigene
+        # Claims weg, damit mehrere Geräte dieselbe Queue teilen können.
         cur = self._execute(
-            "UPDATE scrape_groups SET status='running', last_run_at=%s WHERE id=%s AND status='pending'",
-            (_now(), chosen["id"]),
+            """UPDATE scrape_groups
+               SET status='running', last_run_at=%s, claimed_by=%s
+               WHERE id=%s AND status='pending'""",
+            (_now(), self._device_id, chosen["id"]),
         )
 
         if cur.rowcount == 0:
@@ -317,17 +335,20 @@ class QueueManager:
     # ------------------------------------------------------------------
 
     def reset_stale_running(self) -> int:
-        """Reset any 'running' groups to 'pending' (called on worker startup).
+        """Reset own stale 'running' groups to 'pending' (called on worker startup).
 
-        ACHTUNG (seit der PG-Migration): die Queue ist jetzt geräteübergreifend
-        geteilt. Solange nur der VPS-Worker sie nutzt (Stand 2026-07), ist der
-        globale Reset korrekt. Sobald ein zweites Gerät (Mac Mini/Pi) als
-        Orchestrator-Worker andockt, würde dessen Start hier die laufenden
-        Gruppen des VPS zurücksetzen — dann braucht der Claim eine
-        claimed_by-Spalte und dieser Reset einen Geräte-Scope.
+        Geräte-Scope (Phase B): jedes Gerät räumt nur die Gruppen weg, die es
+        selbst geclaimt hat — mehrere Worker (VPS, Pi, Mac Mini) können damit
+        dieselbe Queue teilen, ohne sich beim Start gegenseitig die laufenden
+        Gruppen zurückzusetzen. claimed_by IS NULL wird mit abgeräumt: solche
+        Zeilen stammen aus Claims von vor dem Phase-B-Patch (Übergang) — nach
+        dem ersten Neustart aller Worker existieren sie nicht mehr.
         """
         cur = self._execute(
-            "UPDATE scrape_groups SET status='pending' WHERE status='running'"
+            """UPDATE scrape_groups SET status='pending'
+               WHERE status='running'
+                 AND (claimed_by = %s OR claimed_by IS NULL)""",
+            (self._device_id,),
         )
         return cur.rowcount
 

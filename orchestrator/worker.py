@@ -41,7 +41,7 @@ from orchestrator.state_io import (
 from orchestrator.monthly_refresh_tiers import TIER_FILTERS
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.proxy_manager import ProxyManager
-from orchestrator.queue_manager import AUTO_RETRY_MAX, Group, QueueManager
+from orchestrator.queue_manager import AUTO_RETRY_MAX, Group, QueueManager, get_device_id
 from scraper.db import (
     ensure_connection,
     get_connection,
@@ -732,8 +732,9 @@ def _run_parallel_loop(
     device        = os.getenv("WORKER_DEVICE")
     max_w         = len(active_slots)
 
-    # Reset stale groups from previous run
+    # Reset stale groups from previous run (nur eigene Claims, siehe claimed_by)
     qm_main = QueueManager()
+    logger.info("Queue-Identität: claimed_by='%s'", get_device_id())
     reset_count = qm_main.reset_stale_running()
     if reset_count:
         logger.info("Startup: %d unterbrochene running-Gruppen → pending zurückgesetzt", reset_count)
@@ -998,7 +999,8 @@ def _run_single_loop(
     qm = QueueManager()
     device = os.getenv("WORKER_DEVICE")
 
-    # Beim Start: unterbrochene 'running'-Gruppen zurücksetzen (Worker-Neustart nach Crash/Redeploy)
+    # Beim Start: eigene unterbrochene 'running'-Gruppen zurücksetzen (Worker-Neustart nach Crash/Redeploy)
+    logger.info("Queue-Identität: claimed_by='%s'", get_device_id())
     reset_count = qm.reset_stale_running()
     if reset_count:
         logger.info("Startup: %d unterbrochene running-Gruppen → pending zurückgesetzt", reset_count)

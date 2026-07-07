@@ -2,7 +2,12 @@
 
 import pytest
 
-from orchestrator.queue_manager import AUTO_RETRY_MAX, QueueManager, TIER_WIDTH
+from orchestrator.queue_manager import (
+    AUTO_RETRY_MAX,
+    QueueManager,
+    TIER_WIDTH,
+    get_device_id,
+)
 
 
 @pytest.fixture
@@ -185,6 +190,58 @@ class TestCountsAndStats:
         queue_db.insert_group(status="done", federation="AUT")
         assert qm.reset_stale_running() == 2
         assert qm.pending_count() == 2
+
+
+# ---------------------------------------------------------------------------
+# Multi-Device: claimed_by (Redesign Phase B)
+# ---------------------------------------------------------------------------
+
+class TestClaimedBy:
+    def test_claim_writes_device_id(self, queue_db):
+        gid = queue_db.insert_group()
+        qm = QueueManager(dsn=queue_db.dsn, device_id="vps")
+        try:
+            assert qm.get_next_group().id == gid
+        finally:
+            qm.close()
+        row = queue_db.fetchone(
+            "SELECT claimed_by FROM orchestrator.scrape_groups WHERE id=%s", (gid,))
+        assert row[0] == "vps"
+
+    def test_reset_only_touches_own_claims(self, queue_db):
+        own = queue_db.insert_group(status="running", claimed_by="vps")
+        foreign = queue_db.insert_group(
+            status="running", claimed_by="raspi", federation="SUI")
+        qm = QueueManager(dsn=queue_db.dsn, device_id="vps")
+        try:
+            assert qm.reset_stale_running() == 1
+        finally:
+            qm.close()
+        assert queue_db.fetchone(
+            "SELECT status FROM orchestrator.scrape_groups WHERE id=%s", (own,))[0] == "pending"
+        assert queue_db.fetchone(
+            "SELECT status FROM orchestrator.scrape_groups WHERE id=%s", (foreign,))[0] == "running"
+
+    def test_reset_includes_pre_patch_null_claims(self, queue_db):
+        # Übergang: running-Zeilen aus Claims vor dem Phase-B-Patch (claimed_by NULL)
+        gid = queue_db.insert_group(status="running", claimed_by=None)
+        qm = QueueManager(dsn=queue_db.dsn, device_id="vps")
+        try:
+            assert qm.reset_stale_running() == 1
+        finally:
+            qm.close()
+        assert queue_db.fetchone(
+            "SELECT status FROM orchestrator.scrape_groups WHERE id=%s", (gid,))[0] == "pending"
+
+    def test_device_id_from_env(self, monkeypatch):
+        monkeypatch.setenv("WORKER_DEVICE_ID", "testgeraet")
+        assert get_device_id() == "testgeraet"
+        assert QueueManager()._device_id == "testgeraet"
+
+    def test_device_id_falls_back_to_hostname(self, monkeypatch):
+        import socket
+        monkeypatch.delenv("WORKER_DEVICE_ID", raising=False)
+        assert get_device_id() == socket.gethostname()
 
 
 # ---------------------------------------------------------------------------

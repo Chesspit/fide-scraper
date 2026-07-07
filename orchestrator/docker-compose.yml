@@ -94,6 +94,10 @@ services:
       # fetchen, sondern erneut über den Pool (siehe worker.py::_direct_fallback_on_429)
       DIRECT_FALLBACK_ON_429: "false"
       WORKER_DEVICE: ${WORKER_DEVICE:-}
+      # Stabile claimed_by-Identität für die geteilte PG-Queue (Phase B):
+      # Container-Hostnamen wechseln bei jedem Recreate, damit fände
+      # reset_stale_running() die eigenen unterbrochenen Gruppen nicht mehr.
+      WORKER_DEVICE_ID: ${WORKER_DEVICE_ID:-vps}
     volumes:
       - orchestrator_data:/data
       - ../config.yaml:/app/config.yaml:ro

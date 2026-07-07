@@ -72,7 +72,7 @@ Danach kann der Pi direkt gegen die PG-Queue claimen (SSH-Tunnel existiert berei
 | Phase | Inhalt | Status |
 |---|---|---|
 | **A** | Integritätsprüfung (Ziel 3) + Coverage-Reporting (Ziel 2) als testbare Module + CLIs | ✅ dieser Branch |
-| **B** | `claimed_by`-Patch (§2.3) → danach Pi direkt an PG-Queue | Vorschlag, ~2–3 h |
+| **B** | `claimed_by`-Patch (§2.3) → danach Pi direkt an PG-Queue | ✅ umgesetzt 2026-07-07 (Migration 014, `WORKER_DEVICE_ID`, 5 neue Tests); Pi-Anbindung steht noch aus (nur via Tailscale vom MacBook Pro erreichbar) |
 | **C** | Perioden-Retry-Semantik: `blocked_error_rows`-Findings altersbasiert löschen/requeuen — entweder Cleanup-Lauf auf Basis der Integritätsprüfung (sofort möglich, manuell) oder `get_pending_periods()` um „error älter als N Tage gilt als unversucht“ erweitern | Vorschlag |
 | **D** | Optional: evidenzbasiertes `mark_done` (Soll-Kombo-Zählung vor done, = Check 4 inline), Dashboard-Tab auf Basis von coverage.py, Bulk-Prioritäts-CLI, Rate-Limiter-Vereinheitlichung | Vorschlag, nach Bedarf |
 

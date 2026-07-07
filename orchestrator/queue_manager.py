@@ -125,8 +125,12 @@ class QueueManager:
         claimed it first (0 rows updated), we retry transparently up to 5 times.
 
         Args:
-            device: If set, only picks groups assigned to this device OR unassigned
-                    (device IS NULL). If None, picks any pending group.
+            device: If set (e.g. 'raspi'), only picks groups assigned to exactly
+                    this device. If None, only picks unassigned groups (device IS
+                    NULL). Exklusiv in beide Richtungen (Phase B): auf der geteilten
+                    PG-Queue überlappen sich die Prioritätsbänder der Geräte-Pools —
+                    das frühere "OR device IS NULL" hätte den Pi die Residential-
+                    Queue des VPS claimen lassen (und umgekehrt).
             dc_affinity: If set (e.g. 'dc_in'), only picks groups with that exact
                          thread_affinity. If None (residential/default mode), only
                          picks groups where thread_affinity IS NULL (avoids DC pool).
@@ -153,10 +157,10 @@ class QueueManager:
             affinity_params = ()
 
         if device:
-            device_filter = "AND (device IS NULL OR device = %s)"
+            device_filter = "AND device = %s"
             device_params: tuple = (device,)
         else:
-            device_filter = ""
+            device_filter = "AND device IS NULL"
             device_params = ()
 
         all_params = affinity_params + device_params

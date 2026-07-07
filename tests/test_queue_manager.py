@@ -60,6 +60,19 @@ class TestGetNextGroup:
         group = qm.get_next_group()
         assert group is not None
 
+    def test_device_pools_are_exclusive(self, qm, queue_db):
+        # Geräte-Pools exklusiv (Phase B): Prioritätsbänder überlappen sich,
+        # deshalb darf weder der VPS raspi-Gruppen claimen noch umgekehrt.
+        pi_id = queue_db.insert_group(device="raspi", priority=1)
+        vps_id = queue_db.insert_group(device=None, priority=2, federation="SUI")
+        group = qm.get_next_group(device="raspi")
+        assert group.id == pi_id
+        # raspi-Worker sieht danach nichts mehr — die NULL-Gruppe gehört ihm nicht
+        assert qm.get_next_group(device="raspi") is None
+        # Worker ohne device sieht nur die unassignte Gruppe
+        group2 = qm.get_next_group()
+        assert group2.id == vps_id
+
     def test_dc_affinity_filter(self, qm, queue_db):
         queue_db.insert_group(federation="GER")  # residential
         dc_id = queue_db.insert_group(federation="IND", elo_min=1500)

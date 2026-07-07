@@ -76,16 +76,17 @@ class QueueTestDB:
             elo_min=1400, elo_max=1799, player_count=150,
             status="pending", priority=1000,
             retries=0, last_run_at=None, update_only=0, claimed_by=None,
+            device=None,
         )
         defaults.update(kwargs)
         row = self.fetchone(
             """INSERT INTO orchestrator.scrape_groups
                (federation, continent, year, elo_min, elo_max,
                 player_count, status, priority, retries, last_run_at, update_only,
-                claimed_by)
+                claimed_by, device)
                VALUES (%(federation)s,%(continent)s,%(year)s,%(elo_min)s,%(elo_max)s,
                        %(player_count)s,%(status)s,%(priority)s,%(retries)s,%(last_run_at)s,
-                       %(update_only)s,%(claimed_by)s)
+                       %(update_only)s,%(claimed_by)s,%(device)s)
                RETURNING id""",
             defaults,
         )

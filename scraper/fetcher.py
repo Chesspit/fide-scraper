@@ -9,8 +9,10 @@ from scraper.config import config
 
 logger = logging.getLogger(__name__)
 
+# Seit dem FIDE-Umbau 2026-07-14 heißt der Endpoint a_indv_calculation.php (Singular);
+# die alte Plural-URL liefert HTTP 200 mit leerem Body, keinen 404.
 AJAX_URL = (
-    "https://ratings.fide.com/a_indv_calculations.php"
+    "https://ratings.fide.com/a_indv_calculation.php"
     "?id_number={fide_id}&rating_period={period}&t=0"
 )
 

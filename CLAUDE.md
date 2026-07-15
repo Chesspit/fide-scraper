@@ -48,8 +48,9 @@ fide-scraper/
 
 **AJAX-Endpoint** (nicht die `.phtml`-Seite!):
 ```
-https://ratings.fide.com/a_indv_calculations.php?id_number={fide_id}&rating_period={YYYY-MM-01}&t=0
+https://ratings.fide.com/a_indv_calculation.php?id_number={fide_id}&rating_period={YYYY-MM-01}&t=0
 ```
+Seit FIDE-Umbau 2026-07-14 Singular (`calculation`); die alte Plural-URL liefert HTTP 200 mit **leerem Body** (kein 404). Pflicht-Header: `X-Requested-With: XMLHttpRequest`. Echte leere Perioden liefern den Text „No records found …".
 
 Gültige Perioden: ab **2008-04-01**; monatlich erst ab **2012-08-01** (davor quartalsweise).
 `db.py::is_valid_fide_period()` filtert strukturell leere Perioden automatisch.

@@ -102,6 +102,54 @@ class TestParseCalculations:
         assert tabermakova[0]["opponent_rating"] == 2108
 
 
+class TestParseCalculationsNewEndpoint:
+    """Tests gegen calc_1503014_2026-06-01.html (Carlsen, Juni 2026).
+
+    Antwort des umbenannten Endpoints a_indv_calculation.php (FIDE-Umbau 2026-07-14):
+    gleiches Tabellenformat, aber via neuem Endpoint geliefert — Fixture sichert ab,
+    dass der Parser mit dem neuen Seitenskelett kompatibel bleibt.
+    """
+
+    def setup_method(self):
+        html = load_fixture("calc_1503014_2026-06-01.html")
+        self.games, self.k_factor, self.own_rating = parse_calculations(
+            html, 1503014, "2026-06-01"
+        )
+
+    def test_game_count(self):
+        assert len(self.games) == 7
+
+    def test_k_factor_and_own_rating(self):
+        assert self.k_factor == 10
+        assert self.own_rating == 2840
+
+    def test_first_game(self):
+        g = self.games[0]
+        assert g["opponent_name"] == "Erigaisi, Arjun"
+        assert g["opponent_title"] == "g"
+        assert g["opponent_rating"] == 2751
+        assert g["opponent_federation"] == "IND"
+        assert g["result"] == "0.5"
+        assert g["color"] == "W"
+        assert g["rating_change"] == -0.12
+        assert g["rating_change_weighted"] == -1.2
+
+    def test_women_title(self):
+        zhu = [g for g in self.games if "Zhu, Jiner" in (g["opponent_name"] or "")]
+        assert len(zhu) == 1
+        assert zhu[0]["opponent_women_title"] == "wg"
+        assert zhu[0]["result"] == "1"
+
+    def test_tournament_metadata(self):
+        from datetime import date
+
+        g = self.games[0]
+        assert g["tournament_name"] == "TePe Sigeman 2026"
+        assert g["tournament_location"] == "Malmo SWE"
+        assert g["tournament_start_date"] == date(2026, 5, 1)
+        assert g["tournament_end_date"] == date(2026, 5, 7)
+
+
 class TestEmptyInput:
     def test_empty_string(self):
         games, k, rating = parse_calculations("", 12345, "2025-01-01")

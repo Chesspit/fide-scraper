@@ -537,6 +537,22 @@ https://scelo.chesspit.net   (BasicAuth: peter / persönliches PW)
 | Atomische State-Writes | `worker_state.json` via `.tmp`-Rename (kein Truncation-Window bei Neustarts) |
 | Startup-Grace | DC-Threads warten 1 s bei leerem State-File — verhindert Sofort-Stopp nach Neustart |
 
+### 7.7 Vorfall 2026-07-14: FIDE-Endpoint-Umbenennung
+
+FIDE hat am 14.07.2026 ~08:12 UTC die Ratings-Seite umgebaut: `a_indv_calculations.php`
+→ **`a_indv_calculation.php`** (Singular). Die alte URL lieferte HTTP 200 mit leerem Body
+(kein 404!), der Worker wertete das als `no_data` und lief ~33 h „erfolgreich" weiter:
+~64k falsche `no_data`-Zeilen in `scrape_periods`, ~70 Gruppen fälschlich `done`
+(„Fertig — 0 Partien").
+
+Behoben 2026-07-15: URL-Fix in `scraper/fetcher.py` (Parameter/Format unverändert,
+Parser kompatibel — neues Fixture `calc_1503014_2026-06-01.html`); falsche `no_data`
+gelöscht (Abgrenzung zu legitimen Pre-Filter-Skips via `rating_history.num_games`),
+Gruppen requeued. Neuer Guard in `worker.py::_fetch`: leere 200er zählen als
+Fetch-Fehler (Circuit-Breaker), echte leere Perioden liefern seit dem Umbau den Text
+„No records found". Zusätzlich Format-Frühwarnung, wenn ein Body weder `calc_table`
+noch „No records found" enthält.
+
 ---
 
 ## 8. Spieler-Steckbrief (neu, 2026-05-11)

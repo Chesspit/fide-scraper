@@ -301,6 +301,30 @@ def _fetch(
                 return None, retry_after
 
             resp.raise_for_status()
+
+            if not resp.text.strip():
+                # Leerer 200er ist immer anomal: echte leere Perioden liefern seit dem
+                # FIDE-Umbau 2026-07 den Text "No records found ...". Ein leerer Body
+                # heißt Endpoint tot/umbenannt (so am 14.07.2026 passiert) — als
+                # Fehlschlag werten, damit der Circuit-Breaker im Aufrufer greift,
+                # statt massenhaft falsche no_data zu schreiben.
+                if attempt == max_retries:
+                    logger.error("Leere 200-Antwort für fide_id=%s period=%s nach %d Versuchen "
+                                 "— FIDE-Endpoint defekt/umbenannt? Als Fehlschlag gewertet",
+                                 fide_id, period_str, max_retries)
+                    return None, 0
+                backoff = 4 ** (attempt - 1)
+                logger.warning("Leere 200-Antwort fide_id=%s period=%s (attempt %d/%d) proxy=%s "
+                               "— retrying in %ds", fide_id, period_str, attempt, max_retries,
+                               _proxy_label(proxies), backoff)
+                time.sleep(backoff)
+                continue
+
+            if "calc_table" not in resp.text and "No records found" not in resp.text:
+                logger.warning("Unerwartetes Antwortformat fide_id=%s period=%s (%d Bytes): weder "
+                               "calc_table noch 'No records found' im Body — Format-Änderung bei FIDE?",
+                               fide_id, period_str, len(resp.content))
+
             return resp.text, len(resp.content)
 
         except BlockedError:

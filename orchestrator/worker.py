@@ -302,12 +302,15 @@ def _fetch(
 
             resp.raise_for_status()
 
-            if not resp.text.strip():
+            # U+FEFF (BOM) ist kein str.strip()-Whitespace: getarpittete IPs bekommen
+            # von FIDE BOM-only-Antworten (3 Bytes), die sonst als "nicht leer"
+            # durchrutschen würden.
+            if not resp.text.replace("\ufeff", "").strip():
                 # Leerer 200er ist immer anomal: echte leere Perioden liefern seit dem
                 # FIDE-Umbau 2026-07 den Text "No records found ...". Ein leerer Body
-                # heißt Endpoint tot/umbenannt (so am 14.07.2026 passiert) — als
-                # Fehlschlag werten, damit der Circuit-Breaker im Aufrufer greift,
-                # statt massenhaft falsche no_data zu schreiben.
+                # heißt Endpoint tot/umbenannt (so am 14.07.2026) oder getarpittete
+                # Proxy-IP — als Fehlschlag werten, damit der Circuit-Breaker im
+                # Aufrufer greift, statt massenhaft falsche no_data zu schreiben.
                 if attempt == max_retries:
                     logger.error("Leere 200-Antwort für fide_id=%s period=%s nach %d Versuchen "
                                  "— FIDE-Endpoint defekt/umbenannt? Als Fehlschlag gewertet",

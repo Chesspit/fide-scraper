@@ -21,7 +21,8 @@
 set -euo pipefail
 
 BACKUP_DIR="/home/pit/backups/fide-scraper"
-RETENTION_DAYS_PG=7        # fidedb-Dumps sind groß — 7 Tage reichen
+KEEP_DUMPS=3               # fidedb-Dumps sind groß (~900 MB) — nur die letzten 3
+                           # behalten; Langzeit-Historie liegt offsite (Mac-Mini-Pull)
 LOG="${BACKUP_DIR}/backup.log"
 
 mkdir -p "$BACKUP_DIR"
@@ -46,7 +47,7 @@ else
     exit 1
 fi
 
-# ── Rotation ─────────────────────────────────────────────────────────────
-find "$BACKUP_DIR" -name 'fidedb_*.dump'  -mtime +"$RETENTION_DAYS_PG"     -delete
+# ── Rotation: exakt die neuesten KEEP_DUMPS Dumps behalten ────────────────
+ls -1t "$BACKUP_DIR"/fidedb_*.dump 2>/dev/null | tail -n +$((KEEP_DUMPS + 1)) | xargs -r rm -f
 # Alte scraper.db-Sicherungen (vor Review #5) laufen über die Zeit aus:
 find "$BACKUP_DIR" -name 'scraperdb_*.db' -mtime +30 -delete

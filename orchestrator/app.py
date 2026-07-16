@@ -21,7 +21,7 @@ import plotly.graph_objects as go
 from dash import Input, Output, State, callback_context, dash_table, dcc, html
 
 from orchestrator import runtime_settings, state_io, store
-from orchestrator.fide_iso import fide_to_iso3
+from orchestrator.fide_iso import fide_to_iso3, SOUTH_AMERICA_FEDS
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.state_io import read_worker_state
 from orchestrator.store import (
@@ -563,21 +563,29 @@ tab_overview = dbc.Container(fluid=True, children=[
 # ---------------------------------------------------------------------------
 # Kontinent-Werte wie in scrape_groups.continent; GLOBAL/Other (P1–P3-Update-
 # Batches, FID/NON) sind nicht landgebunden und bleiben von der Karte fern.
-_MAP_CONTINENTS = ["Welt", "Europe", "Asia", "Americas", "Africa", "Oceania"]
+# "Americas" ist in der Queue EIN Kontinent — die Karte teilt ihn rein
+# darstellerisch in Nord (inkl. Mittelamerika/Karibik) und Süd
+# (SOUTH_AMERICA_FEDS in fide_iso.py).
+_MAP_CONTINENTS = ["Welt", "Europe", "Asia", "Americas-N", "Americas-S",
+                   "Africa", "Oceania"]
 _MAP_LABELS = {
     "Welt": "Welt", "Europe": "Europa", "Asia": "Asien",
-    "Americas": "Amerika", "Africa": "Afrika", "Oceania": "Ozeanien",
+    "Americas-N": "Nordamerika", "Americas-S": "Südamerika",
+    "Africa": "Afrika", "Oceania": "Ozeanien",
 }
-# plotly kennt keine Scopes für "Amerika gesamt" und Ozeanien → manuelle Ranges.
+# plotly kennt keine Scopes für Nord/Süd-Amerika-Split mit Mittelamerika/
+# Karibik und Ozeanien → manuelle Ranges.
 _MAP_GEO = {
-    "Welt":     dict(projection_type="natural earth"),
-    "Europe":   dict(scope="europe"),
-    "Asia":     dict(scope="asia"),
-    "Africa":   dict(scope="africa"),
-    "Americas": dict(projection_type="natural earth",
-                     lonaxis_range=[-170, -30], lataxis_range=[-58, 75]),
-    "Oceania":  dict(projection_type="natural earth",
-                     lonaxis_range=[110, 185], lataxis_range=[-50, 22]),
+    "Welt":       dict(projection_type="natural earth"),
+    "Europe":     dict(scope="europe"),
+    "Asia":       dict(scope="asia"),
+    "Africa":     dict(scope="africa"),
+    "Americas-N": dict(projection_type="natural earth",
+                       lonaxis_range=[-170, -50], lataxis_range=[5, 75]),
+    "Americas-S": dict(projection_type="natural earth",
+                       lonaxis_range=[-85, -30], lataxis_range=[-58, 14]),
+    "Oceania":    dict(projection_type="natural earth",
+                       lonaxis_range=[110, 185], lataxis_range=[-50, 22]),
 }
 # Fortschritt 0→100 %: weiß → done-Grün
 _MAP_COLORSCALE = [
@@ -594,7 +602,12 @@ def _map_merged_rows(continent: str) -> tuple[dict, list[str]]:
     """
     rows = [r for r in store.query_laender_data()
             if r["_continent"] not in ("GLOBAL", "Other")]
-    if continent != "Welt":
+    if continent == "Americas-N":
+        rows = [r for r in rows if r["_continent"] == "Americas"
+                and r["_fed"] not in SOUTH_AMERICA_FEDS]
+    elif continent == "Americas-S":
+        rows = [r for r in rows if r["_fed"] in SOUTH_AMERICA_FEDS]
+    elif continent != "Welt":
         rows = [r for r in rows if r["_continent"] == continent]
 
     merged: dict[str, dict] = {}

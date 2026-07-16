@@ -16,6 +16,14 @@ SPECIAL_NON_COUNTRY = {"FID", "NON", "P1", "P2", "P3"}
 # aber eine ISO-Geometrie).
 UK_FEDS = {"ENG", "SCO", "WLS", "WAL", "NIR"}
 
+# Südamerika (FIDE-Codes) — nur für die Karten-Ansicht: die Queue kennt einen
+# gemeinsamen Kontinent "Americas"; die Karte teilt ihn in Nord (inkl.
+# Mittelamerika/Karibik) und Süd.
+SOUTH_AMERICA_FEDS = {
+    "ARG", "BOL", "BRA", "CHI", "COL", "ECU",
+    "GUY", "PAR", "PER", "SUR", "URU", "VEN",
+}
+
 # Nur Codes, die vom ISO-3166-alpha-3 abweichen oder keine Geometrie haben (None).
 FIDE_TO_ISO3: dict[str, str | None] = {
     # Europa

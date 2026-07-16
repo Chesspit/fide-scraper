@@ -21,6 +21,7 @@ import plotly.graph_objects as go
 from dash import Input, Output, State, callback_context, dash_table, dcc, html
 
 from orchestrator import runtime_settings, state_io, store
+from orchestrator.fide_iso import fide_to_iso3
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.state_io import read_worker_state
 from orchestrator.store import (
@@ -558,6 +559,196 @@ tab_overview = dbc.Container(fluid=True, children=[
 
 
 # ---------------------------------------------------------------------------
+# Tab 0b — Karte (Choropleth: Queue-Fortschritt pro Land)
+# ---------------------------------------------------------------------------
+# Kontinent-Werte wie in scrape_groups.continent; GLOBAL/Other (P1–P3-Update-
+# Batches, FID/NON) sind nicht landgebunden und bleiben von der Karte fern.
+_MAP_CONTINENTS = ["Welt", "Europe", "Asia", "Americas", "Africa", "Oceania"]
+_MAP_LABELS = {
+    "Welt": "Welt", "Europe": "Europa", "Asia": "Asien",
+    "Americas": "Amerika", "Africa": "Afrika", "Oceania": "Ozeanien",
+}
+# plotly kennt keine Scopes für "Amerika gesamt" und Ozeanien → manuelle Ranges.
+_MAP_GEO = {
+    "Welt":     dict(projection_type="natural earth"),
+    "Europe":   dict(scope="europe"),
+    "Asia":     dict(scope="asia"),
+    "Africa":   dict(scope="africa"),
+    "Americas": dict(projection_type="natural earth",
+                     lonaxis_range=[-170, -30], lataxis_range=[-58, 75]),
+    "Oceania":  dict(projection_type="natural earth",
+                     lonaxis_range=[110, 185], lataxis_range=[-50, 22]),
+}
+# Fortschritt 0→100 % in den Dashboard-Statusfarben failed→running→done
+_MAP_COLORSCALE = [
+    [0.0, STATUS_COLOR["failed"]],
+    [0.5, STATUS_COLOR["running"]],
+    [1.0, STATUS_COLOR["done"]],
+]
+
+
+def _map_merged_rows(continent: str) -> tuple[dict, list[str]]:
+    """query_laender_data → {iso3: Aggregat}, plus nicht kartierbare Codes.
+
+    UK-Föderationen (ENG/SCO/WLS/NIR) teilen sich die GBR-Geometrie und
+    werden summiert; customdata behält die Quell-Codes ('ENG+SCO+…').
+    """
+    rows = [r for r in store.query_laender_data()
+            if r["_continent"] not in ("GLOBAL", "Other")]
+    if continent != "Welt":
+        rows = [r for r in rows if r["_continent"] == continent]
+
+    merged: dict[str, dict] = {}
+    unmapped: list[str] = []
+    for r in rows:
+        iso = fide_to_iso3(r["_fed"])
+        if iso is None:
+            unmapped.append(r["_fed"])
+            continue
+        m = merged.setdefault(iso, {
+            "feds": [], "done": 0, "total": 0,
+            "scraped": 0, "active": 0, "mb": 0.0,
+        })
+        m["feds"].append(r["_fed"])
+        m["done"]    += r["_r_done_g"]
+        m["total"]   += r["_r_total_g"]
+        m["scraped"] += r["_r_fide_scraped"]
+        m["active"]  += r["_r_fide_total"]
+        m["mb"]      += r["_r_mb"]
+    return merged, unmapped
+
+
+def build_map_figure(continent: str) -> go.Figure:
+    merged, unmapped = _map_merged_rows(continent)
+
+    isos, z, custom = [], [], []
+    for iso, m in sorted(merged.items()):
+        pct = round(m["done"] / m["total"] * 100, 1) if m["total"] else 0.0
+        isos.append(iso)
+        z.append(pct)
+        custom.append(["+".join(m["feds"]), m["done"], m["total"]])
+
+    fig = go.Figure(go.Choropleth(
+        locations=isos, z=z, locationmode="ISO-3",
+        zmin=0, zmax=100,
+        colorscale=_MAP_COLORSCALE,
+        marker_line_color="white", marker_line_width=0.4,
+        colorbar=dict(title="fertig", thickness=14, len=0.6, ticksuffix=" %"),
+        customdata=custom,
+        hovertemplate="%{customdata[0]} — %{z:.1f} % "
+                      "(%{customdata[1]}/%{customdata[2]} Gruppen)<extra></extra>",
+    ))
+    # Konkrete Prozentwerte als Label — erst ab Kontinent-Zoom lesbar
+    if continent != "Welt":
+        fig.add_trace(go.Scattergeo(
+            locations=isos, locationmode="ISO-3", mode="text",
+            text=[f"{v:.0f}" for v in z],
+            textfont=dict(size=9, color="#1A1A1A"),
+            customdata=custom,          # Klick auf Label = Klick aufs Land
+            hoverinfo="skip", showlegend=False,
+        ))
+
+    fig.update_layout(
+        geo=dict(showframe=False, showcoastlines=True, coastlinecolor="#CCCCCC",
+                 showland=True, landcolor="#F0F0F0", **_MAP_GEO[continent]),
+        margin=dict(l=0, r=0, t=10, b=25),
+        height=650,
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    if unmapped:
+        fig.add_annotation(
+            text="Ohne Kartendarstellung: " + ", ".join(sorted(set(unmapped))),
+            xref="paper", yref="paper", x=0, y=-0.03, showarrow=False,
+            font=dict(size=10, color="#888888"),
+        )
+    return fig
+
+
+def build_map_panel(fed_str: str | None):
+    """Detail-Panel rechts neben der Karte für die angeklickte Föderation."""
+    if not fed_str:
+        return dbc.Card(dbc.CardBody(
+            html.Div("Land auf der Karte anklicken für Details.",
+                     className="text-muted small"),
+        ), className="mt-1")
+
+    feds = fed_str.split("+")
+    rows = [r for r in store.query_laender_data() if r["_fed"] in feds]
+    if not rows:
+        return dbc.Card(dbc.CardBody(
+            html.Div(f"Keine Queue-Daten für {fed_str}.", className="text-muted small"),
+        ), className="mt-1")
+
+    done    = sum(r["_r_done_g"] for r in rows)
+    total   = sum(r["_r_total_g"] for r in rows)
+    running = sum(r["_r_running_g"] for r in rows)
+    scraped = sum(r["_r_fide_scraped"] for r in rows)
+    active  = sum(r["_r_fide_total"] for r in rows)
+    mb      = round(sum(r["_r_mb"] for r in rows), 1)
+    pct     = round(done / total * 100, 1) if total else 0.0
+
+    yp = [y for r in rows for y in (r["_r_yp0"], r["_r_yp1"]) if y is not None]
+    yd = [y for r in rows for y in (r["_r_yd0"], r["_r_yd1"]) if y is not None]
+    zeitraum_plan = f"{min(yp)} – {max(yp)}" if yp else "—"
+    zeitraum_done = f"{min(yd)} – {max(yd)}" if yd else "—"
+
+    def _stat(label, value):
+        return html.Div([
+            html.Span(label, className="text-muted small"),
+            html.Span(value, className="small fw-semibold float-end"),
+        ], className="d-flex justify-content-between border-bottom py-1")
+
+    year_rows = []
+    for y in store.query_federation_years(feds):
+        y_pct = round(y["done"] / y["total"] * 100) if y["total"] else 0
+        year_rows.append(dbc.Row([
+            dbc.Col(html.Span(str(y["year"]), className="small text-muted"), width=3),
+            dbc.Col(dbc.Progress(
+                value=y_pct, color="success" if y_pct == 100 else "warning",
+                style={"height": "10px"}, className="mt-1",
+            ), width=6),
+            dbc.Col(html.Span(f"{y['done']}/{y['total']}",
+                              className="small text-muted"), width=3),
+        ], className="g-1"))
+
+    return dbc.Card(dbc.CardBody([
+        html.H5(fed_str, className="mb-0"),
+        html.Div(f"{pct} %", className="display-6 fw-bold",
+                 style={"color": STATUS_COLOR["done"] if pct >= 100
+                        else STATUS_COLOR["running"]}),
+        html.Div("der Scraping-Gruppen abgeschlossen",
+                 className="text-muted small mb-2"),
+        _stat("Gruppen done/total", f"{done} / {total}"),
+        _stat("Gruppen running", str(running)),
+        _stat("Spieler-Abdeckung",
+              f"{scraped} / {active}"
+              + (f" ({round(scraped / active * 100, 1)} %)" if active else "")),
+        _stat("Zeitraum Plan", zeitraum_plan),
+        _stat("Zeitraum done", zeitraum_done),
+        _stat("Download", f"{mb} MB"),
+        html.Div("Fortschritt pro Jahr", className="text-muted small mt-3 mb-1"),
+        html.Div(year_rows),
+    ]), className="mt-1")
+
+
+tab_map = dbc.Container(fluid=True, children=[
+    dcc.Interval(id="interval-map", interval=300_000, n_intervals=0),
+    dbc.Row(dbc.Col([
+        dbc.Label("Kontinent", className="small text-muted mb-1 me-3"),
+        dbc.RadioItems(
+            id="map-continent",
+            options=[{"label": _MAP_LABELS[c], "value": c} for c in _MAP_CONTINENTS],
+            value="Welt", inline=True,
+        ),
+    ]), className="mt-3 mb-2"),
+    dbc.Row([
+        dbc.Col(dcc.Graph(id="map-graph", config={"displayModeBar": False}), width=9),
+        dbc.Col(html.Div(id="map-detail-panel"), width=3),
+    ]),
+], className="py-2")
+
+
+# ---------------------------------------------------------------------------
 # Tab 1 — Heatmap layout
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
@@ -1055,6 +1246,7 @@ app.layout = dbc.Container(fluid=True, children=[
     ))),
     dbc.Tabs([
         dbc.Tab(tab_overview, label="🌍 Übersicht",        tab_id="tab-overview"),
+        dbc.Tab(tab_map,      label="🌐 Karte",             tab_id="tab-map"),
         dbc.Tab(tab_land,     label="🗺️ Übersicht Land",   tab_id="tab-land"),
         dbc.Tab(tab_heatmap,  label="⚙️ Steuerung",        tab_id="tab-heatmap"),
         dbc.Tab(tab_queue,    label="📋 Queue",             tab_id="tab-queue"),
@@ -1799,6 +1991,36 @@ def refresh_overview(_, active_tab):
     if active_tab not in ("tab-overview", None):
         return dash.no_update
     return build_overview_figure()
+
+
+# ===========================================================================
+# Callbacks — Tab 0b (Karte)
+# ===========================================================================
+
+@app.callback(
+    Output("map-graph", "figure"),
+    Input("interval-map", "n_intervals"),
+    Input("main-tabs", "active_tab"),
+    Input("map-continent", "value"),
+)
+def refresh_map(_, active_tab, continent):
+    if active_tab not in ("tab-map", None):
+        return dash.no_update
+    return build_map_figure(continent or "Welt")
+
+
+@app.callback(
+    Output("map-detail-panel", "children"),
+    Input("map-graph", "clickData"),
+)
+def map_click(click_data):
+    fed_str = None
+    if click_data:
+        point = click_data["points"][0]
+        cd = point.get("customdata")
+        if cd:
+            fed_str = cd[0]
+    return build_map_panel(fed_str)
 
 
 # ===========================================================================

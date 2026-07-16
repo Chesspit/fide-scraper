@@ -435,6 +435,27 @@ def query_pg_players() -> dict[str, tuple[int, int]]:
         return _pg_aktiv_cache   # stale cache ist besser als nichts
 
 
+def query_federation_years(feds: list[str]) -> list[dict]:
+    """Gruppen-Fortschritt pro Jahr für eine oder mehrere Föderationen.
+
+    Nimmt eine Liste, damit UK auf der Karte aggregiert abfragbar ist
+    (GBR = ENG+SCO+WLS+NIR). Fürs Detail-Panel des Karten-Tabs.
+    """
+    return _fetch_dicts(
+        """
+        SELECT year,
+               COUNT(*)                                        AS total,
+               COUNT(*) FILTER (WHERE status = 'done')         AS done,
+               COUNT(*) FILTER (WHERE status = 'running')      AS running
+        FROM   scrape_groups
+        WHERE  federation = ANY(%s)
+        GROUP  BY year
+        ORDER  BY year
+        """,
+        (feds,),
+    )
+
+
 def query_laender_data() -> list[dict]:
     """Aggregiert scrape_groups + scrape_runs nach Föderation (VPS-Sicht).
 

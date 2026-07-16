@@ -283,6 +283,36 @@ Zuordnung folgt der **konfigurierten `timezone` je Thread** (nicht den `federati
 
 ⚠️ **In-place aktualisieren, nicht per Rename ersetzen:** Die Pool-Dateien sind als Einzeldatei-Bind-Mounts in die Container eingebunden. `scp` und `cat >` schreiben in-place (gleicher Inode, Container sieht die Änderung); Standard-`rsync` und `mv` ersetzen die Datei per Rename (**neuer Inode — der Container behält die alte Datei**, das Hot-Reload sieht nichts). Falls doch rsync: `rsync --inplace` verwenden.
 
+### Migration auf DataImpulse Residential Rotating (2026-07-16)
+
+**Webshare ist bis auf Weiteres abgelöst.** Hintergrund: FIDE tarpittet die statischen Webshare-DC-IPs sukzessive (~5–10 Tage nach jedem IP-Refresh; MENA/Asien-Pool zuletzt 100 % tot, `dc_in`/`dc_hk`/`dc_ae` deshalb deaktiviert). Neuer Provider: **DataImpulse Residential Rotating** (Pay-as-you-go, $1/GB, ~10-GB-Kontingent, Traffic verfällt nicht).
+
+**Architektur unverändert — reine Config-Migration:**
+- Die 10 DC-Threads bleiben die aktiven Threads (Queues/`thread_affinity`, Föderations-Routing, `timezone`+`active_hours`, Dashboard-Steuerung alles wie gehabt); die 4 Residential-Slots bleiben deaktiviert. Labels im Dashboard: `DC-*` → `DI-*`.
+- Alle Threads teilen sich **eine** Pool-Datei `orchestrator/dataimpulse_gateway.txt` mit der einen Zeile `gw.dataimpulse.com:823` — der `ProxyManager` (Pool-Modus, unverändert) baut daraus das Gateway-URL, DataImpulse rotiert dahinter selbst (**neue Residential-IP pro Request**). Die Datei enthält kein Secret und ist deshalb — anders als die Webshare-Listen — **in Git committed** (liegt nach `git pull` automatisch auf dem VPS; die Inode-Falle oben ist damit praktisch irrelevant, der Inhalt ist statisch).
+- **Geo-Ausrichtung endlich wieder wie im ursprünglichen ProxyJet-Design** (siehe Regression 2026-07-03 oben): Country-Targeting läuft bei DataImpulse über den Login-Namen (`LOGIN__cr.de` → nur deutsche IPs, im Grundpreis enthalten). Da `username_env` pro Thread konfigurierbar ist, bekommt jeder Thread ein Land passend zu seiner `timezone` — Anfragen aus einem Land kommen so zu dessen natürlichen Tageszeiten:
+
+| Thread | Timezone | Land (`__cr.…`) | `username_env` |
+|---|---|---|---|
+| `dc_de` | Europe/Berlin | de | `PROXY_DI_USERNAME_DE` |
+| `dc_in` | Asia/Kolkata | in | `PROXY_DI_USERNAME_IN` |
+| `dc_uk` | Europe/London | gb | `PROXY_DI_USERNAME_GB` |
+| `dc_us` | America/New_York | us | `PROXY_DI_USERNAME_US` |
+| `dc_hk` | Asia/Hong_Kong | hk | `PROXY_DI_USERNAME_HK` |
+| `dc_es` | Europe/Madrid | es | `PROXY_DI_USERNAME_ES` |
+| `dc_mx` | America/Mexico_City | mx | `PROXY_DI_USERNAME_MX` |
+| `dc_ae` | Asia/Dubai | ae | `PROXY_DI_USERNAME_AE` |
+| `dc_dach` | Europe/Berlin | ch (Streuung) | `PROXY_DI_USERNAME_CH` |
+| `dc_update_1` | Europe/Berlin | de | `PROXY_DI_USERNAME_DE` |
+
+  Landwechsel später = nur `.env`-Edit + Container-Neustart (kein Rebuild).
+
+**Betriebshinweise:**
+- **GB-Budget:** keine Budget-Bremse im Code (bewusste Entscheidung) — Verbrauchskontrolle ausschließlich über das DataImpulse-Dashboard. Achtung: die orchestrator-eigenen `mb_downloaded`-Werte sind **dekomprimierte** Bytes und überschätzen den abgerechneten (gzip-)Traffic; nur als grobe Obergrenze lesbar.
+- `scripts/check_proxy_pool.py` ist als Pool-Health-Check obsolet (nichts Statisches mehr zu testen), bleibt aber als Smoke-Test gegen das Gateway nutzbar.
+- `DIRECT_FALLBACK_ON_429=false` bleibt auf dem VPS (dessen IP ist weiterhin FIDE-geblockt).
+- Sticky Sessions (Ports 10000–20000) werden bewusst nicht genutzt — Rotation pro Request passt exakt zur bestehenden „frischer Proxy pro Retry"-Logik im Worker.
+
 ---
 
 ## Aufgabe 6 — Deployment auf Hostinger VPS (Stand: Traefik/Coolify)

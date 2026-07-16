@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Test every IP:PORT in the Webshare proxy pool against ratings.fide.com.
+"""Test every IP:PORT in the proxy pool file against ratings.fide.com.
 
-Reports which of the 100 pool entries are currently unreachable — useful
-input for Webshare's "replace up to 10 dead IPs" support option. Run this
-on the VPS (network path matters) via:
+Historisch der Webshare-Pool-Health-Check (100 statische IPs, tote Einträge
+als Kandidaten für Webshares "replace 10 dead IPs"-Option). Seit der
+DataImpulse-Migration (2026-07-16) enthält die Pool-Datei nur noch das
+rotierende Gateway — als Health-Check obsolet, aber weiter nützlich als
+Smoke-Test: mit --repeat N gehen N Requests durchs Gateway (jede über eine
+andere Residential-IP). Run this on the VPS (network path matters) via:
 
-    docker compose exec -T worker python3 scripts/check_proxy_pool.py
+    docker compose exec -T worker python3 scripts/check_proxy_pool.py --repeat 5
 
 Usage:
-    python3 scripts/check_proxy_pool.py [--pool-file PATH] [--timeout SECONDS]
+    python3 scripts/check_proxy_pool.py [--pool-file PATH] [--timeout SECONDS] [--repeat N]
 """
 
 import argparse
@@ -32,6 +35,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Health-check every proxy in the pool")
     parser.add_argument("--pool-file", default=None, help="Override PROXY_POOL_FILE")
     parser.add_argument("--timeout", type=float, default=15.0)
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="Jeden Pool-Eintrag N-mal testen (Smoke-Test fürs rotierende Gateway)")
     args = parser.parse_args()
 
     pm = ProxyManager(pool_file=args.pool_file)
@@ -42,11 +47,12 @@ def main() -> int:
     url = AJAX_URL.format(fide_id=TEST_FIDE_ID, period=TEST_PERIOD)
     headers = {**HEADERS, "Referer": REFERER_URL.format(fide_id=TEST_FIDE_ID, period=TEST_PERIOD)}
 
-    print(f"Teste {len(pm._pool)} Proxies ...")
+    entries = pm._pool * max(1, args.repeat)
+    print(f"Teste {len(pm._pool)} Proxies ({len(entries)} Requests) ...")
     dead: list[str] = []
     ok = 0
 
-    for host, port in pm._pool:
+    for host, port in entries:
         proxy_url = f"http://{pm._user}:{pm._pw}@{host}:{port}"
         proxies = {"http": proxy_url, "https": proxy_url}
         label = f"{host}:{port}"
@@ -65,7 +71,7 @@ def main() -> int:
             print(f"  FAIL  {label:22s} {elapsed:5.1f}s  {type(exc).__name__}")
             dead.append(label)
 
-    print(f"\nErgebnis: {ok}/{len(pm._pool)} erreichbar, {len(dead)} tot/unerreichbar")
+    print(f"\nErgebnis: {ok}/{len(entries)} erreichbar, {len(dead)} tot/unerreichbar")
     if dead:
         print("\nTote/unerreichbare IPs (Kandidaten für Webshare-Ersatz, max. 10 pro Anfrage):")
         for label in dead[:10]:

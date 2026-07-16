@@ -29,14 +29,14 @@ concurrency:
     - SVK
     - FID
     id: dc_de
-    label: DC-DE
+    label: DI-DE
     max_hours: null
-    password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies_europe.txt
+    password_env: PROXY_DI_PASSWORD
+    pool_file: orchestrator/dataimpulse_gateway.txt
     profile: semi_conservative
     slot: 99
     timezone: Europe/Berlin
-    username_env: PROXY_DC_USERNAME
+    username_env: PROXY_DI_USERNAME_DE
   - active_hours:
     - 7
     - 23
@@ -45,14 +45,14 @@ concurrency:
     - IND
     - IRI
     id: dc_in
-    label: DC-IN
+    label: DI-IN
     max_hours: null
-    password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies_mena_asia.txt
+    password_env: PROXY_DI_PASSWORD
+    pool_file: orchestrator/dataimpulse_gateway.txt
     profile: semi_conservative
     slot: 100
     timezone: Asia/Kolkata
-    username_env: PROXY_DC_USERNAME
+    username_env: PROXY_DI_USERNAME_IN
   - active_hours:
     - 8
     - 21
@@ -69,14 +69,14 @@ concurrency:
     - FIN
     - ISL
     id: dc_uk
-    label: DC-UK
+    label: DI-UK
     max_hours: null
-    password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies_europe.txt
+    password_env: PROXY_DI_PASSWORD
+    pool_file: orchestrator/dataimpulse_gateway.txt
     profile: semi_conservative
     slot: 101
     timezone: Europe/London
-    username_env: PROXY_DC_USERNAME
+    username_env: PROXY_DI_USERNAME_GB
   - active_hours:
     - 7
     - 23
@@ -85,14 +85,14 @@ concurrency:
     - USA
     - CAN
     id: dc_us
-    label: DC-US
+    label: DI-US
     max_hours: null
-    password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies_americas.txt
+    password_env: PROXY_DI_PASSWORD
+    pool_file: orchestrator/dataimpulse_gateway.txt
     profile: semi_conservative
     slot: 102
     timezone: America/New_York
-    username_env: PROXY_DC_USERNAME
+    username_env: PROXY_DI_USERNAME_US
   - active_hours:
     - 7
     - 23
@@ -115,14 +115,14 @@ concurrency:
     - TON
     - FSM
     id: dc_hk
-    label: DC-HK
+    label: DI-HK
     max_hours: null
-    password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies_mena_asia.txt
+    password_env: PROXY_DI_PASSWORD
+    pool_file: orchestrator/dataimpulse_gateway.txt
     profile: semi_conservative
     slot: 103
     timezone: Asia/Hong_Kong
-    username_env: PROXY_DC_USERNAME
+    username_env: PROXY_DI_USERNAME_HK
   - active_hours:
     - 12
     - 18
@@ -134,14 +134,14 @@ concurrency:
     - AND
     - GIB
     id: dc_es
-    label: DC-ES
+    label: DI-ES
     max_hours: null
-    password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies_europe.txt
+    password_env: PROXY_DI_PASSWORD
+    pool_file: orchestrator/dataimpulse_gateway.txt
     profile: semi_conservative
     slot: 104
     timezone: Europe/Madrid
-    username_env: PROXY_DC_USERNAME
+    username_env: PROXY_DI_USERNAME_ES
   - active_hours:
     - 10
     - 22
@@ -152,14 +152,14 @@ concurrency:
     - NED
     - LUX
     id: dc_mx
-    label: DC-MX
+    label: DI-MX
     max_hours: null
-    password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies_americas.txt
+    password_env: PROXY_DI_PASSWORD
+    pool_file: orchestrator/dataimpulse_gateway.txt
     profile: semi_conservative
     slot: 105
     timezone: America/Mexico_City
-    username_env: PROXY_DC_USERNAME
+    username_env: PROXY_DI_USERNAME_MX
   - active_hours:
     - 7
     - 23
@@ -176,14 +176,14 @@ concurrency:
     - GRE
     - TUR
     id: dc_ae
-    label: DC-AE
+    label: DI-AE
     max_hours: null
-    password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies_mena_asia.txt
+    password_env: PROXY_DI_PASSWORD
+    pool_file: orchestrator/dataimpulse_gateway.txt
     profile: semi_conservative
     slot: 106
     timezone: Asia/Dubai
-    username_env: PROXY_DC_USERNAME
+    username_env: PROXY_DI_USERNAME_AE
   - active_hours:
     - 7
     - 23
@@ -193,28 +193,28 @@ concurrency:
     - SUI
     - GER
     id: dc_dach
-    label: DC-DACH
+    label: DI-DACH
     max_hours: null
-    password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies_europe.txt
+    password_env: PROXY_DI_PASSWORD
+    pool_file: orchestrator/dataimpulse_gateway.txt
     profile: semi_conservative
     slot: 107
     timezone: Europe/Berlin
-    username_env: PROXY_DC_USERNAME
+    username_env: PROXY_DI_USERNAME_CH
   - active_hours:
     - 7
     - 23
     enabled: true
     federations: []
     id: dc_update_1
-    label: DC-UPDATE-1
+    label: DI-UPDATE-1
     max_hours: null
-    password_env: PROXY_DC_PASSWORD
-    pool_file: orchestrator/webshare_proxies_europe.txt
+    password_env: PROXY_DI_PASSWORD
+    pool_file: orchestrator/dataimpulse_gateway.txt
     profile: semi_conservative
     slot: 108
     timezone: Europe/Berlin
-    username_env: PROXY_DC_USERNAME
+    username_env: PROXY_DI_USERNAME_DE
   max_workers: 2
   worker_profiles:
   - semi_aggressive

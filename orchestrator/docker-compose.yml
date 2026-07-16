@@ -35,21 +35,27 @@ services:
       DATABASE_URL: postgresql://fide:${DB_PASSWORD}@host.docker.internal:5432/fidedb
       ORCHESTRATOR_DATA_DIR: /data
       ORCHESTRATOR_PROFILES: /app/orchestrator/profiles.yaml
-      # Webshare: ein gemeinsames Credential-Paar für den ganzen 100-IP-Pool
-      # (siehe orchestrator/webshare_proxies.txt) — ersetzt die 9 separaten
-      # ProxyJet-DC-Thread-Credential-Paare, die es bei Webshare nicht braucht.
+      # DataImpulse Residential Rotating: ein Gateway für alle Threads
+      # (orchestrator/dataimpulse_gateway.txt), Country-Targeting pro Thread
+      # über den Login-Namen (LOGIN__cr.de) — daher ein Username pro Land
+      # + ein gemeinsames Passwort (siehe .env.example).
       PROXY_USERNAME: ${PROXY_USERNAME}
       PROXY_PASSWORD: ${PROXY_PASSWORD}
-      PROXY_POOL_FILE: ${PROXY_POOL_FILE:-orchestrator/webshare_proxies.txt}
-      PROXY_DC_USERNAME: ${PROXY_DC_USERNAME:-}
-      PROXY_DC_PASSWORD: ${PROXY_DC_PASSWORD:-}
+      PROXY_POOL_FILE: ${PROXY_POOL_FILE:-orchestrator/dataimpulse_gateway.txt}
+      PROXY_DI_PASSWORD: ${PROXY_DI_PASSWORD:-}
+      PROXY_DI_USERNAME_DE: ${PROXY_DI_USERNAME_DE:-}
+      PROXY_DI_USERNAME_IN: ${PROXY_DI_USERNAME_IN:-}
+      PROXY_DI_USERNAME_GB: ${PROXY_DI_USERNAME_GB:-}
+      PROXY_DI_USERNAME_US: ${PROXY_DI_USERNAME_US:-}
+      PROXY_DI_USERNAME_HK: ${PROXY_DI_USERNAME_HK:-}
+      PROXY_DI_USERNAME_ES: ${PROXY_DI_USERNAME_ES:-}
+      PROXY_DI_USERNAME_MX: ${PROXY_DI_USERNAME_MX:-}
+      PROXY_DI_USERNAME_AE: ${PROXY_DI_USERNAME_AE:-}
+      PROXY_DI_USERNAME_CH: ${PROXY_DI_USERNAME_CH:-}
     volumes:
       - orchestrator_data:/data
       - ../config.yaml:/app/config.yaml:ro
-      - ../orchestrator/webshare_proxies.txt:/app/orchestrator/webshare_proxies.txt:ro
-      - ../orchestrator/webshare_proxies_americas.txt:/app/orchestrator/webshare_proxies_americas.txt:ro
-      - ../orchestrator/webshare_proxies_europe.txt:/app/orchestrator/webshare_proxies_europe.txt:ro
-      - ../orchestrator/webshare_proxies_mena_asia.txt:/app/orchestrator/webshare_proxies_mena_asia.txt:ro
+      - ../orchestrator/dataimpulse_gateway.txt:/app/orchestrator/dataimpulse_gateway.txt:ro
     ports:
       - "127.0.0.1:8050:8050"
     networks:
@@ -82,14 +88,23 @@ services:
       DATABASE_URL: postgresql://fide:${DB_PASSWORD}@host.docker.internal:5432/fidedb
       ORCHESTRATOR_DATA_DIR: /data
       ORCHESTRATOR_PROFILES: /app/orchestrator/profiles.yaml
-      # Webshare: ein gemeinsames Credential-Paar für den ganzen 100-IP-Pool
-      # (siehe orchestrator/webshare_proxies.txt) — ersetzt die 9 separaten
-      # ProxyJet-DC-Thread-Credential-Paare, die es bei Webshare nicht braucht.
+      # DataImpulse Residential Rotating: ein Gateway für alle Threads
+      # (orchestrator/dataimpulse_gateway.txt), Country-Targeting pro Thread
+      # über den Login-Namen (LOGIN__cr.de) — daher ein Username pro Land
+      # + ein gemeinsames Passwort (siehe .env.example).
       PROXY_USERNAME: ${PROXY_USERNAME}
       PROXY_PASSWORD: ${PROXY_PASSWORD}
-      PROXY_POOL_FILE: ${PROXY_POOL_FILE:-orchestrator/webshare_proxies.txt}
-      PROXY_DC_USERNAME: ${PROXY_DC_USERNAME:-}
-      PROXY_DC_PASSWORD: ${PROXY_DC_PASSWORD:-}
+      PROXY_POOL_FILE: ${PROXY_POOL_FILE:-orchestrator/dataimpulse_gateway.txt}
+      PROXY_DI_PASSWORD: ${PROXY_DI_PASSWORD:-}
+      PROXY_DI_USERNAME_DE: ${PROXY_DI_USERNAME_DE:-}
+      PROXY_DI_USERNAME_IN: ${PROXY_DI_USERNAME_IN:-}
+      PROXY_DI_USERNAME_GB: ${PROXY_DI_USERNAME_GB:-}
+      PROXY_DI_USERNAME_US: ${PROXY_DI_USERNAME_US:-}
+      PROXY_DI_USERNAME_HK: ${PROXY_DI_USERNAME_HK:-}
+      PROXY_DI_USERNAME_ES: ${PROXY_DI_USERNAME_ES:-}
+      PROXY_DI_USERNAME_MX: ${PROXY_DI_USERNAME_MX:-}
+      PROXY_DI_USERNAME_AE: ${PROXY_DI_USERNAME_AE:-}
+      PROXY_DI_USERNAME_CH: ${PROXY_DI_USERNAME_CH:-}
       # VPS-IP ist von FIDE geblockt: nach 429/Cooldown nie direkt (ohne Proxy)
       # fetchen, sondern erneut über den Pool (siehe worker.py::_direct_fallback_on_429)
       DIRECT_FALLBACK_ON_429: "false"
@@ -102,10 +117,7 @@ services:
       - orchestrator_data:/data
       - ../config.yaml:/app/config.yaml:ro
       - ../data:/app/data:ro
-      - ../orchestrator/webshare_proxies.txt:/app/orchestrator/webshare_proxies.txt:ro
-      - ../orchestrator/webshare_proxies_americas.txt:/app/orchestrator/webshare_proxies_americas.txt:ro
-      - ../orchestrator/webshare_proxies_europe.txt:/app/orchestrator/webshare_proxies_europe.txt:ro
-      - ../orchestrator/webshare_proxies_mena_asia.txt:/app/orchestrator/webshare_proxies_mena_asia.txt:ro
+      - ../orchestrator/dataimpulse_gateway.txt:/app/orchestrator/dataimpulse_gateway.txt:ro
     networks:
       - fide_net
     # unless-stopped — Worker immer neu starten (auch nach Crash), ausser bei explizitem

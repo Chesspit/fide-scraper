@@ -247,6 +247,21 @@ Stand 2026-07-07, alle Threads aktiv:
 
 ---
 
+## Änderungen Session 2026-07-16 — Proxy-Migration Webshare → DataImpulse Residential
+
+Webshare (statische DC-IPs) ist bis auf Weiteres abgelöst — FIDE tarpittet die Pools sukzessive (MENA/Asien zuletzt 100 % tot, `dc_in`/`dc_hk`/`dc_ae` deaktiviert). Neuer Provider: **DataImpulse Residential Rotating** (~10 GB Pay-as-you-go, $1/GB, neue IP pro Request).
+
+| Was | Details |
+|-----|---------|
+| Architektur | unverändert — die 10 DC-Threads bleiben (Queues, Föderations-Routing, Zeitfenster); reine Config-Migration, kein Code-Umbau. Labels `DC-*` → `DI-*` |
+| Gateway | `orchestrator/dataimpulse_gateway.txt` (eine Zeile `gw.dataimpulse.com:823`, committed — kein Secret); ersetzt die 4 git-ignorierten `webshare_proxies*.txt` |
+| Geo | Country-Targeting per Login-Suffix `__cr.xx` pro Thread, Land = Thread-Timezone (Requests aus einem Land zu dessen Tageszeiten); Mapping-Tabelle in `docs/scraping_orchestrator.md` |
+| Env | neue Variablen `PROXY_DI_PASSWORD` + `PROXY_DI_USERNAME_{DE,IN,GB,US,HK,ES,MX,AE,CH}` (siehe `.env.example`); `PROXY_DC_*` entfällt |
+| Budget | keine Code-Bremse (bewusst) — Kontrolle über DataImpulse-Dashboard; `mb_downloaded` = dekomprimierte Bytes, überschätzt den abgerechneten Traffic |
+| Deploy | VPS: `.env` ergänzen → `git pull` → `docker compose build && up -d` (profiles.yaml ist ins Image gebacken, Mounts geändert) → alle 10 Threads im Dashboard aktivieren |
+
+---
+
 ## Änderungen Session 2026-07-04 — Review #5: Queue-Migration SQLite → PostgreSQL
 
 Letzter offener Review-Punkt umgesetzt: die Orchestrator-Queue (`scrape_groups`/`scrape_runs`) zieht aus der SQLite `/data/scraper.db` ins **Schema `orchestrator` der fidedb** (Migration `013_orchestrator_queue.sql`).

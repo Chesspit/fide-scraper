@@ -1,0 +1,5 @@
+# DataImpulse Residential Rotating Gateway (kein Secret — Credentials liegen in .env).
+# Eine Zeile genügt: der ProxyManager (Pool-Modus) baut daraus
+# http://{username}:{password}@gw.dataimpulse.com:823 — neue Residential-IP pro Request.
+# Country-Targeting läuft über den Login-Namen (LOGIN__cr.de), siehe .env.example.
+gw.dataimpulse.com:823

@@ -579,10 +579,9 @@ _MAP_GEO = {
     "Oceania":  dict(projection_type="natural earth",
                      lonaxis_range=[110, 185], lataxis_range=[-50, 22]),
 }
-# Fortschritt 0→100 % in den Dashboard-Statusfarben failed→running→done
+# Fortschritt 0→100 %: weiß → done-Grün
 _MAP_COLORSCALE = [
-    [0.0, STATUS_COLOR["failed"]],
-    [0.5, STATUS_COLOR["running"]],
+    [0.0, "#FFFFFF"],
     [1.0, STATUS_COLOR["done"]],
 ]
 
@@ -607,7 +606,7 @@ def _map_merged_rows(continent: str) -> tuple[dict, list[str]]:
             continue
         m = merged.setdefault(iso, {
             "feds": [], "done": 0, "total": 0,
-            "scraped": 0, "active": 0, "mb": 0.0,
+            "scraped": 0, "active": 0, "mb": 0.0, "plan_from": None,
         })
         m["feds"].append(r["_fed"])
         m["done"]    += r["_r_done_g"]
@@ -615,6 +614,11 @@ def _map_merged_rows(continent: str) -> tuple[dict, list[str]]:
         m["scraped"] += r["_r_fide_scraped"]
         m["active"]  += r["_r_fide_total"]
         m["mb"]      += r["_r_mb"]
+        # Geplantes Backfill-Startjahr (MIN(year) der Queue) — pro Land
+        # individuell steuerbar, sobald die Queue entsprechend bestückt ist
+        yp0 = r["_r_yp0"]
+        if yp0 is not None and (m["plan_from"] is None or yp0 < m["plan_from"]):
+            m["plan_from"] = yp0
     return merged, unmapped
 
 
@@ -626,7 +630,8 @@ def build_map_figure(continent: str) -> go.Figure:
         pct = round(m["done"] / m["total"] * 100, 1) if m["total"] else 0.0
         isos.append(iso)
         z.append(pct)
-        custom.append(["+".join(m["feds"]), m["done"], m["total"]])
+        custom.append(["+".join(m["feds"]), m["done"], m["total"],
+                       str(m["plan_from"]) if m["plan_from"] else "—"])
 
     fig = go.Figure(go.Choropleth(
         locations=isos, z=z, locationmode="ISO-3",
@@ -636,7 +641,8 @@ def build_map_figure(continent: str) -> go.Figure:
         colorbar=dict(title="fertig", thickness=14, len=0.6, ticksuffix=" %"),
         customdata=custom,
         hovertemplate="%{customdata[0]} — %{z:.1f} % "
-                      "(%{customdata[1]}/%{customdata[2]} Gruppen)<extra></extra>",
+                      "(%{customdata[1]}/%{customdata[2]} Gruppen)"
+                      "<br>Backfill geplant bis %{customdata[3]}<extra></extra>",
     ))
     # Konkrete Prozentwerte als Label — erst ab Kontinent-Zoom lesbar
     if continent != "Welt":

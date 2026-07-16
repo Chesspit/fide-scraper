@@ -449,6 +449,7 @@ def query_federation_years(feds: list[str]) -> list[dict]:
                COUNT(*) FILTER (WHERE status = 'running')      AS running
         FROM   scrape_groups
         WHERE  federation = ANY(%s)
+          AND  status <> 'skipped'
         GROUP  BY year
         ORDER  BY year
         """,
@@ -469,16 +470,19 @@ def query_laender_data() -> list[dict]:
         SELECT
             sg.federation,
             MAX(sg.continent)                                                     AS continent,
-            COUNT(sg.id)                                                          AS total_groups,
+            -- Plan-Kennzahlen ohne 'skipped': seit den Jahreszielen (2026-07,
+            -- set_backfill_targets.py) sind Alt-Jahre bewusst stillgelegt und
+            -- zählen weder zum Plan-Zeitraum noch zum Fortschritts-Nenner.
+            COUNT(sg.id)      FILTER (WHERE sg.status <> 'skipped')              AS total_groups,
             SUM(CASE WHEN sg.status = 'done'    THEN 1 ELSE 0 END)               AS done_groups,
             SUM(CASE WHEN sg.status = 'running' THEN 1 ELSE 0 END)               AS running_groups,
-            MIN(sg.year)                                                          AS year_plan_from,
-            MAX(sg.year)                                                          AS year_plan_to,
+            MIN(sg.year)      FILTER (WHERE sg.status <> 'skipped')              AS year_plan_from,
+            MAX(sg.year)      FILTER (WHERE sg.status <> 'skipped')              AS year_plan_to,
             MIN(CASE WHEN sg.status = 'done'    THEN sg.year ELSE NULL END)      AS year_done_from,
             MAX(CASE WHEN sg.status = 'done'    THEN sg.year ELSE NULL END)      AS year_done_to,
             MIN(CASE WHEN sg.status = 'running' THEN sg.year ELSE NULL END)      AS year_running,
             SUM(CASE WHEN sg.status = 'done'    THEN sg.player_count ELSE 0 END) AS done_players,
-            SUM(sg.player_count)                                                  AS total_players,
+            SUM(sg.player_count) FILTER (WHERE sg.status <> 'skipped')           AS total_players,
             COALESCE(SUM(sr.mb_per_group), 0.0)                                  AS total_mb
         FROM scrape_groups sg
         LEFT JOIN (

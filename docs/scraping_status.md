@@ -247,6 +247,23 @@ Stand 2026-07-07, alle Threads aktiv:
 
 ---
 
+## Änderungen Session 2026-07-16 (nachmittags) — Jahresziele fürs rückwirkende Scraping
+
+Peter hat pro Region festgelegt, wie weit der Backfill zurückgeht (jeweils einschließlich Zieljahr); umgesetzt via `orchestrator/set_backfill_targets.py` (mit `--dry-run`):
+
+| Region | Föderationen | Backfill bis |
+|---|---|---|
+| DACH | GER, AUT, SUI | **2012** |
+| Nordamerika | USA, CAN, MEX | **2018** |
+| Asien-Pazifik | CHN, VIE, AUS | **2018** |
+| Rest der Welt | alle übrigen | **2020** |
+
+- ~13,9k pending/failed-Gruppen unter Zieljahr → `skipped` mit `notes='Jahresziel 2026-07: Backfill bis <J>'` (**Rollback:** dieselben notes zurück auf pending setzen; nichts un-skippt automatisch)
+- ~3,3k Plan-Gruppen ohne `thread_affinity` (u.a. FRA, RUS, ganz Afrika/Südamerika) wurden per **Region + Lastausgleich** auf die DI-Threads verteilt (Claiming ist strikt affinity-basiert — ohne Zuweisung würde nie gescrapt); Geräte-Pools (`device` gesetzt) unangetastet
+- `store.query_laender_data`/`query_federation_years`: Plan-Kennzahlen (Zeitraum, Nenner der %-Werte) zählen `skipped` nicht mehr mit — Karte + Bericht Länder messen jetzt Fortschritt **gegen die Jahresziele**; der Karten-Hover „Backfill geplant bis" zeigt das Ziel pro Land
+
+---
+
 ## Änderungen Session 2026-07-16 — Proxy-Migration Webshare → DataImpulse Residential
 
 Webshare (statische DC-IPs) ist bis auf Weiteres abgelöst — FIDE tarpittet die Pools sukzessive (MENA/Asien zuletzt 100 % tot, `dc_in`/`dc_hk`/`dc_ae` deaktiviert). Neuer Provider: **DataImpulse Residential Rotating** (~10 GB Pay-as-you-go, $1/GB, neue IP pro Request).

@@ -574,10 +574,15 @@ _MAP_LABELS = {
     "Africa": "Afrika", "Oceania": "Ozeanien",
 }
 # plotly kennt keine Scopes für Nord/Süd-Amerika-Split mit Mittelamerika/
-# Karibik und Ozeanien → manuelle Ranges.
+# Karibik und Ozeanien → manuelle Ranges. Europa ebenfalls manuell statt
+# scope="europe": Plotlys/Natural-Earth-eigene Kontinent-Einteilung weicht von
+# unserem _EUROPE-Set ab (TUR/ISR/GEO/ARM/AZE gehören bei uns zu Europa,
+# fehlen aber in Plotlys Europa-Scope) — Range deckt alle _EUROPE-Föderationen
+# geografisch ab (Süden: Israel ~29°N, Osten: Aserbaidschan ~50°E).
 _MAP_GEO = {
     "Welt":       dict(projection_type="natural earth"),
-    "Europe":     dict(scope="europe"),
+    "Europe":     dict(projection_type="natural earth",
+                       lonaxis_range=[-25, 50], lataxis_range=[28, 72]),
     "Asia":       dict(scope="asia"),
     "Africa":     dict(scope="africa"),
     "Americas-N": dict(projection_type="natural earth",

@@ -345,18 +345,18 @@ def update_table(fide_id, result_filter, color_filter, year_from):
     # 2-zeilige Spaltenköpfe — Zeile 1 = Kontext, Zeile 2 = Hauptname
     # Keine Sortierung
     columns_def = [
-        {"name": ["",          "Monat"],    "id": "Periode",       "sortable": False},
-        {"name": ["",          "Rating"],   "id": "Eig. Rating",   "sortable": False},
-        {"name": ["",          "Farbe"],    "id": "Farbe",         "sortable": False},
-        {"name": ["",          "Gegner"],   "id": "Gegner",        "sortable": False},
-        {"name": ["",          "Titel"],    "id": "Titel",         "sortable": False},
-        {"name": ["",          "Sex"],      "id": "G.",            "sortable": False},
-        {"name": ["Rating",    "Gegner"],   "id": "Gegner-Rating", "sortable": False},
-        {"name": ["",          "Föd."],     "id": "Föd.",          "sortable": False},
-        {"name": ["",          "Ergebnis"], "id": "Ergebnis",      "sortable": False},
-        {"name": ["",          "Δ Rating"], "id": "Δ Rating",      "sortable": False},
-        {"name": ["Erwartete", "Score"],    "id": "Erw. Score",    "sortable": False},
-        {"name": ["",          "Turnier"],  "id": "Turnier",       "sortable": False},
+        {"name": ["",          "Monat"],    "id": "Periode"},
+        {"name": ["",          "Rating"],   "id": "Eig. Rating"},
+        {"name": ["",          "Farbe"],    "id": "Farbe"},
+        {"name": ["",          "Gegner"],   "id": "Gegner"},
+        {"name": ["",          "Titel"],    "id": "Titel"},
+        {"name": ["",          "Sex"],      "id": "G."},
+        {"name": ["Rating",    "Gegner"],   "id": "Gegner-Rating"},
+        {"name": ["",          "Föd."],     "id": "Föd."},
+        {"name": ["",          "Ergebnis"], "id": "Ergebnis"},
+        {"name": ["",          "Δ Rating"], "id": "Δ Rating"},
+        {"name": ["Erwartete", "Score"],    "id": "Erw. Score"},
+        {"name": ["",          "Turnier"],  "id": "Turnier"},
     ]
 
     table = dash_table.DataTable(

@@ -11,8 +11,16 @@ MONTH_MAP = {
 }
 
 
-def _find_yearly_zips() -> dict[int, str]:
-    best: dict[int, tuple[str, int]] = {}
+def _find_yearly_zips() -> dict[int, tuple[str, int]]:
+    """Ein Snapshot pro Jahr: frühester verfügbarer Monat (i.d.R. Januar) für
+    Jahresvergleichbarkeit — außer für das jüngste (laufende, noch unvollständige)
+    Jahr in den Daten, das den neuesten verfügbaren Monat nutzt, damit Grafik/Tabelle
+    den aktuellen Stand zeigen statt einen veralteten Januar-Schnappschuss.
+
+    Rückgabe: {jahr: (pfad, monat)} — der Monat wird mit zurückgegeben, damit das
+    tatsächliche Snapshot-Datum (nicht nur das Jahr) für die X-Achse verfügbar ist.
+    """
+    candidates: dict[int, dict[int, str]] = {}
     for fname in os.listdir(DATA_DIR):
         if not fname.endswith(".zip"):
             continue
@@ -26,13 +34,19 @@ def _find_yearly_zips() -> dict[int, str]:
         if year < 2009 or year > 2026:
             continue
         month = MONTH_MAP[mon]
-        path = os.path.join(DATA_DIR, fname)
-        if year not in best or month < best[year][1]:
-            best[year] = (path, month)
-    return {y: p for y, (p, _) in sorted(best.items())}
+        candidates.setdefault(year, {})[month] = os.path.join(DATA_DIR, fname)
+
+    if not candidates:
+        return {}
+    latest_year = max(candidates)
+    best: dict[int, tuple[str, int]] = {}
+    for year, months in candidates.items():
+        pick_month = max(months) if year == latest_year else min(months)
+        best[year] = (months[pick_month], pick_month)
+    return dict(sorted(best.items()))
 
 
-def _parse_top100(path: str, year: int) -> pd.DataFrame:
+def _parse_top100(path: str, year: int, month: int) -> pd.DataFrame:
     with zipfile.ZipFile(path) as z:
         with z.open(z.namelist()[0]) as f:
             raw = f.read().decode("latin-1", errors="replace").splitlines()
@@ -82,6 +96,7 @@ def _parse_top100(path: str, year: int) -> pd.DataFrame:
             "federation": fed,
             "rating": rating,
             "year": year,
+            "period": pd.Timestamp(year=year, month=month, day=1),
         })
 
     if not records:
@@ -94,13 +109,13 @@ def _parse_top100(path: str, year: int) -> pd.DataFrame:
 
 
 def load_top100(rebuild: bool = False) -> pd.DataFrame:
-    """Return DataFrame: year, rank, fide_id, name, federation, rating."""
+    """Return DataFrame: year, period, rank, fide_id, name, federation, rating."""
     if not rebuild and os.path.exists(CACHE_PATH):
         return pd.read_parquet(CACHE_PATH)
 
     frames = []
-    for year, path in _find_yearly_zips().items():
-        df = _parse_top100(path, year)
+    for year, (path, month) in _find_yearly_zips().items():
+        df = _parse_top100(path, year, month)
         if not df.empty:
             frames.append(df)
 

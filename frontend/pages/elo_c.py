@@ -29,7 +29,7 @@ layout = html.Div(
 
         html.Div(
             "Die grauen Flächen zeigen die Ratingverteilung der jeweils 200 bestplatzierten Spieler "
-            "der FIDE-Weltrangliste im Januar des Jahres. "
+            "der FIDE-Weltrangliste im Januar des Jahres (laufendes Jahr: neuester verfügbarer Stand). "
             "Rang 100 liegt stabil um ~2650, Rang 200 um ~2610.",
             className="chart-info",
             style={"marginBottom": "16px"},
@@ -130,12 +130,18 @@ BAND_RANKS = [(200, 100), (100, 50), (50, 20), (20, 10)]
 
 
 def _background_traces(top100: pd.DataFrame):
-    """Bands computed directly from exact rank ratings — boundaries align with rank lines."""
+    """Bands computed directly from exact rank ratings — boundaries align with rank lines.
+
+    X-Achse nutzt das tatsächliche Snapshot-Datum (top100["period"]) statt eines
+    hartcodierten {jahr}-01-01 — wichtig für das laufende Jahr, dessen Snapshot nicht
+    im Januar liegt (siehe data_top100.py::_find_yearly_zips).
+    """
     # Build lookup: (year, rank) -> rating
     rank_rating = top100.set_index(["year", "rank"])["rating"]
+    year_period = top100.drop_duplicates("year").set_index("year")["period"]
 
     years = sorted(top100["year"].unique())
-    periods = pd.to_datetime([f"{y}-01-01" for y in years])
+    periods = pd.to_datetime([year_period[y] for y in years])
 
     def ratings_for_rank(rank):
         return [rank_rating.get((y, rank), None) for y in years]
@@ -165,11 +171,7 @@ def _background_traces(top100: pd.DataFrame):
         (200, "rgba(140,140,140,0.50)","Rang 200"),
     ]
     for rank, color, label in rank_styles:
-        rank_df = (
-            top100[top100["rank"] == rank]
-            .sort_values("year")
-            .assign(period=lambda d: pd.to_datetime(d["year"].astype(str) + "-01-01"))
-        )
+        rank_df = top100[top100["rank"] == rank].sort_values("year")
         traces.append(go.Scatter(
             x=rank_df["period"],
             y=rank_df["rating"],

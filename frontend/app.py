@@ -13,7 +13,7 @@ app.title = "ELO-Einsichten"
 
 # Seiten-Gruppen (anhand order-Wert aus register_page)
 # Aktiv: order 1–9  |  Test: order 10+  |  QC: order 20+
-_AKTIV_PATHS = {"/c", "/dist", "/player-profile"}
+_AKTIV_PATHS = {"/c", "/dist", "/player-profile", "/arpad"}
 _TEST_PATHS  = {"/games", "/titles"}
 _QC_PATHS    = {"/qc", "/qc-corrections"}
 

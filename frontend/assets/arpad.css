@@ -1,0 +1,31 @@
+.arpad-bubble {
+    max-width: 75%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.arpad-bubble-user {
+    align-self: flex-end;
+    background: #3A5F80;
+    color: #FFFFFF;
+    border-bottom-right-radius: 3px;
+}
+
+.arpad-bubble-assistant {
+    align-self: flex-start;
+    background: #EEF3F7;
+    color: #333333;
+    border-bottom-left-radius: 3px;
+}
+
+.arpad-bubble-error {
+    align-self: flex-start;
+    background: #FFF0F0;
+    color: #C62828;
+    border: 1px solid #FFCDD2;
+    border-bottom-left-radius: 3px;
+}

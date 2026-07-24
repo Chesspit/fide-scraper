@@ -114,6 +114,20 @@ WHERE group_name='GRUPPENNAME';
 
 ---
 
+## ARPAD (Chatbot)
+
+Chat-Q&A-Seite unter `/arpad` — Claude (Sonnet 5, Tool Runner) beantwortet Fragen zu den
+gescrapten Rating-/Partiedaten über 4 feste, sichere Query-Tools (kein Text-to-SQL).
+
+- Tool-Definitionen + Query-Logik: `frontend/data_chat_queries.py` (reine DB-Layer) +
+  `frontend/data_arpad.py` (Anthropic-Client, System-Prompt, `answer_question()`).
+- Braucht `ANTHROPIC_API_KEY` in `.env` (lädt selbst via `python-dotenv`, siehe
+  `scraper/config.py`-Pattern — frontend lädt sonst kein `.env`).
+- Kennt nur den gescrapten Kern-Datensatz (~14.000+ Analysegruppen-/Top-ELO-/Swiss-2026-
+  Spieler mit `game_results`) — keine Scraping-Status-/Fortschritts-Fragen (out of scope).
+
+---
+
 ## Gotchas
 
 | Problem | Lösung |

@@ -1,21 +1,44 @@
 # Scraping-Status
 
-Stand: 2026-07-07 (Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
-Raspberry-Pi-Stand aktualisiert: 2026-06-28, ~18:30 Uhr (Tailscale seitdem nicht erneut abgefragt)
+Stand: 2026-07-29 (Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
+Raspberry Pi: **vom User abgeschaltet (seit 2026-07-22)** — Restbestand (794 pending Gruppen) am 29.07. auf die DC-Threads umverteilt, kein Thema mehr, siehe Abschnitt unten.
 
 ---
 
-## Gesamtstand DB (Live 2026-07-07)
+## Gesamtstand DB (Live 2026-07-29)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **9.972.029** (+82.655 seit 06.07.; Tageszuwachs zuletzt: 179 Tsd. am 05.07., 119 Tsd. am 06.07.) |
-| DB-Größe | **9.694 MB** |
-| Gruppen complete | **108 / 253** (140 pending, 5 partial, 1 skipped) — bezieht sich auf die manuell gepflegten Mac-Mini-Analysegruppen, unabhängig vom neuen P1/P2/P3-System (siehe unten) |
+| Partien gesamt | **11.608.206** (+784.453 seit 22.07.; ~112 Tsd./Tag im Schnitt der letzten 7 Tage) |
+| Gruppen complete | **108 / 253** (Stand 07.07., seither nicht neu geprüft) — bezieht sich auf die manuell gepflegten Mac-Mini-Analysegruppen, unabhängig vom P1/P2/P3-System (siehe unten) |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ (Vorbehalt: siehe Top-Spieler-Lückenanalyse unten) |
-| Neueste published_rating-Periode | **2026-07-01** (importiert 2026-07-02, `standard_jul26frl.zip`) |
-| P1/P2/P3-Fortschritt | **Erster Juli-Durchlauf ✅ komplett** (letzter P3-Batch am 06.07. 16:35 gestartet, 22:04 fertig, +4.745 Partien); Zyklus am 06.07. ~16:30 zurückgesetzt (`last_run` genullt) — **zweiter Durchlauf: P1 ✅ 2/2, P2 6/7, P3 1/40** (P1/P2-Batches liefen mit 0 neuen Partien sofort durch) |
-| VPS-Orchestrator-Queue gesamt | 4.273 done, 20.432 pending, 9 running, **0 failed** — seit 2026-07-04 in PG (Schema `orchestrator`); done-Rückgang ggü. 06.07. (4.286→4.273) = P1/P2/P3-Reset |
+| VPS-Orchestrator-Queue gesamt | **5.479 done, 5.354 pending, 8 running, 0 failed, 13.873 skipped** — done +607 ggü. 22.07., skipped unverändert (keine neuen Jahresziel-Cutoffs) |
+| Aktive Threads | Alle 9 DI-Threads (DataImpulse Residential Rotating) laufen produktiv, siehe Proxy-Migration 16.07. unten; Durchsatz zwischen Threads sehr ungleich, siehe Hochrechnung unten |
+
+---
+
+## Hochrechnung Restlaufzeit VPS-Backfill (Stand 2026-07-29)
+
+Basis: erfolgreiche `scrape_runs` der letzten 7 Tage (22.–29.07.) pro Thread, hochgerechnet gegen die aktuell pending Gruppen je `thread_affinity`. Raspberry-Pi-Bestand (794 pending) ausgeklammert, da abgeschaltet.
+
+| Thread | Pending | Ø Gruppen/Tag (7d) | Hochrechnung |
+|--------|--------:|---:|---|
+| dc_us | 530 | 19,3 | ~28 Tage → **ca. 26.08.** |
+| dc_hk | 357 | 12,4 | ~29 Tage → **ca. 27.08.** |
+| dc_ae | 443 | 10,4 | ~43 Tage → **ca. 10.09.** |
+| dc_dach | 389 | 8,9 | ~44 Tage → **ca. 11.09.** |
+| dc_mx | 236 | 6,4 | ~37 Tage → **ca. 04.09.** |
+| dc_update_1 | 531 | 8,7 | ~61 Tage → **ca. 28.09.** |
+| dc_uk | 564 | 8,0 | ~71 Tage → **ca. 08.10.** |
+| dc_es | 537 | 7,9 | ~68 Tage → **ca. 05.10.** |
+| dc_in | 445 | 4,7 | ~94 Tage → **ca. 31.10.** |
+| dc_de | 511 | 5,0 | ~102 Tage → **ca. 08.11.** |
+
+**Gesamt-Queue (alle Threads zusammen, ohne Pi):** 4.560 pending bei aktuell ~92 Gruppen/Tag Summendurchsatz → rein rechnerisch ~50 Tage. Das ist aber optimistisch, da jeder Thread nur seinen eigenen Pool abarbeitet: **der langsamste Thread bestimmt das reale Ende.** Aktuell sind das `dc_de` (5,0/Tag) und `dc_in` (4,7/Tag) — beide deutlich unter dem Schnitt (Vergleich `dc_us` 19,3/Tag, `dc_hk` 12,4/Tag, fast 4× schneller). Realistisches Ende des Welt-Backfills (ohne Pi, ohne Rebalancing): **Anfang bis Mitte November 2026**.
+
+**Auffällig:** dc_de/dc_in fallen ähnlich wie beim AUT/SUI-Prioritäts-Fix (22.07.) oder dem DACH/dc_update_1-Split (04.07.) durch reine Warteschlangen-Mechanik zurück, oder es liegt ein Proxy-/Tarpit-Problem im jeweiligen Länder-Pool vor (analog zur DC-Deaktivierung IN/HK/AE im Juni, siehe Memory). Lohnt sich zeitnah zu prüfen (Health-Check-Log dieser beiden Threads), bevor man Gruppen umverteilt — noch nicht diagnostiziert, reine Beobachtung aus den Live-Zahlen.
+
+Pi-Bestand (794 pending, Jahr 2020) bleibt bis zur Reaktivierung oder Entscheidung zur Umverteilung außen vor.
 
 ---
 
@@ -131,11 +154,11 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 | DC-MX (Slot 105) | Datacenter | semi_conservative | FRA, BEL, NED, LUX | America/Mexico_City | ✅ aktiv |
 | DC-AE (Slot 106) | Datacenter | semi_conservative | SRB, CRO, BIH, MKD, MNE, SLO, KOS, ALB, GRE, TUR | Asia/Dubai | ✅ aktiv |
 | DC-DACH (Slot 107) | Datacenter | semi_conservative | GER, SUI, AUT (Vollbackfill) | Europe/Berlin | ✅ aktiv |
-| DC-UPDATE-1 (Slot 108) | Datacenter | semi_conservative | P1/P2/P3-Monatsrefresh (`update_only=1`) **+ seit 2026-07-06 DACH-Backfill-Mithilfe** (596 pending GER/SUI/AUT via `thread_affinity`, siehe Session unten) | Europe/Berlin | ✅ aktiv |
+| DC-UPDATE-1 (Slot 108) | Datacenter | semi_conservative | P1/P2/P3-Monatsrefresh (`update_only=1`) — **seit 11.08. wieder exklusiv**, DACH/FRA-Backfill-Mithilfe zurückgebaut (siehe Session 2026-08-11/12 unten) | Europe/Berlin | ✅ aktiv |
 
-**DC-UPDATE-1 ersetzt seit 2026-07-02 den alten `dc_update`-Thread** — siehe Session-Änderungen unten. Nach Abschluss des Monats-Refreshs hilft er seit 2026-07-06 als **zweiter DACH-Backfiller** (50/50-Split der pending DACH-Gruppen mit `dc_dach`), da er zwischen den monatlichen Update-Läufen sonst leerläuft.
+**DC-UPDATE-1 ersetzt seit 2026-07-02 den alten `dc_update`-Thread** — siehe Session-Änderungen unten. Zwischen 2026-07-06 und 2026-08-11 half er zusätzlich als **zweiter DACH-Backfiller** (50/50-Split der pending DACH-Gruppen mit `dc_dach`, danach + FRA-Anteil), da er zwischen den monatlichen Update-Läufen sonst leerlief — am 11.08. wieder rückgängig gemacht, weil diese Backfill-Gruppen strukturell niedrigere (=dringlichere) Priorität hatten als die P1/P2/P3-Batches und den Thread dadurch nie an den eigentlichen Monatsrefresh kommen ließen.
 
-### P1/P2/P3-Monatsrefresh — Fortschritt (Stand 2026-07-07)
+### P1/P2/P3-Monatsrefresh — Fortschritt (Stand 2026-07-07, historisch)
 
 Ersetzt die alten 4 UP-Jobs (lokal, Mac Mini) + föderationsbasierte `dc_update`-Rest-Batches durch drei geschlechtsunabhängige Prioritätsstufen, komplett auf dem VPS (siehe `orchestrator/monthly_refresh_tiers.py`):
 
@@ -147,24 +170,39 @@ Ersetzt die alten 4 UP-Jobs (lokal, Mac Mini) + föderationsbasierte `dc_update`
 
 **Erster Juli-Durchlauf am 06.07. abgeschlossen** (letzter P3-Batch 16:35–22:04 Uhr). Der Zyklus wurde am 06.07. ~16:30 zurückgesetzt (`last_run_at` genullt, `records_found` der pending-Batches blieb erhalten); der zweite Durchlauf läuft seither nebenher — P1/P2 gingen mangels neuer Daten in Minuten durch. Bei Bedarf per zweitem `dc_update_2`-Thread beschleunigbar (siehe `monthly_refresh_tiers.DC_UPDATE_POOL`).
 
+### P1/P2/P3-Monatsrefresh — aktueller Zyklus (Stand 2026-08-12, Live-Abfrage)
+
+Zyklus neu gestartet am 11.08. (`orchestrator/reset_monthly_refresh.py`, nachdem `dc_update_1` von der DACH/FRA-Backfill-Last befreit wurde, siehe Session unten) — deckt die Juli-Periode ab (Import `standard_aug26frl.zip`, 562.979 Zeilen `rating_history`).
+
+| Tier | Filter | Batches | Spieler (Band-Summe) | Status |
+|---|---|---:|---:|---|
+| P1 | ELO ≥ 2300, alle Föderationen | 2 | ~4.189 | ✅ 2/2 fertig |
+| P2 | GER/SUI/AUT, ELO < 2300 | 7 | ~18.792 | 🔄 4/7 fertig, 1 läuft (ELO 1790–1862, seit 08:40 Uhr), 2 offen |
+| P3 | Rest (alle übrigen ≥1×gescrapten Spieler) | 40 | ~117.900 | ⏳ 0/40 gestartet |
+
+**Live-Stand 12.08. ~08:52 Uhr:** 6 von 49 Gruppen fertig, 1 läuft, 42 pending (**~12 %**). Laufender Job seit 08:40 Uhr ohne Auffälligkeiten (`scrape_runs` der letzten 2h zeigt saubere `success`-Einträge für `dc_update_1`, `dc_es`, `dc_uk`). Kein Fehler-/Hänger-Status.
+
+⚠️ **Bekanntes Problem, bewusst unangetastet (User-Entscheidung 11.08.):** Die P1/P2/P3-Bänder wurden am 02.07. für Ziel 2.000–3.000 Spieler/Batch erzeugt; durch den parallel laufenden Welt-Backfill sind die Bänder seither deutlich übervoll gewachsen (P2 jetzt ~2.700/Band statt ~2.800 Ziel, P3-Live-Nachzählung am 11.08. zeigte 118.066 → 183.604, +55,5 %). Dadurch dauert jedes P3-Band ~6–8 Std. statt der geplanten 3–4 — Gesamtlaufzeit für den kompletten P1/P2/P3-Durchlauf revidiert von ~8 auf **~13 Tage** (bei einem Thread, ~655 Spieler/Std.) → Ende grob **Ende August**. Fix bei Bedarf: alte pending P3-Zeilen löschen + `generate_monthly_refresh_batches.py` neu laufen lassen (baut dann ~62 statt 40 Bänder) — wächst beim nächsten Zyklus vermutlich wieder aus dem Rahmen, solange der Welt-Backfill weiterläuft, also eher wiederkehrendes Thema als Einmal-Fix. Vorerst nichts weiter anfassen, in ein paar Tagen Fortschritt erneut prüfen.
+
 ---
 
-## Raspberry Pi (Slot 50 "Pi") — aktiv seit 2026-06-10
+## Raspberry Pi (Slot 50 "Pi") — abgeschaltet, Restbestand umverteilt (Stand 2026-07-29)
 
-Raspberry Pi 500 als drittes Scraping-Gerät beim Bruder (Remote-Zugang via Tailscale).
+Raspberry Pi 500 als drittes Scraping-Gerät beim Bruder (Remote-Zugang via Tailscale). **User hat das Gerät seit 2026-07-22 bis auf Weiteres abgestellt** — kein aktives Thema. Die 452 bereits erledigten Gruppen bleiben als `device='raspi'`/`status='done'` stehen (reine Historie, unangetastet).
 
-> ⚠️ **Status-Sync seit 2026-07-04 ~08:04 UTC gebrochen** (Review-#5-Deploy): `merge_pi_status.py` + `sync_pi_to_vps.sh` wurden planmäßig gelöscht (Queue-Migration SQLite→PostgreSQL), da sie auf die alte VPS-`scraper.db` zielten, die es nicht mehr gibt. Das Pi-**Scraping selbst läuft vermutlich unbeeinflusst weiter** (schreibt Partien direkt nach PG), aber Dashboard-Slot 50 und die zentrale done-Markierung von `device='raspi'`-Gruppen frieren auf dem Stand von heute Morgen (~07:50 UTC) ein. Fix: Pi direkt an die PG-Queue anbinden (braucht vorher eine `claimed_by`-Spalte, siehe Caveat unten) oder Sync-Mechanik neu aufbauen. Noch nicht behoben — Pi war am 2026-07-04 via Tailscale vom Mac Mini aus nicht erreichbar (Timeout), Prüfung/Fix nur vom MacBook Pro aus möglich.
+> ✅ **TODO erledigt (2026-07-29):** Die 794 pending `device='raspi'`-Gruppen (Jahr 2020, alle Föderationen außer DACH) wurden per SQL-Update auf ihre etablierten Föderations-Heimat-Threads umgehängt (`device=NULL`, `thread_affinity` gesetzt) — analog zum FRA-Split vom 22.07. **Bewusst ausgenommen: `dc_update_1`**, da dieser Thread in den nächsten Tagen für den monatlichen P1/P2/P3-Refresh gebraucht wird. Verteilung: dc_ae +166, dc_es +164 (davon 113 ESP), dc_mx +113 (davon 112 FRA), dc_us +110, dc_uk +89, dc_hk +77, dc_de +44, dc_in +30, dc_dach +1 (Sonderfall „staatenlos"/`NON`). Die Pi-Warteschlange ist damit vollständig ins reguläre VPS-Backfill integriert und läuft aktiv mit — kein separates Gerät mehr nötig. Auswirkung auf die Gesamt-Hochrechnung: siehe Abschnitt „Hochrechnung Restlaufzeit" oben (neuer Flaschenhals weiterhin `dc_de`, jetzt ~19.11.2026 statt ~08.11. ohne Pi-Bestand).
+
+> ⚠️ **Status-Sync war zusätzlich seit 2026-07-04 ~08:04 UTC gebrochen** (Review-#5-Deploy): `merge_pi_status.py` + `sync_pi_to_vps.sh` wurden planmäßig gelöscht (Queue-Migration SQLite→PostgreSQL), da sie auf die alte VPS-`scraper.db` zielten, die es nicht mehr gibt. Betrifft nur noch die Historie/den Fall einer erneuten Reaktivierung — durch die Umverteilung nicht mehr akut, da der Pi keine eigene Queue mehr hat.
 
 | | |
 |---|---|
-| Gerät | Raspberry Pi 500 (Pi 5, ARM64, 8 GB), Benutzer `pit1` |
+| Gerät | Raspberry Pi 500 (Pi 5, ARM64, 8 GB), Benutzer `pit1`, seit 22.07. abgeschaltet |
 | Tailscale-IP | `100.125.193.29` |
 | Profil | `normal` (1 Thread, kein Proxy — residential IP) |
-| Queue | 1247 Gruppen (`device='raspi'`), Jahr 2020, ELO 1400–2840, alle Föderationen |
-| Sync | ~~`sync_pi_to_vps.sh` alle 5 Min → `merge_pi_status.py`~~ **gebrochen seit 2026-07-04, siehe Warnhinweis oben** |
-| **Fortschritt (zentral zuletzt, 2026-07-04 ~07:50 UTC)** | **452 done / 794 pending — ~36 %** (lokal auf dem Pi vermutlich weiter fortgeschritten, aber nicht mehr sichtbar) |
+| Queue | **0 Gruppen** (794 pending am 29.07. auf die DC-Threads umverteilt, siehe oben) — 452 `done` bleiben als Historie stehen |
+| Sync | ~~`sync_pi_to_vps.sh` alle 5 Min → `merge_pi_status.py`~~ gebrochen seit 2026-07-04 — bei erneuter Reaktivierung neu aufsetzen (Pi hat dann keine bestehende Queue mehr, bräuchte neue Gruppen) |
 
-**Fortschritt (letzter verlässlicher zentraler Stand):** 17/1246 am 12.06. → 362/1247 am 28.06. → 452/1246 am 04.07. morgens (~15–18 Gruppen/Tag) → Rest ~45–55 Tage bei fortgesetztem Tempo.
+**Historischer Fortschritt (bis zur Abschaltung):** 17/1246 am 12.06. → 362/1247 am 28.06. → 452/1246 am 04.07. (~15–18 Gruppen/Tag) → 452/1246 eingefroren bis zur Umverteilung am 29.07.
 
 **Status abfragen** (Tailscale `up`, NordVPN aus; Pi-SQLite unter `orchestrator/pi_data/scraper.db`, kein `sqlite3`-CLI → Python):
 **Diese Abfrage ist seit dem gebrochenen Sync (siehe Warnhinweis oben) der einzige Weg an den echten Fortschritt** — sie fragt die Pi-eigene lokale `scraper.db` direkt ab, unabhängig vom kaputten VPS-Sync:
@@ -244,6 +282,40 @@ Stand 2026-07-07, alle Threads aktiv:
 | Spieler-Steckbrief | Aktiv | `/player-profile` | Profil + Rating-History + Spielstatistiken |
 | Partien-Detail | Test | `/games` | Alle Partien eines Spielers, filterbar |
 | GM/IM Entwicklung | Test | `/titles` | Zeitreihe der Titelträger |
+
+---
+
+## Änderungen Session 2026-08-11/12 — dc_update_1 von DACH/FRA-Backfill befreit + Monatsrefresh neu gestartet
+
+| Was | Details |
+|-----|---------|
+| **`dc_update_1` entlastet** | 233 pending AUT/GER/SUI-Gruppen zurück auf `thread_affinity='dc_dach'`, 134 pending FRA-Gruppen 1:1 auf `dc_dach`/`dc_mx` verteilt (ID-Parität). Ursache: diese Backfill-Gruppen hatten niedrigere (=dringlichere) `priority`-Werte als die P1/P2/P3-Batches (525.667+) — der Update-Thread kam dadurch strukturell nie an den eigentlichen Monatsrefresh. |
+| **Juli-Periode importiert** | `standard_aug26frl.zip` (Periode 2026-08-01, enthält Juli-Partien) importiert — 562.979 Zeilen `rating_history`. |
+| **Monatsrefresh neu gestartet** | `orchestrator/reset_monthly_refresh.py` angestoßen — P1 (2 Gruppen)/P2 (7)/P3 (40) auf `pending` zurückgesetzt. Live-Stand 12.08. ~08:52 Uhr: **P1 2/2 fertig, P2 4/7 fertig + 1 läuft, P3 0/40** — siehe Detailtabelle im Orchestrator-Abschnitt oben. |
+| **P3-Bänder übervoll (bekannt, unangetastet)** | Live-Nachzählung 11.08.: P3-Population von 118.066 (Stand 02.07., Bänder erzeugt) auf 183.604 gewachsen (+55,5 %, getrieben vom parallel laufenden Welt-Backfill) — alle 40 Bänder liegen jetzt bei 3.694–5.187 Spielern statt Zielgröße. Kein Korrektheitsproblem (Bänder lückenlos 0–2299, Worker fragt live gegen DB ab), aber Gesamtlaufzeit für den P1/P2/P3-Durchlauf revidiert von ~8 auf ~13 Tage. **User-Entscheidung:** vorerst nichts anfassen (keine Neu-Erzeugung der Bänder), in ein paar Tagen Fortschritt erneut prüfen. |
+
+---
+
+## Änderungen Session 2026-07-29 — Pi-Bestand umverteilt + Hochrechnung aktualisiert
+
+| Was | Details |
+|-----|---------|
+| **794 pending Pi-Gruppen umverteilt** | Per SQL-Update auf die etablierten Föderations-Heimat-Threads umgehängt (`device=NULL`, `thread_affinity` gesetzt), analog zum FRA-Split vom 22.07. `dc_update_1` bewusst ausgenommen (wird in Kürze für den monatlichen P1/P2/P3-Refresh gebraucht). Details siehe Raspberry-Pi-Abschnitt oben. Neuer Flaschenhals unverändert `dc_de`/`dc_in`, Gesamtende jetzt ~19.11.2026 (statt ~08.11. ohne Pi-Bestand). |
+| **Hochrechnung Restlaufzeit** | Neuer Abschnitt oben, auf Basis 7-Tage-Durchsatz je Thread. Auffällig: `dc_de` (4,9 Gruppen/Tag) und `dc_in` (4,6/Tag) laufen fast 4× langsamer als `dc_us` (19,7/Tag) — noch nicht diagnostiziert, ob Proxy-/Tarpit-Ursache oder strukturell, lohnt Prüfung. |
+| **DataImpulse-Kalibrierung: Diskrepanz gefunden** | Unser `mb_downloaded`-Zähler zeigt seit der Migration (16.07.) nur ~1,2 GB, DataImpulse-Dashboard zeigt real **11 GB** (Stand 29.07., 13 Tage) — Faktor ~9 Unterschied, Richtung entgegen der bisherigen Doku-Annahme („mb_downloaded überschätzt den Traffic"). Vermutlich TLS-Handshake/Verbindungsaufbau pro Request bei Residential-IP-Rotation, der nicht mitgezählt wird. **Interner Zähler taugt nicht zur Kostenkontrolle**, nur das DataImpulse-Dashboard ist verlässlich. Hochrechnung bis Fertigstellung (~19.11., 113 Tage ab 29.07.) auf Basis der realen 11 GB: **~100–160 GB Gesamtverbrauch seit Migration** (0,85–1,3 GB/Tag je nach Trend), deutlich mehr als die ursprünglich angenommenen 50 GB. |
+
+---
+
+## Änderungen Session 2026-07-22 — Doku-Nachzug + AUT/SUI-Prioritäts-Fix
+
+Die Doku hatte seit 16.07. keinen Eintrag mehr (6 Tage Lücke); Live-Zahlen oben aktualisiert (10,82 Mio Partien, +852k seit 07.07.; Queue 0 failed). Zwei konkrete Ergebnisse dieser Session:
+
+| Was | Details |
+|-----|---------|
+| **Raspberry Pi abgeschaltet** | User-Entscheidung: Pi bis auf Weiteres außer Betrieb, kein laufendes Thema mehr. Stand 452/1246 done bleibt eingefroren (siehe Pi-Abschnitt oben), `device='raspi'`-Gruppen (452 done/794 pending) unangetastet in der Queue liegen gelassen. |
+| **AUT/SUI: Prioritäts-Lücke 2016–2019 gefixt** | User bemerkte, dass DACH-Threads bereits bei Jahr 2015 arbeiten, während für AUT/SUI in 2016–2019 noch offene (pending) Gruppen existieren. Live-Diagnose bestätigt: 55 Gruppen (niedrige ELO-Bänder, ELO 1400–1825, je Föderation/Jahr) trugen aus einem früheren Umbau eine Alt-Priorität im 50.200er-Bereich, während der Rest des DACH-Backfills (alle ELO-Bänder für 2015 abwärts sowie die höheren ELO-Bänder 2016–2019) längst im 1.000–1.400er-Bereich läuft bzw. bereits `done` ist — dadurch blieben diese 55 Gruppen strukturell abgehängt (niedrigere Priorität = später dran), obwohl sie chronologisch vor dem aktuellen Bearbeitungsstand (2015) liegen. **Fix:** Priorität der 55 betroffenen `pending`-Gruppen (AUT+SUI, Jahr 2016–2019, `thread_affinity` unverändert dc_dach/dc_update_1) neu auf 900–954 gesetzt (2019 zuerst, dann 2018→2016, je Föderation/ELO-Band absteigend) — damit vor dem bisherigen nächsten Batch (Priorität 1158/1212) einsortiert. Reine Priority-Umnummerierung in `orchestrator.scrape_groups`, keine Gruppen neu angelegt oder Status geändert. |
+| **FRA: 0 %-Fortschritt diagnostiziert + auf 3 Threads verteilt** | User fragte, warum Frankreich bei 0 % steht, während NED/BEL/LUX (alle auf demselben Thread `dc_mx`) schon fast fertig sind. Diagnose: FRA war korrekt zugeordnet und prioritätsmäßig nicht blockiert — aber mit 669 offenen Gruppen (Jahre 2021–2026, Vor-2020 korrekt `skipped` laut Jahresziel) allein für einen einzigen sequenziellen Thread viel zu groß (NED+BEL+LUX+MEX zusammen nur noch 56 offen). Die 669 pending-FRA-Gruppen wurden per Round-Robin (`id % 3`) zu gleichen Dritteln auf `dc_mx`/`dc_dach`/`dc_update_1` verteilt (je 223). Die 112 FRA-Gruppen für Zieljahr 2020 liegen separat auf `device='raspi'` (Pi abgeschaltet) und sind von diesem und dem folgenden Fix nicht betroffen. |
+| **FRA-Split nachgebessert: Priorität verzahnt statt angehängt** | Erste Version des Splits behielt FRAs alte (sehr hohe = späte) Priorität bei — dadurch stand FRA auf `dc_dach`/`dc_update_1` weiterhin komplett *hinter* dem gesamten bestehenden Bestand (222 bzw. 322 Gruppen) an, teils über Wochen, zumal `dc_update_1` künftig verstärkt für den P1/P2/P3-Monatsrefresh gebraucht wird. User-Einwand berechtigt. **Fix:** Bestehender Bestand (AUT/SUI/GER, ohne die separaten P1/P2/P3-Refresh-Reste) und FRA je Thread 1:1 im Prioritäts-Ranking verzahnt (jede zweite abgearbeitete Gruppe ist jetzt FRA) statt FRA ans Ende zu hängen. Dadurch kommt auf jedem der drei Threads die erste FRA-Gruppe direkt als zweite Gruppe nach der aktuell laufenden dran — nicht erst nach Wochen. Gesamtdauer bis FRA komplett fertig ist unverändert (gleiche Arbeitsmenge), aber der Fortschritt verteilt sich jetzt gleichmäßig statt in einem Rutsch am Ende. |
 
 ---
 

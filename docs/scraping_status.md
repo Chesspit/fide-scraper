@@ -42,6 +42,23 @@ Pi-Bestand (794 pending, Jahr 2020) bleibt bis zur Reaktivierung oder Entscheidu
 
 ---
 
+## VPS-Sicherheitspatch 2026-07-24 — CVE-2026-31431 "Copy Fail" (Linux-Kernel-LPE)
+
+*(Nachtrag: lag seit dem 24.07. unversioniert im Arbeitsverzeichnis, nie committed — jetzt mit dem 29.07.-Stand zusammengeführt.)*
+
+Per Hosting-Mail auf reale, öffentlich bestätigte Kernel-Lücke hingewiesen worden (CVSS 7.8, lokale Root-Privilege-Escalation über `algif_aead`/AF_ALG, öffentlicher PoC im Umlauf, bestätigt u. a. von Ubuntu/Red Hat/Microsoft/CERT-EU, disclosed 29.04.2026). VPS lief auf `6.8.0-90-generic` (Ubuntu 24.04.4) — verwundbar.
+
+| Was | Details |
+|-----|---------|
+| **Befund** | Kernel-Pakete (`linux-generic`, `linux-image-generic`, `linux-image-virtual`, `linux-virtual`) standen auf `apt-mark hold` — vermutlich Hostinger-seitig gesetzt. Normales `apt upgrade` scheiterte deshalb zunächst mit „held broken packages". |
+| **Fix** | `apt-mark unhold` für die 4 Pakete, dann `apt update && apt upgrade -y` (Kernel + Headers) + Reboot. `cloud-init` bewusst weiter gehalten (unabhängig von der CVE, Standard bei Cloud-Images). |
+| **Ausführung** | Sudo-Passwort ließ sich nicht über die SSH-Session von Claude aus eingeben — Update+Reboot als kurzes Skript (`~/kernel_update.sh`) auf dem VPS abgelegt, User hat es selbst mit `sudo bash kernel_update.sh` ausgeführt. |
+| **Verifiziert danach** | Kernel `6.8.0-136-generic` (gepatcht), kein `reboot-required`-Flag mehr, `algif_aead` nicht geladen, alle 10 Docker-Container automatisch wieder oben (`unless-stopped`/`always`-Restart-Policies), Tunnel + DB-Verbindung wiederhergestellt, Orchestrator-Worker speichert nachweislich aktiv neue Partien (Live-Log-Check). |
+| **Downtime** | Minimal — Container-Uptime nach Reboot bestätigt ~1 Minute, kein Datenverlust, keine übersehenen Gruppen. |
+| **Nachwirkung: Dashboard-HTTPS down** | Nach dem Reboot war `https://scelo.chesspit.net` per TLS-Fehler nicht erreichbar. Ursache: ein **nie fertig konfigurierter host-level `caddy`-systemd-Service** (Platzhalter-`Caddyfile` mit `scraper.IHRE-DOMAIN.com`/Dummy-Passwort-Hash, offenbar Rest eines alten Setup-Versuchs) startet bei jedem Boot automatisch und belegt Port 80/443, bevor `coolify-proxy` (der echte Traefik-Proxy für die Domain) binden kann → `coolify-proxy` blieb dauerhaft `Exited (128)`. Erklärt vermutlich auch die wiederkehrenden ACME-Fehler in den `coolify-proxy`-Logs der letzten Monate (09.04./26.04./13.05./29.05./17.07.) — derselbe Konflikt bei früheren Reboots. **Fix:** `sudo systemctl disable --now caddy` + `sudo docker start coolify-proxy` — Dashboard danach wieder erreichbar (HTTP 401/BasicAuth wie erwartet). **Für künftige Reboots erledigt** (Service ist jetzt `disabled`, kommt nicht wieder). |
+
+---
+
 ## Top-Spieler-Lückenanalyse (ELO ≥ 2300, aktiv) — Stand 2026-07-01
 
 Trotz "51/51 Global-Gruppen complete" sind **nicht 100 % aller Top-Spieler gescrapt**. Live-Abfrage gegen `players` (aktiv, `std_rating >= 2300`) vs. `game_results`:
@@ -194,6 +211,8 @@ Raspberry Pi 500 als drittes Scraping-Gerät beim Bruder (Remote-Zugang via Tail
 
 > ⚠️ **Status-Sync war zusätzlich seit 2026-07-04 ~08:04 UTC gebrochen** (Review-#5-Deploy): `merge_pi_status.py` + `sync_pi_to_vps.sh` wurden planmäßig gelöscht (Queue-Migration SQLite→PostgreSQL), da sie auf die alte VPS-`scraper.db` zielten, die es nicht mehr gibt. Betrifft nur noch die Historie/den Fall einer erneuten Reaktivierung — durch die Umverteilung nicht mehr akut, da der Pi keine eigene Queue mehr hat.
 
+> ⚠️ **Befund 2026-07-19 (PG-Live-Abfrage):** Die am 07.07. abends vom MacBook Pro angestoßene PG-Queue-Umstellung (Runbook `docs/pi_pg_queue_umstellung.md`) ist **nie in der Queue angekommen** — es existiert kein einziger Claim mit `claimed_by='raspi'`, letzter Slot-50-Run 04.07. 09:27 UTC, raspi-Pool unverändert 452 done / 794 pending. Entweder ist die Umstellung gescheitert/nicht abgeschlossen worden, oder der Pi steht komplett. Ob der Pi noch mit alter Queue-Kopie weiterscrapt, ist von hier nicht sichtbar (Tailscale-Check nötig). **User-Entscheidung 19.07.: Pi-Umstellung ist momentan kein Thema — Punkt ruht, bis er wieder aufgegriffen wird.**
+
 | | |
 |---|---|
 | Gerät | Raspberry Pi 500 (Pi 5, ARM64, 8 GB), Benutzer `pit1`, seit 22.07. abgeschaltet |
@@ -269,8 +288,8 @@ Stand 2026-07-07, alle Threads aktiv:
 
 | | |
 |---|---|
-| URL | **https://scelo.chesspit.net/analytics** *(oder lokal Port 8055)* |
-| Framework | Dash (Python), Multi-Page |
+| URL | ~~https://scelo.chesspit.net/analytics~~ *(oder lokal Port 8055)* — **Stand 27.08.: nicht live, siehe Deploy-Status unten** |
+| Framework | Dash (Python), Multi-Page (`frontend/app.py` + `frontend/pages/*.py`) |
 | Default-Spieler | Gukesh D (FIDE-ID 46616543, Weltmeister 2024) |
 
 ### Seiten
@@ -280,8 +299,26 @@ Stand 2026-07-07, alle Threads aktiv:
 | ELO-Top100 | Aktiv | `/c` | Live-Top-100 Rangliste mit ELO-Verlauf |
 | ELO-Verteilung | Aktiv | `/dist` | ELO-Verteilungshistogramm nach Kategorie |
 | Spieler-Steckbrief | Aktiv | `/player-profile` | Profil + Rating-History + Spielstatistiken |
+| ARPAD | Aktiv | `/arpad` | Chatbot (Claude, Tool Runner) für Fragen zu den Rating-/Partiedaten — 4 feste Query-Tools, kein Text-to-SQL, braucht `ANTHROPIC_API_KEY`; siehe CLAUDE.md-Abschnitt „ARPAD (Chatbot)" |
 | Partien-Detail | Test | `/games` | Alle Partien eines Spielers, filterbar |
 | GM/IM Entwicklung | Test | `/titles` | Zeitreihe der Titelträger |
+| QC Übersicht | QC | `/qc` | Jahres-/Monatsdetail zu Rating-Deltas |
+| FIDE 2024 Korrekturen | QC | `/qc-corrections` | Analyse der einmaligen ELO-Anpassung März 2024 |
+
+### Deploy-Status (Befund 27.08.2026)
+
+**Läuft aktuell nicht auf dem VPS**, obwohl bisher hier als live dokumentiert:
+
+| Geprüft | Befund |
+|---|---|
+| Docker-Container | Kein Container für `frontend/` (weder laufend noch gestoppt) — nur `orchestrator-dashboard-1` (Port 8050, Steuerung) und `orchestrator-worker-1` laufen |
+| Port 8055 | Nicht offen (`ss -tlnp` auf dem VPS: nur 8050 lauscht) |
+| Prozesse/Sessions | Kein `python`-Prozess, kein `screen`/`tmux` mit `frontend/app.py` |
+| Traefik-Routing | Kein Router/Label mit `/analytics`-Pfad — der Host-Router `scelo.chesspit.net` aus `orchestrator/docker-compose.yml` matcht nur auf `Host()`, keinen Pfad, und zeigt ausschließlich auf `orchestrator-dashboard-1`. Das erklärt den HTTP 401 auf `/analytics`: das ist die BasicAuth-Antwort des Orchestrator-Dashboards, nicht das Analytics-Frontend |
+| Code auf dem VPS | Liegt aktuell (`git pull`) unter `/opt/fide-scraper/frontend`, zuletzt per Commit vom 09.06. (QC-Seiten) bzw. neuere ARPAD/Karten-Commits im Repo — Code ist da, wird nur nicht ausgeführt |
+| Deploy-Weg im Repo | **Keiner.** Kein `Dockerfile`, kein Eintrag in `docker-compose.yml`/`orchestrator/docker-compose.yml`, kein systemd-Unit, kein Cron — anders als Orchestrator-Dashboard/Worker, die beide über `orchestrator/Dockerfile` + `orchestrator/docker-compose.yml` mit `restart: unless-stopped` deployed sind |
+
+**Vermutung:** wurde bisher nur ad hoc lokal oder per manuellem `python3 frontend/app.py` (Port 8055) für Screenshots/Demos gestartet und lief nie dauerhaft — daher auch kein Absturz-/Restart-Bedarf sichtbar. Für einen dauerhaften Live-Betrieb fehlt: ein `Dockerfile` (analog `orchestrator/Dockerfile`), ein Service-Eintrag mit `restart: unless-stopped` und ein Traefik-Router mit `PathPrefix(\`/analytics\`)`-Regel (eigener Host oder Pfad-Strip, da die App intern auf `/c`, `/dist` etc. statt `/analytics/c` erwartet) plus eigene oder geteilte BasicAuth. **Noch nicht umgesetzt — offener Punkt.**
 
 ---
 

@@ -387,10 +387,17 @@ _PG_AKTIV_TTL = 300.0   # 5 Min — selten nötig, PG nicht belasten
 
 
 def query_pg_players() -> dict[str, tuple[int, int]]:
-    """Liefert pro Föderation (scraped, active) aus PostgreSQL (gecacht, 5 Min TTL).
+    """Liefert pro Föderation (scraped, std_population) aus PostgreSQL (gecacht, 5 Min TTL).
 
-    scraped = COUNT(DISTINCT fide_id) aus scrape_periods WHERE status='ok'
-    active  = COUNT(*) aus players WHERE active=TRUE
+    scraped        = COUNT(DISTINCT fide_id) aus scrape_periods WHERE status='ok'
+    std_population = COUNT(*) aus rating_history für die zuletzt importierte
+                      FIDE-Standardliste (published_rating IS NOT NULL) — das ist
+                      unsere tatsächliche Scraping-Zielpopulation (~566k Stand
+                      09/2026), NICHT players.active (~1,5 Mio.): letzteres ist
+                      FIDE's Gesamt-Mitgliedschaft inkl. reiner Rapid/Blitz-Spieler
+                      und wird nur bei vollen FOA-Reimporten aktualisiert (zuletzt
+                      04/2026) — als Vergleichsbasis für "wie viel % ist gescraped"
+                      irreführend groß, siehe Diskussion 2026-09-01.
 
     Liefert {} wenn PG nicht erreichbar — Dashboard läuft weiter mit '—'-Werten.
     """
@@ -403,14 +410,20 @@ def query_pg_players() -> dict[str, tuple[int, int]]:
         pg  = psycopg2.connect(get_database_url(), connect_timeout=5)
         cur = pg.cursor()
 
-        # 1) Aktive Spieler pro Föd.
+        # 1) Aktuelle Std-Ratingliste pro Föd. (jüngste importierte Periode).
+        #    Braucht idx_rating_history_period_pubrating (Migration 015) — ohne
+        #    Index Full-Table-Scan (gemessen 12–75s), mit Index <1s.
         cur.execute("""
-            SELECT federation, COUNT(*) AS n
-            FROM   players
-            WHERE  active = TRUE AND federation IS NOT NULL
-            GROUP  BY federation
+            SELECT p.federation, COUNT(*) AS n
+            FROM   rating_history rh
+            JOIN   players p ON p.fide_id = rh.fide_id
+            WHERE  rh.period = (SELECT MAX(period) FROM rating_history
+                                 WHERE published_rating IS NOT NULL)
+              AND  rh.published_rating IS NOT NULL
+              AND  p.federation IS NOT NULL
+            GROUP  BY p.federation
         """)
-        active = {row[0]: row[1] for row in cur.fetchall()}
+        std_pop = {row[0]: row[1] for row in cur.fetchall()}
 
         # 2) Gescrapte Spieler pro Föd. (mind. 1 erfolgreiche Periode)
         cur.execute("""
@@ -423,8 +436,8 @@ def query_pg_players() -> dict[str, tuple[int, int]]:
         scraped = {row[0]: row[1] for row in cur.fetchall()}
 
         pg.close()
-        all_feds = set(active) | set(scraped)
-        result   = {fed: (scraped.get(fed, 0), active.get(fed, 0))
+        all_feds = set(std_pop) | set(scraped)
+        result   = {fed: (scraped.get(fed, 0), std_pop.get(fed, 0))
                     for fed in all_feds}
         _pg_aktiv_cache    = result
         _pg_aktiv_cache_ts = time.time()
@@ -501,7 +514,7 @@ def query_laender_data() -> list[dict]:
         if y0 is None: return "—"
         return str(y0) if y0 == y1 else f"{y0} – {y1}"
 
-    pg_aktiv = query_pg_players()   # {federation: (scraped, active)}
+    pg_aktiv = query_pg_players()   # {federation: (scraped, std_population)}
 
     result = []
     for r in rows:

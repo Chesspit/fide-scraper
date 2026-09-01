@@ -205,6 +205,56 @@ def period_already_imported(conn, period: str) -> bool:
         return cur.fetchone() is not None
 
 
+def sync_players_std_rating(conn, period: str) -> int:
+    """Hold players.std_rating in sync with the latest imported standard snapshot.
+
+    players.std_rating is otherwise only ever set once, at initial insert (full
+    FOA import or first appearance in a monthly standard list) — monthly imports
+    only write rating_history.published_rating, never touch this column. Over
+    time it drifts stale and, worse, can be flatly wrong: the April-2026 FOA
+    export prints 0 in the std-rating column for players who simultaneously
+    carry a real rating on the monthly standard lists (confirmed 2026-09-01,
+    ~19k players FIDE-wide — see docs discussion). Since federation-scoped
+    scrape_groups filter on players.std_rating BETWEEN elo_min AND elo_max, a
+    stale/zero value silently excludes a player from every properly-bounded
+    ELO band forever.
+
+    Only syncs when 'period' is the GLOBAL latest imported period — guards
+    against a later out-of-order backfill of an older gap (e.g. importing a
+    missing 2026-05 snapshot after 2026-09 was already imported) clobbering a
+    newer, already-correct value with a stale one.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT MAX(period) FROM rating_history WHERE published_rating IS NOT NULL"
+        )
+        global_latest = cur.fetchone()[0]
+        if global_latest is None or str(global_latest) != str(period):
+            logger.info(
+                "  players.std_rating sync skipped: period=%s is not the global "
+                "latest (%s) — an older gap-fill import, leaving std_rating alone",
+                period, global_latest,
+            )
+            return 0
+
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE players p
+                SET std_rating = rh.published_rating
+                FROM rating_history rh
+                WHERE rh.fide_id = p.fide_id
+                  AND rh.period = %s
+                  AND rh.published_rating IS NOT NULL
+                  AND p.std_rating IS DISTINCT FROM rh.published_rating
+                """,
+                (period,),
+            )
+            updated = cur.rowcount
+    return updated
+
+
 def import_snapshot(conn, filepath: Path, period: str, force: bool = False):
     if not force and period_already_imported(conn, period):
         logger.info("Skipping %s (period=%s already imported — use --force to re-import)",
@@ -220,6 +270,9 @@ def import_snapshot(conn, filepath: Path, period: str, force: bool = False):
 
     upserted = upsert_rating_history(conn, players, period)
     logger.info("  rating_history: %d rows written for period=%s", upserted, period)
+
+    synced = sync_players_std_rating(conn, period)
+    logger.info("  players.std_rating: %d rows synced to period=%s", synced, period)
 
 
 def show_validation(conn):

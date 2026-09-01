@@ -746,7 +746,7 @@ def build_map_panel(fed_str: str | None):
         _stat("Gruppen running", str(running)),
         _stat("Spieler-Abdeckung",
               f"{scraped} / {active}"
-              + (f" ({round(scraped / active * 100, 1)} %)" if active else "")),
+              + (f" ({min(100.0, round(scraped / active * 100, 1))} %)" if active else "")),
         _stat("Zeitraum Plan", zeitraum_plan),
         _stat("Zeitraum done", zeitraum_done),
         _stat("Download", f"{mb} MB"),
@@ -2068,7 +2068,7 @@ def _make_subtotal_row(label: str, group: list, row_type: str) -> dict:
         "_zeitraum_done": _yr(yd0, yd1),
         "_laufend":        "",
         "_fide_aktiv":     f"{fs} / {ft}" if ft else "—",
-        "_fide_aktiv_pct": f"{round(fs / ft * 100, 1)} %" if ft else "—",
+        "_fide_aktiv_pct": f"{min(100.0, round(fs / ft * 100, 1))} %" if ft else "—",
         "_inaktiv":        f"{ia:,}".replace(",", "."),
         "_mb":             mb,
         "_row_type":       row_type,

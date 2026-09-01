@@ -546,7 +546,10 @@ def query_laender_data() -> list[dict]:
             # geflaggte Spieler) — nicht std_active+std_inaktiv und nicht
             # players.active global (~1,5 Mio.), siehe query_pg_players()-Docstring.
             "_fide_aktiv":     f"{scraped} / {total_a}" if total_a else "—",
-            "_fide_aktiv_pct": f"{round(scraped / total_a * 100, 1)} %" if total_a else "—",
+            # gedeckelt bei 100 %: "gescraped" zählt jemals erfolgreich gescrapte
+            # Spieler (Lifetime), "aktiv" ist der aktuelle Stand — wer zwischenzeitlich
+            # von aktiv auf inaktiv gewechselt ist, bliebe sonst >100 % (z.B. FIN).
+            "_fide_aktiv_pct": f"{min(100.0, round(scraped / total_a * 100, 1))} %" if total_a else "—",
             "_inaktiv":        f"{inaktiv:,}".replace(",", "."),
             "_mb":             mb,
             "_row_type":       "country",

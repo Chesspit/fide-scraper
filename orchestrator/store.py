@@ -386,18 +386,24 @@ _pg_aktiv_cache_ts: float = 0.0
 _PG_AKTIV_TTL = 300.0   # 5 Min — selten nötig, PG nicht belasten
 
 
-def query_pg_players() -> dict[str, tuple[int, int]]:
-    """Liefert pro Föderation (scraped, std_population) aus PostgreSQL (gecacht, 5 Min TTL).
+def query_pg_players() -> dict[str, tuple[int, int, int]]:
+    """Liefert pro Föderation (scraped, std_active, std_inactive) aus PostgreSQL
+    (gecacht, 5 Min TTL).
 
-    scraped        = COUNT(DISTINCT fide_id) aus scrape_periods WHERE status='ok'
-    std_population = COUNT(*) aus rating_history für die zuletzt importierte
-                      FIDE-Standardliste (published_rating IS NOT NULL) — das ist
-                      unsere tatsächliche Scraping-Zielpopulation (~566k Stand
-                      09/2026), NICHT players.active (~1,5 Mio.): letzteres ist
-                      FIDE's Gesamt-Mitgliedschaft inkl. reiner Rapid/Blitz-Spieler
-                      und wird nur bei vollen FOA-Reimporten aktualisiert (zuletzt
-                      04/2026) — als Vergleichsbasis für "wie viel % ist gescraped"
-                      irreführend groß, siehe Diskussion 2026-09-01.
+    scraped     = COUNT(DISTINCT fide_id) aus scrape_periods WHERE status='ok'
+    std_active/
+    std_inactive = COUNT(*) aus rating_history für die zuletzt importierte
+                      FIDE-Standardliste (published_rating IS NOT NULL), gesplittet
+                      nach players.active — das ist unsere tatsächliche Scraping-
+                      Zielpopulation (~566k Stand 09/2026, davon ein Teil laut
+                      FIDE's eigenem i/wi-Flag inaktiv, siehe Diskussion 2026-09-01
+                      zum std_rating=0-Bug: dieselbe Unterscheidung ist auch hier
+                      relevant — ein am 18.04. als 'i' geflaggter Spieler zählt zur
+                      Standardliste, ist aber kein sinnvolles Scraping-Ziel).
+                      std_active ist der Vergleichsnenner für "% gescraped"
+                      (NICHT std_active+std_inactive, und schon gar nicht
+                      players.active global (~1,5 Mio., FIDE-Gesamtmitgliedschaft,
+                      siehe vorherige Diskussion) — beide wären hier irreführend).
 
     Liefert {} wenn PG nicht erreichbar — Dashboard läuft weiter mit '—'-Werten.
     """
@@ -410,20 +416,23 @@ def query_pg_players() -> dict[str, tuple[int, int]]:
         pg  = psycopg2.connect(get_database_url(), connect_timeout=5)
         cur = pg.cursor()
 
-        # 1) Aktuelle Std-Ratingliste pro Föd. (jüngste importierte Periode).
+        # 1) Aktuelle Std-Ratingliste pro Föd., gesplittet nach players.active.
         #    Braucht idx_rating_history_period_pubrating (Migration 015) — ohne
         #    Index Full-Table-Scan (gemessen 12–75s), mit Index <1s.
         cur.execute("""
-            SELECT p.federation, COUNT(*) AS n
+            SELECT p.federation, p.active, COUNT(*) AS n
             FROM   rating_history rh
             JOIN   players p ON p.fide_id = rh.fide_id
             WHERE  rh.period = (SELECT MAX(period) FROM rating_history
                                  WHERE published_rating IS NOT NULL)
               AND  rh.published_rating IS NOT NULL
               AND  p.federation IS NOT NULL
-            GROUP  BY p.federation
+            GROUP  BY p.federation, p.active
         """)
-        std_pop = {row[0]: row[1] for row in cur.fetchall()}
+        std_active   = {}
+        std_inactive = {}
+        for fed, active, n in cur.fetchall():
+            (std_active if active else std_inactive)[fed] = n
 
         # 2) Gescrapte Spieler pro Föd. (mind. 1 erfolgreiche Periode)
         cur.execute("""
@@ -436,8 +445,8 @@ def query_pg_players() -> dict[str, tuple[int, int]]:
         scraped = {row[0]: row[1] for row in cur.fetchall()}
 
         pg.close()
-        all_feds = set(std_pop) | set(scraped)
-        result   = {fed: (scraped.get(fed, 0), std_pop.get(fed, 0))
+        all_feds = set(std_active) | set(std_inactive) | set(scraped)
+        result   = {fed: (scraped.get(fed, 0), std_active.get(fed, 0), std_inactive.get(fed, 0))
                     for fed in all_feds}
         _pg_aktiv_cache    = result
         _pg_aktiv_cache_ts = time.time()
@@ -514,7 +523,7 @@ def query_laender_data() -> list[dict]:
         if y0 is None: return "—"
         return str(y0) if y0 == y1 else f"{y0} – {y1}"
 
-    pg_aktiv = query_pg_players()   # {federation: (scraped, std_population)}
+    pg_aktiv = query_pg_players()   # {federation: (scraped, std_active, std_inactive)}
 
     result = []
     for r in rows:
@@ -523,8 +532,8 @@ def query_laender_data() -> list[dict]:
         running_g = r["running_groups"] or 0
         mb        = round(float(r["total_mb"]), 1)
         laufend   = str(r["year_running"]) if r["year_running"] is not None else ""
-        fed              = r["federation"] or "—"
-        scraped, total_a = pg_aktiv.get(fed, (0, 0))
+        fed                       = r["federation"] or "—"
+        scraped, total_a, inaktiv = pg_aktiv.get(fed, (0, 0, 0))
 
         result.append({
             "_fed":            fed,
@@ -533,8 +542,12 @@ def query_laender_data() -> list[dict]:
             "_zeitraum_plan":  _yrng(r["year_plan_from"], r["year_plan_to"]),
             "_zeitraum_done":  _yrng(r["year_done_from"], r["year_done_to"]),
             "_laufend":        laufend,
+            # Nenner ist std_active (aktuelle Standardliste, nur FIDE-aktiv
+            # geflaggte Spieler) — nicht std_active+std_inaktiv und nicht
+            # players.active global (~1,5 Mio.), siehe query_pg_players()-Docstring.
             "_fide_aktiv":     f"{scraped} / {total_a}" if total_a else "—",
             "_fide_aktiv_pct": f"{round(scraped / total_a * 100, 1)} %" if total_a else "—",
+            "_inaktiv":        f"{inaktiv:,}".replace(",", "."),
             "_mb":             mb,
             "_row_type":       "country",
             # Rohwerte für Summen / Subgruppen-Split (nicht in columns → unsichtbar)
@@ -544,6 +557,7 @@ def query_laender_data() -> list[dict]:
             "_r_total_g":      total_g,
             "_r_fide_scraped": scraped,
             "_r_fide_total":   total_a,
+            "_r_inaktiv":      inaktiv,
             "_r_yp0":          r["year_plan_from"],
             "_r_yp1":          r["year_plan_to"],
             "_r_yd0":          r["year_done_from"],

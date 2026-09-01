@@ -1141,6 +1141,7 @@ _B2_COLS = [
     {"name": ["Zeitraum", "Laufend"],       "id": "_laufend"},
     {"name": ["Spieler",  "Abs."],           "id": "_fide_aktiv"},
     {"name": ["Spieler",  "%"],             "id": "_fide_aktiv_pct"},
+    {"name": ["Spieler",  "Inaktiv"],       "id": "_inaktiv"},
     {"name": ["",         "MB"],            "id": "_mb"},
 ]
 _B2_GRP_STARTS = ["_gruppen", "_zeitraum_plan", "_fide_aktiv", "_mb"]
@@ -1226,7 +1227,7 @@ tab_bericht2 = dbc.Container(fluid=True, children=[
                 *[{"if": {"column_id": c}, "backgroundColor": "#fef9c3"}
                   for c in ["_zeitraum_plan", "_zeitraum_done", "_laufend"]],
                 *[{"if": {"column_id": c}, "backgroundColor": "#dcfce7"}
-                  for c in ["_fide_aktiv", "_fide_aktiv_pct"]],
+                  for c in ["_fide_aktiv", "_fide_aktiv_pct", "_inaktiv"]],
                 *[{"if": {"column_id": c}, "borderLeft": "2px solid #adb5bd"}
                   for c in _B2_GRP_STARTS],
             ],
@@ -2050,6 +2051,7 @@ def _make_subtotal_row(label: str, group: list, row_type: str) -> dict:
     tg = sum(r["_r_total_g"]             for r in group)
     fs = sum(r.get("_r_fide_scraped", 0) for r in group)
     ft = sum(r.get("_r_fide_total",   0) for r in group)
+    ia = sum(r.get("_r_inaktiv",      0) for r in group)
     mb = round(sum(r["_r_mb"]            for r in group), 1)
     yp0 = min((r["_r_yp0"] for r in group if r["_r_yp0"]), default=None)
     yp1 = max((r["_r_yp1"] for r in group if r["_r_yp1"]), default=None)
@@ -2067,11 +2069,13 @@ def _make_subtotal_row(label: str, group: list, row_type: str) -> dict:
         "_laufend":        "",
         "_fide_aktiv":     f"{fs} / {ft}" if ft else "—",
         "_fide_aktiv_pct": f"{round(fs / ft * 100, 1)} %" if ft else "—",
+        "_inaktiv":        f"{ia:,}".replace(",", "."),
         "_mb":             mb,
         "_row_type":       row_type,
         # Rohwerte für verschachtelte Summierung
         "_r_fide_scraped": fs,
         "_r_fide_total":   ft,
+        "_r_inaktiv":      ia,
     }
 
 

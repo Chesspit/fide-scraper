@@ -77,3 +77,16 @@ TIERS: tuple[str, ...] = ("P1", "P2", "P3")
 # P1/P2/P3-Monatsrefresh, ohne dessen Threads zu verdrängen.
 NEW_ENTRANT_POOL: list[str] = ["dc_newplayers_1", "dc_newplayers_2"]
 NEW_ENTRANT_TIERS: tuple[str, ...] = ("P0",)
+
+# Eigene, kleinere Zielgröße als TIER_TARGET_MIN/MAX (2026-09-01): bei P1/P2/P3
+# ist Spieler ≈ Kombo (update_only prüft meist nur 1-2 fehlende Monate), bei P0
+# dagegen bis zu ~12 Perioden/Spieler (voller Jahres-Backfill für nie versuchte
+# Spieler) — dieselbe 2000-3000er-Zielgröße wurde dort zu 22k-27k Kombos statt
+# 2-3k, ~3,5 Tage statt der beabsichtigten paar Stunden pro Batch. Wichtig auch
+# wegen worker.py::scrape_group(): active_hours werden NUR beim Claimen einer
+# neuen Gruppe geprüft, nicht mitten in einer laufenden — eine zu große Gruppe
+# macht das tägliche Aktivfenster der neuen Threads faktisch wirkungslos.
+# 200-300 Spieler × ~8-9 Perioden ≈ 1600-2700 Kombos, bei ~260-330 Kombos/h
+# (beobachtet) ≈ 5-10 Std./Batch — passt in ein Tagesfenster.
+NEW_ENTRANT_TARGET_MIN = 200
+NEW_ENTRANT_TARGET_MAX = 300

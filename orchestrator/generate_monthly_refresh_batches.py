@@ -74,20 +74,28 @@ def load_tier_population(tier: str) -> list[int]:
     return ratings
 
 
-def _split_chunks(ratings_desc: list[int]) -> list[list[int]]:
-    """Split a sorted-descending rating list into TIER_TARGET_MIN..MAX chunks.
+def _split_chunks(
+    ratings_desc: list[int],
+    target_min: int = TIER_TARGET_MIN,
+    target_max: int = TIER_TARGET_MAX,
+) -> list[list[int]]:
+    """Split a sorted-descending rating list into target_min..target_max chunks.
 
     Populations within the target range stay a single chunk. Larger
     populations are split into the fewest possible roughly-equal chunks that
-    stay within TIER_TARGET_MAX (and, where possible, at or above
-    TIER_TARGET_MIN).
+    stay within target_max (and, where possible, at or above target_min).
+
+    target_min/target_max default to TIER_TARGET_MIN/MAX (P1/P2/P3) — pass
+    NEW_ENTRANT_TARGET_MIN/MAX explicitly for P0 (see monthly_refresh_tiers.py:
+    P0 needs a much smaller player-count target, since each player there
+    costs far more combos per head than a P1/P2/P3 update-only refresh).
     """
     n = len(ratings_desc)
-    if n <= TIER_TARGET_MAX:
+    if n <= target_max:
         return [ratings_desc]
 
-    k = math.ceil(n / TIER_TARGET_MAX)
-    while k > 1 and n / k < TIER_TARGET_MIN:
+    k = math.ceil(n / target_max)
+    while k > 1 and n / k < target_min:
         k -= 1
 
     base, remainder = divmod(n, k)
@@ -100,17 +108,26 @@ def _split_chunks(ratings_desc: list[int]) -> list[list[int]]:
     return chunks
 
 
-def build_tier_bands(ratings_desc: list[int], tier: str, year: int, queue_conn) -> list[dict]:
+def build_tier_bands(
+    ratings_desc: list[int],
+    tier: str,
+    year: int,
+    queue_conn,
+    target_min: int = TIER_TARGET_MIN,
+    target_max: int = TIER_TARGET_MAX,
+) -> list[dict]:
     """Build contiguous, non-overlapping ELO bands for one tier.
 
     elo_min must be unique per (federation, year) — the tier sentinel
-    ('P1'/'P2'/'P3') is stored in the federation column, so this UNIQUE
+    ('P1'/'P2'/'P3'/'P0') is stored in the federation column, so this UNIQUE
     constraint scopes cleanly per tier. Boundaries are threaded top-down from
     the tier's elo_ceil; on collision with an existing elo_min the candidate
     is nudged down by 1 until free.
+
+    target_min/target_max: see _split_chunks().
     """
     elo_floor, elo_ceil = TIER_BOUNDS[tier]
-    chunks = _split_chunks(ratings_desc)
+    chunks = _split_chunks(ratings_desc, target_min, target_max)
 
     with queue_conn.cursor() as cur:
         cur.execute(

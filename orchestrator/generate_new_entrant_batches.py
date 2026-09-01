@@ -35,12 +35,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from orchestrator.generate_monthly_refresh_batches import (
     _assign_thread_affinity,
     _check_contiguous,
-    _split_chunks,
     build_tier_bands,
     insert_groups,
 )
 from orchestrator.monthly_refresh_tiers import (
     NEW_ENTRANT_POOL,
+    NEW_ENTRANT_TARGET_MAX,
+    NEW_ENTRANT_TARGET_MIN,
     NEW_ENTRANT_TIERS,
     TIER_CONTINENT,
 )
@@ -85,7 +86,9 @@ def build_groups(years: list[int], queue_conn) -> list[dict]:
 
     ratings = load_new_entrant_population()
     for year in years:
-        bands = build_tier_bands(ratings, "P0", year, queue_conn)
+        bands = build_tier_bands(ratings, "P0", year, queue_conn,
+                                  target_min=NEW_ENTRANT_TARGET_MIN,
+                                  target_max=NEW_ENTRANT_TARGET_MAX)
         for band in bands:
             groups.append({
                 "federation": "P0",

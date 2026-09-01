@@ -216,7 +216,7 @@ concurrency:
     timezone: Europe/Berlin
     username_env: PROXY_DI_USERNAME_DE
   - active_hours:
-    - 10
+    - 8
     - 22
     enabled: true
     federations: []

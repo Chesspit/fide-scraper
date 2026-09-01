@@ -78,15 +78,28 @@ DATABASE_URL="$DB_URL" python3 "$SCRIPT_DIR/scripts/import_rating_snapshots.py" 
 # PostgreSQL scrape_periods sorgt für idempotentes Überspringen bereits
 # gescrapter Perioden — nur der neue Monat wird tatsächlich nachgeholt.
 echo ""
-echo "$(date): === Schritt 3/3: VPS-Orchestrator — P1/P2/P3-Monatsrefresh requeuen ==="
+echo "$(date): === Schritt 3/4: VPS-Orchestrator — P1/P2/P3-Monatsrefresh requeuen ==="
 if ! ssh pit@187.124.181.116 \
     "cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_monthly_refresh.py"; then
     echo "$(date): WARNUNG: reset_monthly_refresh.py auf VPS fehlgeschlagen — manuell nachholen:"
     echo "  ssh pit@187.124.181.116 \"cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_monthly_refresh.py\""
 fi
 
+# --- Schritt 4: VPS-Orchestrator — P0-Neuzugänge requeuen ---
+# Setzt NUR die P0-Gruppen zurück (nie gescrapte, aktive Spieler seit dem
+# letzten Lauf, siehe orchestrator/reset_new_entrant_refresh.py) — anders
+# als P1/P2/P3 KEIN Jahres-Rollover (P0 ist bewusst mehrjährig, 2025+2026).
+echo ""
+echo "$(date): === Schritt 4/4: VPS-Orchestrator — P0-Neuzugänge requeuen ==="
+if ! ssh pit@187.124.181.116 \
+    "cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_new_entrant_refresh.py"; then
+    echo "$(date): WARNUNG: reset_new_entrant_refresh.py auf VPS fehlgeschlagen — manuell nachholen:"
+    echo "  ssh pit@187.124.181.116 \"cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_new_entrant_refresh.py\""
+fi
+
 echo ""
 echo "$(date): ========================================"
 echo "$(date): Monatliches Update $NEW_PERIOD abgeschlossen ✓"
-echo "$(date): dc_update_1..3 holen den neuen Monat im Hintergrund nach (VPS-Dashboard)."
+echo "$(date): dc_update_1..3 holen den neuen Monat im Hintergrund nach (VPS-Dashboard),"
+echo "$(date): dc_newplayers_1/2 die seit letztem Monat neu aktiven, nie gescrapten Spieler."
 echo "$(date): ========================================"

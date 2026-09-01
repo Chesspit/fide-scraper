@@ -20,6 +20,10 @@ TIER_FILTERS: dict[str, str] = {
     "P1": "std_rating >= 2300",
     "P2": "federation IN ('GER','SUI','AUT') AND std_rating < 2300",
     "P3": "std_rating < 2300 AND federation NOT IN ('GER','SUI','AUT')",
+    # P0 (Neuzugangs-Tier, siehe unten): kein ELO-Filter — die Abgrenzung läuft
+    # nicht über die Rating-Band, sondern darüber, dass noch nie versucht wurde
+    # (never_scraped_only in worker.py::get_fide_ids()).
+    "P0": "TRUE",
 }
 
 # (elo_floor, elo_ceil) je Tier — Sentinels an den Rändern, damit künftiges
@@ -28,6 +32,7 @@ TIER_BOUNDS: dict[str, tuple[int, int]] = {
     "P1": (2300, 9999),
     "P2": (0, 2299),
     "P3": (0, 2299),
+    "P0": (0, 9999),
 }
 
 TIER_CONTINENT = "GLOBAL"
@@ -57,3 +62,18 @@ DC_UPDATE_POOL: list[str] = ["dc_update_1"]
 # echten 3-Buchstaben-FIDE-Codes — kollisionsfrei, da FIDE-Codes nie "P1"/
 # "P2"/"P3" lauten.
 TIERS: tuple[str, ...] = ("P1", "P2", "P3")
+
+# ── P0: Neuzugangs-Tier (2026-09, Phase 1.4/2 der std_rating-Aufarbeitung) ──
+#
+# P1/P2/P3 erfassen bewusst NUR Spieler, die schon mindestens einmal
+# erfolgreich gescraped wurden (update_only=1, EXISTS-Filter) — genau
+# deshalb fallen Spieler, die NIE versucht wurden, für immer durchs Raster,
+# auch wenn ihre Föderations-Gruppe längst "done" ist. P0 schließt exakt
+# diese Lücke: Filter ist umgekehrt (NOT EXISTS scrape_periods — irgendein
+# Eintrag, nicht nur 'ok'), scrape_groups.update_only=2 als Sentinel-Wert
+# (siehe worker.py::get_fide_ids()/scrape_group()).
+#
+# Eigener Thread-Pool statt DC_UPDATE_POOL: läuft parallel zum laufenden
+# P1/P2/P3-Monatsrefresh, ohne dessen Threads zu verdrängen.
+NEW_ENTRANT_POOL: list[str] = ["dc_newplayers_1", "dc_newplayers_2"]
+NEW_ENTRANT_TIERS: tuple[str, ...] = ("P0",)

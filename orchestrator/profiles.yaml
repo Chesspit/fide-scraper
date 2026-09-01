@@ -215,6 +215,34 @@ concurrency:
     slot: 108
     timezone: Europe/Berlin
     username_env: PROXY_DI_USERNAME_DE
+  - active_hours:
+    - 10
+    - 22
+    enabled: true
+    federations: []
+    id: dc_newplayers_1
+    label: DI-NEWPLAYERS-1
+    max_hours: null
+    password_env: PROXY_DI_PASSWORD
+    pool_file: orchestrator/dataimpulse_gateway.txt
+    profile: semi_conservative
+    slot: 109
+    timezone: America/Santiago
+    username_env: PROXY_DI_USERNAME_CL
+  - active_hours:
+    - 7
+    - 23
+    enabled: true
+    federations: []
+    id: dc_newplayers_2
+    label: DI-NEWPLAYERS-2
+    max_hours: null
+    password_env: PROXY_DI_PASSWORD
+    pool_file: orchestrator/dataimpulse_gateway.txt
+    profile: semi_conservative
+    slot: 110
+    timezone: Asia/Ho_Chi_Minh
+    username_env: PROXY_DI_USERNAME_VN
   max_workers: 2
   worker_profiles:
   - semi_aggressive

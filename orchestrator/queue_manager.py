@@ -73,6 +73,7 @@ class Group:
     profile: str | None = None          # None = fuzzy selection
     thread_affinity: str | None = None  # None = residential, 'dc_de'/'dc_in'/... = DC-Thread
     update_only: int = 0                # 1 = nur bereits gescrapte Spieler (Update-Batch)
+                                         # 2 = nur NIE gescrapte Spieler (P0-Neuzugangs-Batch)
 
 
 class QueueManager:

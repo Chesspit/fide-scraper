@@ -138,11 +138,16 @@ def build_tier_bands(ratings_desc: list[int], tier: str, year: int, queue_conn) 
     return bands
 
 
-def _assign_thread_affinity(groups: list[dict]) -> None:
+def _assign_thread_affinity(groups: list[dict], pool: list[str] = DC_UPDATE_POOL) -> None:
     """Greedy load-balancing (LPT): largest batches first, each assigned to
     whichever pool thread currently carries the smallest cumulative
-    player_count. Mutates groups in place."""
-    load = {t: 0 for t in DC_UPDATE_POOL}
+    player_count. Mutates groups in place.
+
+    pool defaults to DC_UPDATE_POOL (P1/P2/P3) but is parameterized so
+    generate_new_entrant_batches.py can reuse this exact logic against
+    NEW_ENTRANT_POOL (P0) without duplicating it.
+    """
+    load = {t: 0 for t in pool}
     for g in sorted(groups, key=lambda g: -g["player_count"]):
         thread = min(load, key=load.get)
         g["thread_affinity"] = thread

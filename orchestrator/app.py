@@ -869,30 +869,12 @@ tab_heatmap = dbc.Container(fluid=True, children=[
     # Thread-Panels: Residential (oben kompakt) + Datacenter (unten, 2×4-Raster)
     dcc.Interval(id="interval-dc-status", interval=30_000, n_intervals=0),
 
-    # Residential Threads + Datacenter Threads nebeneinander
+    # Datacenter Threads — volle Breite (Residential-Threads-Box entfernt,
+    # um Platz für die gewachsene DC-Flotte zu schaffen; die zugehörige
+    # residential-threads-panel-Callback bleibt unverändert bestehen,
+    # rendert nur nirgends mehr hin — dank suppress_callback_exceptions
+    # unproblematisch, siehe Dash-App-Config oben)
     dbc.Row([
-        # Residential Threads (kompakte 2×2-Box)
-        dbc.Col(
-            dbc.Card(
-                dbc.CardBody([
-                    html.Div([
-                        html.Span("🔄 Residential Threads", className="fw-semibold me-3 small"),
-                        html.Span("(Profil wirksam nach Neustart)", className="text-muted small"),
-                    ], className="mb-2"),
-                    html.Div(id="residential-threads-panel", style={
-                        "display": "grid",
-                        "gridTemplateColumns": "repeat(2, 1fr)",
-                        "gap": "8px",
-                        "maxWidth": "370px",
-                    }),
-                ], className="py-2 px-3"),
-                className="h-100",
-                style={"borderLeft": "3px solid #1976D2"},
-            ),
-            width="auto",
-        ),
-
-        # Datacenter Threads (5×2-Raster)
         dbc.Col(
             dbc.Card(
                 dbc.CardBody([
@@ -901,7 +883,7 @@ tab_heatmap = dbc.Container(fluid=True, children=[
                               className="text-muted small ms-2"),
                     html.Div(id="dc-threads-panel", style={
                         "display": "grid",
-                        "gridTemplateColumns": "repeat(5, 1fr)",
+                        "gridTemplateColumns": "repeat(6, 1fr)",
                         "gap": "8px",
                         "marginTop": "10px",
                     }),

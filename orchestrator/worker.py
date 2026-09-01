@@ -159,7 +159,7 @@ def _read_dc_thread_enabled(dc_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
-                 update_only: bool = False) -> list[int]:
+                 update_only: bool = False, never_scraped_only: bool = False) -> list[int]:
     """Return active player fide_ids matching the federation and ELO range.
 
     update_only=True restricts to players already scraped at least once
@@ -167,16 +167,32 @@ def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
     rating drift must never pull in a never-scraped player (would trigger an
     unwanted full historical backfill instead of a quick monthly refresh).
 
-    federation may also be a monthly-refresh tier sentinel ('P1'/'P2'/'P3',
-    see orchestrator/monthly_refresh_tiers.py) — in that case the query pools
-    across ALL federations using the tier's population filter instead of an
-    exact federation match. Tier groups always imply update_only semantics.
+    never_scraped_only=True is the inverse — restricts to players with NO
+    scrape_periods row at all (any status). Used by the P0 "new entrants"
+    tier (see monthly_refresh_tiers.py, scrape_groups.update_only=2): P1/P2/P3
+    structurally never pick up a player who was never scraped once, so
+    without this a newly-registered/active player who missed their
+    federation group's one-time run would fall through forever. Mutually
+    exclusive with update_only (caller's responsibility — see scrape_group()).
+
+    federation may also be a monthly-refresh tier sentinel ('P1'/'P2'/'P3'/
+    'P0', see orchestrator/monthly_refresh_tiers.py) — in that case the query
+    pools across ALL federations using the tier's population filter instead
+    of an exact federation match. P1/P2/P3 groups always imply update_only
+    semantics; P0 groups always imply never_scraped_only semantics.
     """
-    scraped_filter = (
-        "AND EXISTS (SELECT 1 FROM scrape_periods sp "
-        "WHERE sp.fide_id = players.fide_id AND sp.status = 'ok')"
-        if update_only else ""
-    )
+    if never_scraped_only:
+        scraped_filter = (
+            "AND NOT EXISTS (SELECT 1 FROM scrape_periods sp "
+            "WHERE sp.fide_id = players.fide_id)"
+        )
+    elif update_only:
+        scraped_filter = (
+            "AND EXISTS (SELECT 1 FROM scrape_periods sp "
+            "WHERE sp.fide_id = players.fide_id AND sp.status = 'ok')"
+        )
+    else:
+        scraped_filter = ""
     with pg_conn.cursor() as cur:
         if federation in TIER_FILTERS:
             query = f"""
@@ -368,7 +384,8 @@ def scrape_group(
     Raises BlockedError if IP gets hard-blocked (caller should abort worker).
     """
     fide_ids = get_fide_ids(pg_conn, group.federation, group.elo_min, group.elo_max,
-                            update_only=bool(group.update_only))
+                            update_only=(group.update_only == 1),
+                            never_scraped_only=(group.update_only == 2))
     if not fide_ids:
         logger.info("Group %s/%d/%d-%d: no active players found — skipping",
                     group.federation, group.year, group.elo_min, group.elo_max)

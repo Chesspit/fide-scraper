@@ -207,7 +207,7 @@ concurrency:
     enabled: true
     federations: []
     id: dc_update_1
-    label: DI-UPDATE-1
+    label: DI-UP-1
     max_hours: null
     password_env: PROXY_DI_PASSWORD
     pool_file: orchestrator/dataimpulse_gateway.txt
@@ -221,7 +221,7 @@ concurrency:
     enabled: true
     federations: []
     id: dc_newplayers_1
-    label: DI-NEWPLAYERS-1
+    label: DI-NP-1
     max_hours: null
     password_env: PROXY_DI_PASSWORD
     pool_file: orchestrator/dataimpulse_gateway.txt
@@ -235,7 +235,7 @@ concurrency:
     enabled: true
     federations: []
     id: dc_newplayers_2
-    label: DI-NEWPLAYERS-2
+    label: DI-NP-2
     max_hours: null
     password_env: PROXY_DI_PASSWORD
     pool_file: orchestrator/dataimpulse_gateway.txt

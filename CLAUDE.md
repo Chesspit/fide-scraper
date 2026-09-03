@@ -13,6 +13,7 @@ Analyseprojekt: Top-Spielerinnen (ELO 2400–2600) vs. gleichstarke Männer — 
 ```
 fide-scraper/
 ├── config.yaml                ← Scraper-Settings (rate limits, retry, Beta-Verteilung)
+├── prompt.md                  ← Persönliche Notizen: vorbereitete Eingaben + Ideen/Backlog (kein Auto-Status)
 ├── scraper/
 │   ├── main.py                ← CLI: run / status
 │   ├── fetcher.py             ← HTTP GET + Retry + Rate-Limiting

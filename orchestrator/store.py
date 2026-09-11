@@ -137,11 +137,19 @@ def _iso(value) -> str | None:
 
 
 def query_grid(federation: str) -> list[dict]:
+    # thread_affinity='dc_update' ausgeschlossen: Altlast des vor dem 02.07.2026
+    # abgelösten Single-Thread-Monatsrefreshs. Legte pro Föderation genau eine
+    # ELO-0-2299/Jahr-2026-Gruppe an (bei zu großen Populationen wie ESP/IND
+    # sogar 2-3 gleich breite ~5000er-Perzentil-Bänder) — landet ungefiltert
+    # mitten in den viel feineren, laufenden Jahres-/ELO-Bändern und sorgt für
+    # sprunghaft breite, verwirrende Zeilen im Grid (s. Session 2026-09-11).
+    # Rein historisch, alle Gruppen `done`, Thread existiert in keinem
+    # aktiven Pool mehr — scrape_runs bleiben für den Bericht-Tab unangetastet.
     rows = _fetch_dicts(
         """SELECT year, elo_min, elo_max, status, player_count,
                   records_found, retries, last_run_at, id
            FROM scrape_groups
-           WHERE federation = %s
+           WHERE federation = %s AND thread_affinity != 'dc_update'
            ORDER BY elo_min DESC, year""",
         (federation,),
     )

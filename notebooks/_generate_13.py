@@ -1,0 +1,361 @@
+"""Generate notebook 13_absolute_elo_headtohead.ipynb.
+
+Run from project root:
+    .venv/bin/python notebooks/_generate_13.py
+"""
+
+from pathlib import Path
+import nbformat as nbf
+
+NBDIR = Path(__file__).resolve().parent
+
+BOILERPLATE = [
+    "import sys",
+    "from pathlib import Path",
+    "sys.path.insert(0, str(Path.cwd()))",
+    "from _setup import load_query, apply_style, GROUP_PALETTE, GROUP_ORDER",
+    "",
+    "import numpy as np",
+    "import pandas as pd",
+    "import matplotlib.pyplot as plt",
+    "import seaborn as sns",
+    "",
+    "apply_style()",
+    "pd.set_option('display.max_rows', 250)",
+]
+
+
+def make_notebook(path: Path, cells: list[tuple[str, str]]):
+    nb = nbf.v4.new_notebook()
+    nb.cells = [
+        (nbf.v4.new_markdown_cell(src) if kind == "md" else nbf.v4.new_code_cell(src))
+        for kind, src in cells
+    ]
+    nb.metadata = {
+        "kernelspec": {"display_name": "Python 3 (.venv)", "language": "python", "name": "python3"},
+        "language_info": {"name": "python"},
+    }
+    with path.open("w") as f:
+        nbf.write(nb, f)
+    print(f"wrote {path}")
+
+
+DEPRECATION_NOTICE = (
+    "> ⚠️ **Methodisch überholt (2026-07-31), noch am selben Tag ersetzt:** Diese Analyse nutzt "
+    "die statischen Gruppen `female_top`/`male_control` (`players.analysis_group`), die sich "
+    "beim Testlauf dieses Notebooks als nur unvollständig befüllt herausstellten "
+    "(`groups.backfill_status='partial'`, nur 23/66 bzw. 48/649 Spieler gelabelt, davon kaum "
+    "aktive). Die Tabellen unten liefen fehlerfrei, aber mit sehr dünnen Zellen (nur 856 "
+    "Partien). Für den Frauen-vs-Männer-Vergleich siehe stattdessen **Notebook 14** "
+    "(`14_top50_female_vs_band_men.ipynb`): survivorship-bias-freie Kohorte (Top-50-Frauen nach "
+    "`rating_history.published_rating` je Jahresende 2021–2025, 70 Spielerinnen) vs. Männer im "
+    "selben Elo-Band, dynamisch aus `rating_history` abgeleitet — 14.005 bzw. 88.188 bereits "
+    "gescrapte Partien, kein neues Scraping nötig (siehe `docs/ideen_verbesserungen.md`, "
+    "Abschnitte F2/F7). Notebook 14 übernimmt die hier entwickelte Metrik-/Chart-/"
+    "Signifikanztest-Logik unverändert, nur mit der neuen Kohorten-Definition."
+)
+
+nb13 = [
+    ("md", DEPRECATION_NOTICE),
+    ("md", "# 13 — Absoluter Elo-Vergleich: female_top vs. male_control\n\n"
+           "**Kernfrage:** Ist eine Frau mit z.B. Elo 2500 gegen einen gleich starken Gegner "
+           "leichter, stärker oder schwächer als ein Mann mit Elo 2500?\n\n"
+           "Notebook 07 beantwortet eine verwandte, aber andere Frage: wie schneiden "
+           "`female_top`-Spielerinnen (für sich allein) gegen *relativ* stärkere/schwächere "
+           "Gegner ab. Hier vergleichen wir stattdessen **beide Gruppen direkt**, gebündelt "
+           "nach dem **absoluten** eigenen Rating (nicht nur der Differenz zum Gegner) — "
+           "`female_top` und `male_control` sind als parallele, alters-gematchte Kohorten mit "
+           "identischer Elo-Range (2400–2600) angelegt und damit direkt vergleichbar.\n\n"
+           "**Definitionen:**\n"
+           "- **Elo-Band (Primärachse):** eigenes Rating in 50-Punkte-Bändern (`2400-2449`, "
+           "`2450-2499`, …). Werte außerhalb 2400–2600 entstehen durch normale "
+           "Rating-Schwankung über die Zeit und werden als eigene Bänder mitgeführt, nicht "
+           "gefiltert.\n"
+           "- **Stärke-Bucket (Sekundärachse, relativ):** `gleich` = |Gegner − ich| ≤ 50, "
+           "`stärker`/`schwächer` sonst. **Schwelle ±50** — abweichend von Notebook 07 (±80). "
+           "Notebook 07 bleibt unverändert (historisch); ±50 (wie in Notebook 05) wird hiermit "
+           "als Projekt-Standard für neue Notebooks festgelegt.\n"
+           "- **Scope:** `tournament_type ∈ {women, women_team}` → `women_only`, sonst "
+           "`open_mixed`. `female_top` bestreitet laut `docs/datenuebersicht.md` 65,4 % ihrer "
+           "Partien gegen Frauen, überwiegend in Frauen-only-Turnieren. Wir filtern das **nicht "
+           "heraus**, zeigen aber jede Kerntabelle zusätzlich für `open_mixed` allein, damit "
+           "der Effekt sichtbar bleibt statt versteckt zu werden.\n\n"
+           "**Filter:** `active = TRUE`, `analysis_group IN ('female_top','male_control')`, "
+           "`opponent_sex IN ('M','F')`, eigenes Rating vorhanden."),
+    ("code", "\n".join(BOILERPLATE)),
+
+    ("md", "## Datenbasis laden"),
+    ("code",
+        "sql = '''\n"
+        "SELECT\n"
+        "    gr.fide_id,\n"
+        "    p.analysis_group,\n"
+        "    rh.std_rating          AS own_rating,\n"
+        "    gr.opponent_rating,\n"
+        "    gr.opponent_sex,\n"
+        "    gr.result,\n"
+        "    gr.rating_change_weighted,\n"
+        "    gr.expected_score,\n"
+        "    gr.over_performance,\n"
+        "    gr.tournament_type\n"
+        "FROM game_results gr\n"
+        "JOIN players p               ON p.fide_id = gr.fide_id\n"
+        "LEFT JOIN rating_history rh  ON rh.fide_id = gr.fide_id AND rh.period = gr.period\n"
+        "WHERE p.active = TRUE\n"
+        "  AND p.analysis_group IN ('female_top', 'male_control')\n"
+        "  AND gr.opponent_sex IN ('M', 'F')\n"
+        "'''\n"
+        "raw = load_query(sql)\n"
+        "n_raw = len(raw)\n"
+        "df = raw.dropna(subset=['own_rating', 'opponent_rating']).copy()\n"
+        "print(f'{n_raw:,} Partien geladen, {n_raw - len(df):,} ohne own_rating/opponent_rating verworfen '\n"
+        "      f'({(n_raw - len(df)) / n_raw:.1%}) -> {len(df):,} Partien in der Analyse')\n"
+        "\n"
+        "df['result'] = df['result'].astype(float)\n"
+        "df['rating_change_weighted'] = df['rating_change_weighted'].astype(float)\n"
+        "df['expected_score'] = df['expected_score'].astype(float)\n"
+        "df['over_performance'] = df['over_performance'].astype(float)\n"
+        "df['own_rating'] = pd.to_numeric(df['own_rating'], errors='coerce')\n"
+        "df['opponent_rating'] = pd.to_numeric(df['opponent_rating'], errors='coerce')\n"
+        "df['diff'] = df['opponent_rating'] - df['own_rating']\n"
+        "\n"
+        "def elo_band(r):\n"
+        "    if pd.isna(r):\n"
+        "        return 'unknown'\n"
+        "    lo = int(r // 50) * 50\n"
+        "    return f'{lo}-{lo + 49}'\n"
+        "df['elo_band'] = df['own_rating'].apply(elo_band)\n"
+        "\n"
+        "def strength_bucket(d):\n"
+        "    if pd.isna(d):\n"
+        "        return 'unknown'\n"
+        "    if d > 50:\n"
+        "        return 'stärker'\n"
+        "    if d < -50:\n"
+        "        return 'schwächer'\n"
+        "    return 'gleich'\n"
+        "df['strength'] = df['diff'].apply(strength_bucket)\n"
+        "\n"
+        "df['scope'] = df['tournament_type'].apply(\n"
+        "    lambda t: 'women_only' if t in ('women', 'women_team') else 'open_mixed'\n"
+        ")\n"
+        "\n"
+        "def band_sort_key(b):\n"
+        "    return (9999,) if b == 'unknown' else (int(b.split('-')[0]),)\n"
+        "elo_band_order = sorted(df['elo_band'].unique(), key=band_sort_key)\n"
+        "\n"
+        "SEX_ORDER = ['F', 'M']\n"
+        "STRENGTH_ORDER = ['stärker', 'gleich', 'schwächer']\n"
+        "print('Elo-Bänder:', elo_band_order)\n"
+        "df.head()"),
+
+    ("md", "## 1. Zellgrößen (Plausibilitätscheck)\n\n"
+           "`female_top` hat nur 66 Spielerinnen — an den Rändern der Elo-Range können "
+           "einzelne Bänder sehr dünn besetzt sein. Vor jeder weiteren Aufschlüsselung prüfen."),
+    ("code",
+        "qc = (\n"
+        "    df.groupby(['analysis_group', 'elo_band'])\n"
+        "      .agg(n_games=('fide_id', 'size'), n_players=('fide_id', 'nunique'))\n"
+        "      .reset_index()\n"
+        ")\n"
+        "qc.pivot(index='elo_band', columns='analysis_group', values=['n_games', 'n_players']).reindex(elo_band_order)"),
+
+    ("md", "## Helper: Metrik-Tabellen"),
+    ("code",
+        "def build_metrics(df_scope):\n"
+        "    g = df_scope.groupby(['elo_band', 'opponent_sex', 'analysis_group'])\n"
+        "    return g.agg(\n"
+        "        n_games=('fide_id', 'size'),\n"
+        "        n_players=('fide_id', 'nunique'),\n"
+        "        score_rate=('result', 'mean'),\n"
+        "        mean_expected_score=('expected_score', 'mean'),\n"
+        "        mean_over_performance=('over_performance', 'mean'),\n"
+        "        sum_rating_change_weighted=('rating_change_weighted', 'sum'),\n"
+        "        mean_rating_change_weighted=('rating_change_weighted', 'mean'),\n"
+        "    ).reset_index()\n"
+        "\n"
+        "def pivot_metric(metrics_df, value_col, round_to=4):\n"
+        "    tbl = metrics_df.pivot(index='elo_band', columns=['opponent_sex', 'analysis_group'], values=value_col)\n"
+        "    tbl = tbl.reindex(elo_band_order)\n"
+        "    cols = [(s, grp) for s in SEX_ORDER for grp in GROUP_ORDER if (s, grp) in tbl.columns]\n"
+        "    return tbl[cols].round(round_to)\n"
+        "\n"
+        "metrics_all = build_metrics(df)\n"
+        "metrics_open = build_metrics(df[df.scope == 'open_mixed'])\n"
+        "print(f'Zellen gesamt: {len(metrics_all)}   Zellen (nur offene Turniere): {len(metrics_open)}')"),
+
+    ("md", "## 2. Haupttabelle — Ø Over-Performance je Elo-Band × Gegner-Geschlecht × Gruppe\n\n"
+           "`over_performance = result − expected_score` (Elo-Erwartung). Positiv = besser als "
+           "erwartet.\n\n"
+           "**Alle Partien:**"),
+    ("code", "pivot_metric(metrics_all, 'mean_over_performance')"),
+
+    ("md", "**Nur offene/gemischte Turniere** (ohne `women`/`women_team`):"),
+    ("code", "pivot_metric(metrics_open, 'mean_over_performance')"),
+
+    ("md", "### Zum Vergleich: Score-Rate und Ø rating_change_weighted (alle Partien)"),
+    ("code", "pivot_metric(metrics_all, 'score_rate')"),
+    ("code", "pivot_metric(metrics_all, 'mean_rating_change_weighted')"),
+
+    ("md", "## 3. Heatmap: Ø Over-Performance nach Elo-Band × Gegner-Geschlecht"),
+    ("code",
+        "fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)\n"
+        "for ax, grp in zip(axes, GROUP_ORDER):\n"
+        "    sub = (\n"
+        "        metrics_all[metrics_all.analysis_group == grp]\n"
+        "        .pivot(index='elo_band', columns='opponent_sex', values='mean_over_performance')\n"
+        "        .reindex(index=elo_band_order, columns=SEX_ORDER)\n"
+        "    )\n"
+        "    sns.heatmap(sub, annot=True, fmt='.3f', cmap='RdBu_r', center=0, ax=ax, cbar=True)\n"
+        "    ax.set_title(grp)\n"
+        "    ax.set_xlabel('Gegner-Geschlecht')\n"
+        "    ax.set_ylabel('Elo-Band (eigenes Rating)')\n"
+        "plt.tight_layout(); plt.show()"),
+
+    ("md", "## 4. Balkendiagramm: Ø rating_change_weighted je Elo-Band, Gruppe im Vergleich"),
+    ("code",
+        "def bar_chart(metrics_df, title_suffix):\n"
+        "    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), sharey=True)\n"
+        "    for ax, sex in zip(axes, SEX_ORDER):\n"
+        "        sub = metrics_df[metrics_df.opponent_sex == sex]\n"
+        "        pv = (\n"
+        "            sub.pivot(index='elo_band', columns='analysis_group', values='mean_rating_change_weighted')\n"
+        "            .reindex(index=elo_band_order, columns=GROUP_ORDER)\n"
+        "        )\n"
+        "        pv.plot.bar(ax=ax, color=[GROUP_PALETTE[g] for g in GROUP_ORDER], edgecolor='white')\n"
+        "        ax.axhline(0, color='grey', lw=0.8, ls='--')\n"
+        "        ax.set_title(f'vs {sex} ({title_suffix})')\n"
+        "        ax.set_xlabel('Elo-Band (eigenes Rating)')\n"
+        "        ax.set_ylabel('Ø rating_change_weighted')\n"
+        "        ax.tick_params(axis='x', rotation=45)\n"
+        "    plt.tight_layout(); plt.show()\n"
+        "\n"
+        "bar_chart(metrics_all, 'alle Partien')"),
+    ("code", "bar_chart(metrics_open, 'nur offene Turniere')"),
+
+    ("md", "## 5. Sekundärachse: relative Gegnerstärke (±50 Elo)\n\n"
+           "Zur Einordnung neben der absoluten Elo-Band-Sicht — analog zu Notebook 05, aber "
+           "hier direkt `female_top` vs. `male_control` gegenübergestellt."),
+    ("code",
+        "def build_strength_metrics(df_scope):\n"
+        "    g = df_scope.groupby(['strength', 'opponent_sex', 'analysis_group'])\n"
+        "    return g.agg(\n"
+        "        n_games=('fide_id', 'size'),\n"
+        "        n_players=('fide_id', 'nunique'),\n"
+        "        score_rate=('result', 'mean'),\n"
+        "        mean_over_performance=('over_performance', 'mean'),\n"
+        "        mean_rating_change_weighted=('rating_change_weighted', 'mean'),\n"
+        "    ).reset_index()\n"
+        "\n"
+        "strength_metrics = build_strength_metrics(df)\n"
+        "tbl = strength_metrics.pivot(index='strength', columns=['opponent_sex', 'analysis_group'], values='mean_over_performance')\n"
+        "tbl = tbl.reindex(STRENGTH_ORDER)\n"
+        "cols = [(s, grp) for s in SEX_ORDER for grp in GROUP_ORDER if (s, grp) in tbl.columns]\n"
+        "tbl[cols].round(4)"),
+
+    ("md", "## 6. Signifikanztest\n\n"
+           "**Problem:** Partien sind pro Spieler geclustert — `female_top` hat 66 Spielerinnen, "
+           "`male_control` 649 Spieler, mit sehr ungleicher Partienzahl pro Person. Ein Test auf "
+           "Partie-Ebene würde Pseudo-Replikation erzeugen und vielspielende Personen "
+           "überproportional gewichten.\n\n"
+           "**Ansatz:** Zweistufig, nur mit `numpy` (kein `scipy`/`statsmodels` im Projekt "
+           "installiert, bewusst keine neue Abhängigkeit für einen einzelnen Test):\n"
+           "1. Pro Zelle (Elo-Band × Gegner-Geschlecht × Scope) erst auf **Spieler-Ebene** "
+           "aggregieren (Ø `over_performance` pro `fide_id`) — macht aus korrelierten "
+           "Partien unabhängige Beobachtungen.\n"
+           "2. Zweiseitiger **Permutationstest** auf den Mittelwertsunterschied der "
+           "Spieler-Mittelwerte (10.000 Permutationen, fester Seed). Macht keine "
+           "Normalverteilungsannahme — wichtig, da `over_performance` pro Spieler bei "
+           "kleinem `n_games` stark schief verteilt sein kann.\n\n"
+           "Zellen mit weniger als 8 Spielern in einer der beiden Gruppen werden als "
+           "`underpowered` markiert statt unterdrückt — `female_top` dünnt an den Rändern "
+           "der Elo-Range schnell aus."),
+    ("code",
+        "def permutation_test(a, b, n_perm=10000, seed=42, return_diffs=False):\n"
+        "    rng = np.random.default_rng(seed)\n"
+        "    observed = a.mean() - b.mean()\n"
+        "    pooled = np.concatenate([a, b])\n"
+        "    n_a = len(a)\n"
+        "    diffs = np.empty(n_perm)\n"
+        "    for i in range(n_perm):\n"
+        "        rng.shuffle(pooled)\n"
+        "        diffs[i] = pooled[:n_a].mean() - pooled[n_a:].mean()\n"
+        "    p_value = (np.abs(diffs) >= np.abs(observed)).mean()\n"
+        "    return (observed, p_value, diffs) if return_diffs else (observed, p_value)\n"
+        "\n"
+        "def player_level_means(df_scope, value_col):\n"
+        "    return df_scope.groupby(['analysis_group', 'fide_id'])[value_col].mean().reset_index()\n"
+        "\n"
+        "SCOPES = {'all': df, 'open_mixed': df[df.scope == 'open_mixed']}\n"
+        "sig_rows = []\n"
+        "for scope_name, dsub in SCOPES.items():\n"
+        "    for band in elo_band_order:\n"
+        "        if band == 'unknown':\n"
+        "            continue\n"
+        "        for sex in SEX_ORDER:\n"
+        "            cell = dsub[(dsub.elo_band == band) & (dsub.opponent_sex == sex)]\n"
+        "            pm = player_level_means(cell, 'over_performance')\n"
+        "            a = pm.loc[pm.analysis_group == 'female_top', 'over_performance'].values\n"
+        "            b = pm.loc[pm.analysis_group == 'male_control', 'over_performance'].values\n"
+        "            if len(a) == 0 or len(b) == 0:\n"
+        "                continue\n"
+        "            diff, p = permutation_test(a, b)\n"
+        "            sig_rows.append({\n"
+        "                'scope': scope_name, 'elo_band': band, 'opponent_sex': sex,\n"
+        "                'n_players_female_top': len(a), 'n_players_male_control': len(b),\n"
+        "                'mean_diff': round(diff, 4), 'p_value': round(p, 4),\n"
+        "                'underpowered': len(a) < 8 or len(b) < 8,\n"
+        "            })\n"
+        "sig_cols = ['scope', 'elo_band', 'opponent_sex', 'n_players_female_top',\n"
+        "            'n_players_male_control', 'mean_diff', 'p_value', 'underpowered']\n"
+        "sig_table = pd.DataFrame(sig_rows, columns=sig_cols)\n"
+        "if sig_table.empty:\n"
+        "    print('Keine Zelle hat aktuell Spieler in beiden Gruppen (female_top UND male_control) — '\n"
+        "          'vermutlich weil der Backfill für eine der beiden Kohorten noch läuft '\n"
+        "          '(siehe groups.backfill_status). Sobald mehr Partien vorliegen, füllt sich diese Tabelle.')\n"
+        "sig_table"),
+
+    ("md", "### Zur Veranschaulichung: Nullverteilung der am besten besetzten Zelle"),
+    ("code",
+        "all_scope = sig_table[sig_table.scope == 'all']\n"
+        "if all_scope.empty:\n"
+        "    print('Übersprungen: keine Zelle mit Daten in beiden Gruppen (siehe Hinweis oben).')\n"
+        "else:\n"
+        "    best = all_scope.sort_values(\n"
+        "        ['n_players_female_top', 'n_players_male_control'], ascending=False\n"
+        "    ).iloc[0]\n"
+        "    cell = df[(df.elo_band == best.elo_band) & (df.opponent_sex == best.opponent_sex)]\n"
+        "    pm = player_level_means(cell, 'over_performance')\n"
+        "    a = pm.loc[pm.analysis_group == 'female_top', 'over_performance'].values\n"
+        "    b = pm.loc[pm.analysis_group == 'male_control', 'over_performance'].values\n"
+        "    observed, p_value, diffs = permutation_test(a, b, return_diffs=True)\n"
+        "\n"
+        "    fig, ax = plt.subplots()\n"
+        "    ax.hist(diffs, bins=50, color='#888888', alpha=0.8)\n"
+        "    ax.axvline(observed, color=GROUP_PALETTE['female_top'], lw=2,\n"
+        "               label=f'beobachtet ({observed:+.3f}), p={p_value:.4f}')\n"
+        "    ax.set_title(f'Permutations-Nullverteilung: {best.elo_band}, vs {best.opponent_sex}')\n"
+        "    ax.set_xlabel('Differenz der Spieler-Mittelwerte (female_top − male_control)')\n"
+        "    ax.legend()\n"
+        "    plt.tight_layout(); plt.show()"),
+
+    ("md", "## Fazit\n\n"
+           "Die Tabellen und der Signifikanztest oben beantworten die Ausgangsfrage direkt: "
+           "pro Elo-Band zeigt die `mean_over_performance`-Tabelle (Abschnitt 2), ob "
+           "`female_top`- oder `male_control`-Spieler:innen bei gleichem absoluten Rating "
+           "besser oder schlechter abschneiden als die Elo-Erwartung vorgibt — getrennt nach "
+           "Gegner-Geschlecht und mit/ohne Frauen-only-Turniere. Der Permutationstest "
+           "(Abschnitt 6) zeigt, welche dieser Unterschiede über die reine Stichprobenstreuung "
+           "hinausgehen.\n\n"
+           "**Caveats:**\n"
+           "- `female_top` hat nur 66 Spielerinnen — Zellen an den Rändern der Elo-Range "
+           "(sehr niedrige/hohe Bänder) sind oft `underpowered` und sollten nicht "
+           "überinterpretiert werden.\n"
+           "- Der Frauen-Turnier-Bias (65,4 % der `female_top`-Partien gegen Frauen, meist "
+           "Frauen-only) bleibt in der `all`-Sicht enthalten; die `open_mixed`-Sicht ist die "
+           "fairere Vergleichsbasis, hat aber pro Zelle weniger Partien/Spieler:innen."),
+]
+
+
+if __name__ == "__main__":
+    make_notebook(NBDIR / "13_absolute_elo_headtohead.ipynb", nb13)

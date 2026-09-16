@@ -533,6 +533,23 @@ Beide Backup-Skripte (`backup_fide_vps.sh` **und** `backup_db_vps.sh` für tunne
 
 ---
 
+## Änderungen Session 2026-09-16 — Monatslauf automatisiert, Coverage sichtbar, Bandlogik zentralisiert
+
+Vier Stufen umgesetzt (Commits `14e7520`, `e4eb6a1`, `3e41af1`, `d4e940f`, `027e810`):
+
+| Was | Details |
+|---|---|
+| **Monatslauf automatisiert** | `monthly_update.sh` lief nie automatisch — und hätte es auch nicht gekonnt: Schritt 1 sucht die FIDE-Liste in `data/`, aber das Verzeichnis existierte auf dem Mac gar nicht. Jetzt lädt das Skript die Liste selbst (`ratings.fide.com/download/standard_<mmm><yy>frl.zip`, URL verifiziert), läuft **täglich** per launchd (FIDE veröffentlicht nicht an festem Kalendertag), holt Lücken der letzten 3 Monate nach und stößt die VPS-Requeues **nur** an, wenn wirklich etwas importiert wurde. Ohne diesen letzten Punkt hätte der Tagesjob P1/P2/P3 und P0 jeden Tag requeued. |
+| **Bandlogik zentralisiert** | Migration `017`: `fn_elo_band()`/`fn_elo_group()` (50er-Bänder, passend zur Konvention aus Notebook 13/14). Vorher lag dieselbe Logik dreifach nebeneinander. pandas-Zwilling in `notebooks/_setup.py`, Test prüft beide gegeneinander. Nebenbei: Nummernkollision `014` doppelt vergeben → `014_qc_category.sql` zu `016` umbenannt. |
+| **Coverage sichtbar** | `coverage_by_elo_band` filterte auf `std_rating IS NOT NULL` — die 0 rutschte durch und erzeugte ein Phantom-Band mit 1,26 Mio Spielern und 10,09 Mio Soll-Perioden allein für 2026, was die reale Abdeckung optisch auf ~1 % drückte. Behoben; neuer Dashboard-Tab **„Abdeckung"** mit Kopfzahl, Dimensions- und Jahreswahl (gecacht, 15 Min). |
+| **QC-Grundgesamtheit** | `qc_corrections.py` rief fest `"all"` auf. Jetzt Dropdown mit Default „kuratiert"; die effektive Population steht neben der Tabelle. Notebooks 10/11 benennen und zählen die NULL-Gruppe, statt sie per pandas-`dropna` verschwinden zu lassen — betraf real 8 von 29 bzw. 95 von 734 Spielern. |
+
+**Gemessene Abdeckung (neu, ground truth):** 243.555 aktive Spieler mit Rating > 0, davon 243.541 mindestens einmal angefasst (nur 14 nie). Perioden-Abdeckung 2020-01…2026-08: **76,1 %** (14,82 von 19,48 Mio). Sichtbar gewordene Lücke: Bänder 1000–1300 stehen bei 0 gescrapten Spielern — das ist der Grid-Boden `ELO_FLOOR = 1400`, betrifft 271 aktive Spieler.
+
+**Richtigstellung zu einer verbreiteten Annahme:** Die kuratierten Gruppen `female_top`/`male_control` sind **nicht** vollständig — laut `project_status.md` 6.7 sind 23 von 66 bzw. 48 von 649 Spielern gelabelt, mit `active=TRUE` bleiben 2 bzw. 4. Die CLAUDE.md-Angabe „48, age-matched, complete" war irreführend und ist korrigiert. Für Kohorten gilt Notebook 14 (dynamisch aus `rating_history`).
+
+---
+
 ## Änderungen Session 2026-09-11 — MB-Rückgang untersucht + Live-Stand aktualisiert
 
 | Was | Details |

@@ -1,7 +1,17 @@
 # FIDE Calculations Scraper
 
 Scraper für FIDE-Calculations-Partien → PostgreSQL/TimescaleDB (VPS Hostinger).
-Analyseprojekt: Top-Spielerinnen (ELO 2400–2600) vs. gleichstarke Männer — Gegnerstruktur, Rating-Volatilität, Turnierfrequenz, Rating-Progression.
+
+**Ziel:** vollständige Partien-Datenbasis **aller bei der FIDE aktiven Spieler ab ca. 2020**.
+Stand 16.09.2026: 243.555 aktive Spieler mit Rating > 0, davon 243.541 mindestens einmal
+angefasst; Perioden-Abdeckung seit 2020 **76 %** (Dashboard-Tab „Abdeckung", oder
+`scripts/coverage_report.py`).
+
+*Historisch* begann das Projekt als enge Forschungsfrage (Top-Spielerinnen ELO 2400–2600 vs.
+gleichstarke Männer). Die dafür kuratierten Gruppen (`female_top`/`male_control`) sind
+eingefroren und nur teilweise befüllt — für den Frauen-vs-Männer-Vergleich gilt Notebook 14
+mit seiner dynamisch aus `rating_history` abgeleiteten Kohorte (siehe Notebooks-Abschnitt
+unten und `docs/project_status.md` 6.7/6.8).
 
 → **Projektdokumentation:** [docs/project_status.md](docs/project_status.md)
 → **Scraping-Status:** [docs/scraping_status.md](docs/scraping_status.md)
@@ -19,17 +29,18 @@ fide-scraper/
 │   ├── parser.py              ← BeautifulSoup HTML-Parser
 │   ├── db.py                  ← PostgreSQL UPSERT; ensure_connection(); is_valid_fide_period()
 │   └── config.py              ← config.yaml + .env kombiniert
-├── migrations/                ← 001_initial.sql … 012_dynamic_membership.sql
-├── notebooks/                 ← 01–11 Analysen + notebooks/_generate_*.py (Generatoren)
+├── migrations/                ← 001_initial.sql … 017_elo_band_function.sql
+├── notebooks/                 ← 01–17 Analysen + notebooks/_generate_*.py (Generatoren)
 ├── scripts/
-│   ├── seed_players.py        ← Spieler aus FIDE-TXT seeden (groups-Tabelle als Quelle)
+│   ├── seed_players.py        ← ⚠️ System A, eingefroren (s. „Gruppen: zwei Systeme")
+│   ├── monthly_update.sh      ← FIDE-Liste laden + importieren + VPS-Requeue (täglich per launchd)
+│   ├── coverage_report.py     ← Abdeckung je Föderation/Band/Jahr (CLI zum Dashboard-Tab)
 │   ├── backfill.py            ← Historische Perioden nachladen
 │   ├── run_local_backfill.sh  ← caffeinate + Auto-Restart + Tunnel-Check
 │   ├── resolve_opponents.py   ← Gegner-FIDE-IDs per Lookup befüllen
 │   ├── quality_check.py       ← QC gegen TXT-Snapshots → qc_rating_check
 │   └── tunnel.sh              ← SSH-Tunnel localhost:5434 → VPS:5432
-└── data/
-    └── players_list_foa_2026-04.txt   ← FIDE-Download April 2026
+└── data/                      ← FIDE-Listen (gitignored); monthly_update.sh lädt hier ab
 ```
 
 ---
@@ -41,6 +52,12 @@ fide-scraper/
 | VPS | `pit@187.124.181.116`, `/opt/fide-scraper/` |
 | DB lokal | `postgresql://fide:nimzo194.@localhost:5434/fidedb` |
 | Tunnel starten | `bash scripts/tunnel.sh` |
+| Orchestrator-Dashboard | https://scelo.chesspit.net (BasicAuth) — Steuerung, Queue, Tab „Abdeckung" |
+
+**Achtung bei DB-Diagnosen:** Die produktiv genutzte DB läuft im Container
+`fide-tunnelbliq-shared-db` (Port 5432, mit einem anderen Projekt geteilt), **nicht** in
+`fide-scraper-db-1` (Port 5433). Der Tunnel auf lokal 5434 zeigt auf VPS-Port 5432, die
+Angabe oben stimmt also — nur beim `docker logs` den richtigen Container erwischen.
 
 ---
 
@@ -81,36 +98,72 @@ Summary-Zeile `<tr bgcolor=#e6e6e6>`: Spalte 1 = **Ro** → `rating_history.std_
 
 | Tabelle | Inhalt |
 |---------|--------|
-| `players` | ~1,8 Mio FIDE-Spieler; `analysis_group` für Analysegruppen; `active` = FIDE-Status |
+| `players` | ~1,8 Mio FIDE-Spieler; `active` = FIDE-Status; `sex`; `analysis_group` = ⚠️ eingefroren, s. unten |
 | `game_results` | Einzelpartien; UNIQUE `(fide_id, period, game_index)` |
 | `scrape_periods` | Scraping-Status (ok/no_data/error) + k_factor pro (fide_id, period) |
 | `rating_history` | Monatliches Rating: `std_rating` (Scraper) + `published_rating` (TXT) |
-| `groups` | 175 Scraping-Gruppen — **einzige Quelle der Wahrheit** für ELO-Range + Federation |
+| `groups` | 175 kuratierte Scraping-Gruppen — ⚠️ eingefroren (System A, s. unten) |
 | `rating_corrections` | FIDE-Einmalkorrekturen (März 2024: +0,4×(2000−rating) für <2000er) |
 | `qc_rating_check` | QC-Fenster-Ergebnisse |
 | `orchestrator.scrape_groups` / `.scrape_runs` | Orchestrator-Queue (seit Review #5 in PG statt SQLite scraper.db; Migration 013) |
 
-**Wichtig:** Analysen immer nach `p.active = TRUE` filtern (21 inaktive female_top, 44 male_control).
+**SQL-Funktionen** (Migration 017): `fn_elo_band(rating)` → Untergrenze des 50er-Bands,
+`fn_elo_group(rating, sex)` → `f_2400_2449` / `m_1850_1899` / `x_…` bei unbekanntem Geschlecht.
+Eine Quelle für Coverage, QC-Frontend und Notebooks; der pandas-Zwilling liegt in
+`notebooks/_setup.py::elo_band()`, `tests/test_elo_bands.py` prüft beide gegeneinander.
 
 Schlüsselentscheide: `game_index` löst Duplikate bei Doppelrunden; `opponent_fide_id` per nachträglichem Lookup (kein ID in AJAX-Response); beide `rating_change`-Felder gespeichert (ungewichtet + K×Δ).
 
 ---
 
-## Workflow: neue Gruppe starten
+## Gruppen: zwei Systeme, nur eines davon lebt
+
+Leicht zu verwechseln — die beiden hängen **nicht** zusammen und wissen nichts voneinander.
+
+| | System A (eingefroren) | System B (aktiv) |
+|---|---|---|
+| Wo | `groups`-Tabelle + `players.analysis_group` | `orchestrator.scrape_groups` |
+| Befüllt durch | `scripts/seed_players.py`, **manuell pro Gruppe** | `orchestrator/generate_groups.py`, automatisch |
+| Umfang | 175 kuratierte Gruppen, ELO-Stand April 2026 | alle Föderationen × 2009–2026 × ELO-Bänder ab 1400 |
+| Wächst mit neuen Spielern | **nein** | ja (P0-Tier, monatlich via `monthly_update.sh`) |
+
+System B leistet die eigentliche Arbeit. `worker.py::get_fide_ids()` fragt `players` live nach
+Föderation + `std_rating` ab und fasst `analysis_group` nie an.
+
+**System A nicht fortführen.** Die kuratierten Gruppen sind laut `docs/project_status.md` 6.7
+nur teilweise befüllt (`backfill_status='partial'`): `female_top` 23 von 66, `male_control` 48
+von 649 gelabelt — mit `active = TRUE` bleiben davon 2 bzw. 4. Sie bleiben als
+Methoden-Dokumentation und Vergleichsachse erhalten (`coverage_by_analysis_group`), taugen
+aber nicht als Analysegrundlage. Wer eine Kohorte braucht, leitet sie dynamisch aus
+`rating_history` ab — Vorbild: Notebook 14.
+
+<details>
+<summary>Historischer Workflow „neue Gruppe starten" (System A, nur noch Referenz)</summary>
 
 ```bash
-# 1. Spieler seeden (liest ELO-Range + Federation aus groups-Tabelle):
 python scripts/seed_players.py --group GRUPPENNAME
-
-# 2. Backfill lokal (caffeinate, Auto-Restart, Tunnel-Check):
 bash scripts/run_local_backfill.sh GRUPPENNAME 2012-08-01 2026-03-01
 ```
-
-Danach groups-Tabelle aktualisieren:
 ```sql
 UPDATE groups SET backfill_status='complete', scraped_from='2012-08-01', scraped_to='2026-03-01'
 WHERE group_name='GRUPPENNAME';
 ```
+</details>
+
+---
+
+## Monatslauf (automatisch)
+
+`scripts/monthly_update.sh` läuft **täglich** per launchd auf dem Mac
+(`scripts/net.chesspit.fide-monthly-update.plist`), nicht monatlich: FIDE veröffentlicht die
+neue Liste nicht an einem festen Kalendertag.
+
+1. Fehlende Perioden der letzten 3 Monate ermitteln (`FIDE_LOOKBACK_MONTHS`, älteste zuerst)
+2. Liste von `ratings.fide.com/download/standard_<mmm><yy>frl.zip` laden (404 = noch nicht da → Exit 0)
+3. Importieren
+4. **Nur wenn wirklich importiert wurde:** P1/P2/P3-Refresh + P0-Neuzugänge auf dem VPS requeuen
+
+Ohne Schritt 4 werden neue Spieler nie nachgezogen. Log: `~/backups/fide-scraper/monthly.log`.
 
 ---
 
@@ -136,6 +189,9 @@ gescrapten Rating-/Partiedaten über 4 feste, sichere Query-Tools (kein Text-to-
 | Tunnel-Drop beim lokalen Backfill | `db.py::ensure_connection()` 10× Retry bis 5 Min |
 | Opponent-Match falsch (diff >200) | Query: `ABS(opponent_rating - std_rating) > 200` |
 | VPS-IP von FIDE geblockt | Primär lokal scrapen via `run_local_backfill.sh` |
+| `_generate_NN.py` ausführen löscht Notebook-Ergebnisse | Der Generator schreibt die `.ipynb` ohne Outputs neu (NB14 verlor so 1952 Zeilen Tabellen/Grafiken). Nur regenerieren, wenn danach auch ausgeführt wird |
+| `std_rating = 0` heißt „unbewertet", nicht „schwach" | Betrifft 1,26 von 1,5 Mio aktiven Spielern. In Filtern immer `std_rating > 0` statt `IS NOT NULL` — sonst Phantom-Band 0 bzw. Millionen Phantom-Soll-Perioden |
+| `COALESCE(...) AS x` + `SELECT DISTINCT` | Dann muss `ORDER BY` den **Alias** nutzen, nicht die Ursprungsspalte („ORDER BY expressions must appear in select list") |
 
 ---
 

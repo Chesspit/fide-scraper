@@ -700,6 +700,18 @@ Enthält zusätzlich QC-Zellen: Vergleich `Σ rating_change_weighted` mit tatsä
 | Parquet-Export aktualisieren | Niedrig | ⬜ nach grösserem Backfill |
 | female_top/male_control Update | Niedrig | ⬜ (inaktive Spieler, wenig Mehrwert) |
 
+**Neu aus Session 2026-09-16** (die Tabelle darüber ist vom 03.07. und teilweise überholt —
+bewusst nicht ungeprüft aufgeräumt):
+
+| Aufgabe | Priorität | Status |
+|---|---|---|
+| Notebooks 10/11/13/14 regenerieren **und ausführen** | Mittel | ⬜ Generatoren geändert (gemeinsamer `elo_band`-Helper, NULL-Gruppe benannt), die committeten `.ipynb` haben aber noch die alten Zellen. Achtung: Regenerieren allein löscht die gespeicherten Ergebnisse |
+| `quality_check.py --rebuild` — Folgen bedenken | Mittel | ⬜ Danach enthält `qc_rating_check` statt 2.150 die ~243.541 gescrapten Spieler. QC-Seiten haben jetzt einen Grundgesamtheit-Filter (Default „kuratiert"), Notebooks 10/11 zählen die NULL-Gruppe — beides vorbereitet, aber noch nie gegen die große Population gelaufen |
+| Worker-Speicherwachstum wirklich beheben | Mittel | ⬜ Nur eingedämmt (4 GB cgroup-Limit + RAM-Monitoring), Ursache im Python-Code nicht gefunden. Der konkrete Auslöser vom 14.09. (P0-Band mit 1,2 Mio Spielern) ist behoben, der ursprüngliche Spike vom 12.09. bleibt unerklärt |
+| Coverage-Nenner: `players.active` vs. FIDE-Standardliste | Niedrig | ⬜ `store.py:397-414` begründet, warum die Standardliste der sauberere Nenner wäre; `players.active` driftet, weil der Monatsimport es für Bestandsspieler nie auffrischt. Bewusst nicht mitgeändert (sonst Zahlen vor/nach unvergleichbar) |
+| Lücke unterhalb `ELO_FLOOR = 1400` | Niedrig | ⬜ Bänder 1000–1300 zeigen 0 gescrapte Spieler (271 aktive betroffen). Im Coverage-Tab jetzt sichtbar; Entscheidung, ob das Grid nach unten erweitert wird, steht aus |
+| Migration 017 auf Test-/Zweitumgebungen anwenden | Niedrig | ⬜ Auf der Produktiv-DB angewendet. Die DB-gestützten Tests laufen lokal nicht (`permission denied to create database` für den `fide`-User) — betrifft alle 82 DB-Tests, nicht nur die neuen |
+
 ---
 
 ## 8. Bekannte Limitationen

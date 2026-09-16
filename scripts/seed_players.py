@@ -1,5 +1,22 @@
 #!/usr/bin/env python3
-"""Import FIDE player list into database with age-matched sampling for control group."""
+"""Import FIDE player list into database with age-matched sampling for control group.
+
+⚠️ EINGEFROREN (Stand 16.09.2026) — für neue Spieler NICHT mehr fortführen.
+
+Dieses Skript befüllt System A (`groups`-Tabelle + `players.analysis_group`), die
+kuratierten Gruppen aus der ursprünglichen Forschungsfrage. Sie wachsen nicht mit:
+Das laufende Scraping steuert ausschließlich System B (`orchestrator.scrape_groups`,
+erzeugt von orchestrator/generate_groups.py), und worker.py::get_fide_ids() fragt
+`players` live nach Föderation + std_rating ab, ohne analysis_group je anzufassen.
+Siehe CLAUDE.md, Abschnitt „Gruppen: zwei Systeme, nur eines davon lebt".
+
+Die bestehenden Gruppen sind zudem nur teilweise befüllt (`backfill_status='partial'`,
+female_top 23 von 66, male_control 48 von 649 — mit active=TRUE bleiben 2 bzw. 4,
+siehe docs/project_status.md 6.7). Sie bleiben als Methoden-Dokumentation und als
+Vergleichsachse für coverage_by_analysis_group erhalten, taugen aber nicht als
+Analysegrundlage. Neue Kohorten dynamisch aus rating_history ableiten — Vorbild ist
+notebooks/_generate_14.py.
+"""
 
 import argparse
 import logging

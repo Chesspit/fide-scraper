@@ -44,13 +44,14 @@ if ! mkdir "$LOCKDIR" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
 
-# Ziel-Monat ermitteln
+# Ziel-Monat ermitteln: der LAUFENDE Monat, nicht der Vormonat.
+# FIDE benennt die Liste nach dem Monat ihrer Veröffentlichung (standard_sep26frl.zip
+# = Periode 2026-09-01, Inhalt sind die Partien des Vormonats). Ein Tages-Poller, der
+# auf den Vormonat zielt, wuerde die neue Liste erst einen Monat zu spaet anfassen.
 NEW_PERIOD=${1:-$("$PY" -c "
 from datetime import date
 t = date.today()
-m = t.month - 1 or 12
-y = t.year if t.month > 1 else t.year - 1
-print(date(y, m, 1))
+print(date(t.year, t.month, 1))
 ")}
 
 echo "$(date): ========================================"
@@ -92,6 +93,50 @@ if [ -f "$PENDING_RESET_MARKER" ]; then
     else
         echo "$(date): Nachholen erneut fehlgeschlagen — Marker bleibt bestehen."
     fi
+fi
+
+# Tunnel prüfen
+if echo "$DB_URL" | grep -q ":5434"; then
+    if ! lsof -i :5434 | grep -q LISTEN 2>/dev/null; then
+        echo "$(date): Tunnel nicht aktiv — starte tunnel.sh..."
+        bash "$SCRIPT_DIR/scripts/tunnel.sh" &
+        sleep 5
+    fi
+fi
+
+# Ein lauschender Port heißt noch nicht, dass die DB antwortet (halb toter
+# Tunnel nach Netzwechsel). Ohne diesen Check liefe der Import in einen
+# minutenlangen Timeout statt sofort verständlich abzubrechen.
+if ! DB_URL="$DB_URL" "$PY" -c "
+import os, sys
+import psycopg2
+try:
+    psycopg2.connect(os.environ['DB_URL'], connect_timeout=10).cursor().execute('SELECT 1')
+except Exception as exc:
+    print(exc, file=sys.stderr)
+    sys.exit(1)
+"; then
+    echo "$(date): FEHLER: Keine DB-Verbindung über $DB_URL — Tunnel prüfen (scripts/tunnel.sh)."
+    exit 1
+fi
+
+# --- Abbruch, wenn die Periode längst drin ist -------------------------------
+# ENTSCHEIDEND fuer den taeglichen Lauf: ohne diesen Check wuerde das Skript
+# jeden Tag die VPS-Resets (Schritte 3+4) ausloesen und damit P1/P2/P3 und P0
+# taeglich neu requeuen — permanente Churn auf einer Queue, die eigentlich nur
+# einmal pro Monat angefasst werden soll. Mit dem Check ist ein Lauf an einem
+# Tag ohne neue Liste ein echtes No-Op (kein Download, kein Import, kein Reset).
+if DB_URL="$DB_URL" NEW_PERIOD="$NEW_PERIOD" SCRIPT_DIR="$SCRIPT_DIR" "$PY" -c "
+import os, sys
+sys.path.insert(0, os.environ['SCRIPT_DIR'])
+import psycopg2
+from scripts.import_rating_snapshots import period_already_imported
+conn = psycopg2.connect(os.environ['DB_URL'], connect_timeout=10)
+sys.exit(0 if period_already_imported(conn, os.environ['NEW_PERIOD']) else 1)
+"; then
+    echo "$(date): Periode $NEW_PERIOD ist bereits importiert — nichts zu tun."
+    echo "$(date): (Erneuter Import und VPS-Requeue werden bewusst übersprungen.)"
+    exit 0
 fi
 
 # data/ liegt nicht im Repo (nur .gitignore-Einträge) und fehlt auf frischen
@@ -165,31 +210,6 @@ if [ -z "$IMPORT_FILE" ]; then
     exit 1
 fi
 echo "$(date): TXT-Datei: $IMPORT_FILE"
-
-# Tunnel prüfen
-if echo "$DB_URL" | grep -q ":5434"; then
-    if ! lsof -i :5434 | grep -q LISTEN 2>/dev/null; then
-        echo "$(date): Tunnel nicht aktiv — starte tunnel.sh..."
-        bash "$SCRIPT_DIR/scripts/tunnel.sh" &
-        sleep 5
-    fi
-fi
-
-# Ein lauschender Port heißt noch nicht, dass die DB antwortet (halb toter
-# Tunnel nach Netzwechsel). Ohne diesen Check liefe der Import in einen
-# minutenlangen Timeout statt sofort verständlich abzubrechen.
-if ! DB_URL="$DB_URL" "$PY" -c "
-import os, sys
-import psycopg2
-try:
-    psycopg2.connect(os.environ['DB_URL'], connect_timeout=10).cursor().execute('SELECT 1')
-except Exception as exc:
-    print(exc, file=sys.stderr)
-    sys.exit(1)
-"; then
-    echo "$(date): FEHLER: Keine DB-Verbindung über $DB_URL — Tunnel prüfen (scripts/tunnel.sh)."
-    exit 1
-fi
 
 # --- Schritt 2: TXT-Snapshot importieren ---
 echo ""

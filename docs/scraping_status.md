@@ -1,10 +1,63 @@
 # Scraping-Status
 
-Stand: 2026-09-11 (Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
+Stand: 2026-09-16 (Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
 Raspberry Pi: **vom User abgeschaltet (seit 2026-07-22)** — Restbestand (794 pending Gruppen) am 29.07. auf die DC-Threads umverteilt, kein Thema mehr, siehe Abschnitt unten.
 ⚠️ **Backup-Cron seit 21./22.07. gebrochen (Root Cause: Container-Konsolidierung, fidedb + Kunden-DB tunnelbliq teilen sich seither einen Container) — am 25.08. entdeckt, Datenlücke per manuellem fidedb-Dump geschlossen, Cron-Fix selbst noch offen (Stand 25.08., nicht erneut geprüft in dieser Session). Details: Abschnitt „Backup-Status".**
 
 ---
+
+## Gesamtstand DB (Live 2026-09-16)
+
+| Kennzahl | Wert |
+|----------|------|
+| Partien gesamt | **16.160.371** (+525.420 seit 05.09.; ~48 Tsd./Tag im Schnitt — niedriger als die ~105 Tsd./Tag vom letzten Stand, weil P1/P2/P3-Monatsrefresh inzwischen fertig ist und keine großen Nachtrags-Batches mehr liefert, siehe unten) |
+| Gruppen complete | **108 / 253** (Stand 07.07., seither nicht neu geprüft) — bezieht sich auf die manuell gepflegten Mac-Mini-Analysegruppen, unabhängig vom P1/P2/P3-System (siehe unten) |
+| Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ (Vorbehalt: siehe Top-Spieler-Lückenanalyse unten) |
+| VPS-Orchestrator-Queue gesamt | **8.820 done, 2.149 pending, 9 running, 9 failed, 13.873 skipped** — done +719 ggü. 05.09., **9 neue failed-Gruppen** (alle am 14.09. zwischen ~01:30–08:00 Uhr mit „server closed the connection unexpectedly" — sieht nach einer kurzen DB-Verbindungsstörung an dem Tag aus, betrifft 9 verschiedene Threads, noch nicht untersucht/retried, siehe Detail unten) |
+| Aktive Threads | 10 DC/DI-Threads (Welt-Backfill) + `dc_update_1` (P1/P2/P3-Monatsrefresh, jetzt komplett durch, arbeitet aktuell AUT/GER/SUI-Restgruppen ab) + 2 P0-Threads `dc_newplayers_1`/`_2` (fast fertig, je 1 letzte/größte Gruppe läuft) — Details siehe Orchestrator-Abschnitt unten |
+
+### Analyse: 9 failed-Gruppen vom 14.09. — Root Cause geklärt (16.09.)
+
+**Auslöser (einmaliges Ereignis, kein FIDE-Blocking):** Am 14.09. um **00:38:06 UTC** wurde ein Postgres-Backend-Prozess auf `fide-tunnelbliq-shared-db` (das ist die tatsächlich produktiv genutzte DB hinter `host.docker.internal:5432` — **nicht** `fide-scraper-db-1`, siehe Randnotiz unten) mit **Signal 9 (SIGKILL)** beendet (`docker logs fide-tunnelbliq-shared-db`: „server process (PID 1362893) was terminated by signal 9: Killed"). Das klassische OOM-Killer-Signatur; kurz davor zeigten die Logs bereits „autovacuum worker took too long to start — canceled" (Ressourcen-Engpass-Vorbote). Postgres ging dadurch für ~3 Sekunden in Crash-Recovery („database system was not properly shut down; automatic recovery in progress" → um 00:38:09 wieder „ready to accept connections"). Nur dieses eine Ereignis im ganzen Zeitraum — keine wiederholten Abstürze.
+
+**Warum daraus 9 verzögerte Fehlschläge über Stunden verteilt wurden (nicht ein einziger sofortiger):** Der Recovery-Moment hat alle zu dem Zeitpunkt offenen DB-Verbindungen ungültig gemacht. Threads, die gerade aktiv liefen (u. a. `dc_newplayers_1`/`_2`), haben das sofort per bestehender Reconnect-Logik (`scraper/db.py`) abgefangen — im Log sichtbar als „DB connection broken; will retry to reconnect" → „DB reconnected". **Threads, die zu dem Zeitpunkt außerhalb ihrer Timezone-Aktivzeiten schliefen** (`stop_event.wait()` in `worker.py::run_dc_slot`, Zeile ~958), haben ihre inzwischen tote `pg_conn` nicht erneuert — `ensure_connection()` wird dort nur **reaktiv nach einer Exception** aufgerufen (`worker.py:1018`), nicht proaktiv beim Aufwachen. Die jeweils erste Query nach dem Aufwachen (zur eigenen lokalen Weckzeit: dc_in 01:30 Asia/Kolkata, dc_ae 03:00 Asia/Dubai, dc_dach/dc_update_1 05:00, dc_es/dc_de 07:00, dc_hk 07:09, dc_uk 08:00 — alle Europe/-Zonen passend zu ihren `active_hours`) ist dadurch mit der toten Verbindung gescheitert → „server closed the connection unexpectedly" → sofort `mark_failed()` (kein Retry innerhalb desselben Versuchs). `dc_us` (03:52, kein rundes Weckzeit-Muster) vermutlich derselbe Effekt, nur ausgelöst beim Aufwachen aus dem Leerlauf-Sleep statt dem Timezone-Sleep.
+
+**Warum die 9 Gruppen trotz Auto-Retry (`retries<3`) noch auf `failed` stehen:** `requeue_failed()` wird nur aufgerufen, wenn die eigene Warteschlange eines Threads leer ist (`_idle_queue_maintenance`, ausgelöst über `get_next_group() is None`) oder beim Worker-Neustart. Da jeder betroffene Thread noch Hunderte pending Gruppen hat, wird dieser Pfad seit dem 14.09. nie erreicht — die Gruppen bleiben strukturell liegen, bis entweder der Worker neu startet oder ein Thread zufällig komplett leerläuft.
+
+**Fix-Vorschlag, Code-Ebene (noch nicht umgesetzt):** `pg_conn = ensure_connection(pg_conn)` zusätzlich proaktiv direkt nach dem Aufwachen aus dem Timezone-Sleep aufrufen (vor `qm_local.get_next_group(...)` in `run_dc_slot`, nach Zeile 958/959) — schließt die Lücke für zukünftige DB-Blips während langer Sleeps.
+
+**✅ Erledigt (16.09.):** Die 9 Gruppen wurden manuell auf `pending` zurückgesetzt und beim folgenden Worker-Neustart sofort wieder aufgegriffen (7 von 9 direkt beim Neustart erneut gestartet, sichtbar in den Logs). Zusätzlich hat sich herausgestellt, dass der eigentliche Auslöser des OOM-Kills der **`orchestrator-worker-1`-Prozess selbst** war (RAM-Verlauf laut Hostinger: Spike 12.09. 4,3→7 GB, kurze Korrektur durch den Crash-Restart am 14.09., seither erneut bis auf ~7,3 GB gewachsen — schneller als beim ersten Mal). Kein konkreter Auslöser für den 12.09. gefunden (kein Code-Deploy — Image unverändert seit 02.09., kein passender Cron-Job; Worker-Logs vor dem 14.09. durch die knappe 30MB-Rotation bereits überschrieben). Als Sofortmaßnahme umgesetzt: `orchestrator/docker-compose.yml` (Commit `f404f22`) bekommt für den `worker`-Service ein **hartes 4GB-Memory-Limit** (statt unbegrenzt) + **großzügigere Log-Rotation** (50MB × 10 statt 10MB × 3), Worker neu deployt (Container recreated, nicht nur restart — RestartCount wieder bei 0). Zusätzlich läuft jetzt ein eigenes RAM-Monitoring auf dem VPS: `/home/pit/scripts/memory_watch.sh` per Cron alle 5 Min → `/home/pit/logs/memory_watch.log` (Host-Speicher + Top-Container), damit ein künftiger Vorfall nicht wieder an der Docker-Log-Rotation scheitert. Die eigentliche Leck-Ursache im Worker-Code ist damit noch nicht behoben, nur eingedämmt (cgroup-OOM trifft künftig nur noch den Worker selbst, nicht mehr Nachbar-Container wie die DB).
+
+**✅ Konkreter Speicherfresser gefunden und behoben (16.09., Commit `060f8e7`):** Die beiden P0-„Neuzugänge"-Bänder mit `elo_min=0` waren keine ~300-Spieler-Gruppen, sondern trafen **1.216.068 Spieler** — die komplette aktive Population mit `std_rating=0` (unbewertet). `generate_new_entrant_batches.py` hatte keinen Filter gegen `std_rating=0`; da alle diese Spieler denselben Rating-Wert teilen, kollabierte das unterste Auffangband beim Batch-Bau zu einer einzigen Riesengruppe. Der Worker hielt dadurch bis zu ~14 Mio. `(fide_id, period)`-Kombinationen gleichzeitig im Speicher — plausible Erklärung für das schnelle RAM-Wachstum seit dem 14.09.-Neustart (für den ursprünglichen Spike am 12.09. bleibt die Ursache mangels Logs unklar, da beide Gruppen erst am 14.09. gestartet sind).
+
+**User-Entscheidung 16.09.:** Unbewertete Spieler (`std_rating=0`) ergeben fachlich keinen Sinn zu scrapen — komplett ausgeschlossen, an drei Stellen: Populations-Query im Generator, Live-Query in `worker.py::get_fide_ids()`, `TIER_BOUNDS["P0"]`-Untergrenze. Die zwei betroffenen Gruppen manuell auf `elo_min=1` korrigiert. Nach Rebuild + Redeploy verifiziert: Gruppe läuft jetzt mit **278 Spielern statt 1,2 Mio.**, Worker-RAM direkt nach Neustart bei 40 MB statt mehreren GB. 4GB-Limit + Monitoring-Cron bleiben als Sicherheitsnetz aktiv, falls doch noch ein anderer Wachstumstreiber existiert.
+
+*(Randnotiz, unabhängig vom Vorfall: Die produktiv genutzte DB läuft in `fide-tunnelbliq-shared-db` (Port 5432, offenbar mit einem anderen Projekt „tunnelbliq" geteilt), nicht in `fide-scraper-db-1` (Port 5433) — die CLAUDE.md-Verbindungsangabe über den Tunnel auf Port 5434 stimmt weiterhin, da der Tunnel auf VPS-Port 5432 zeigt. Nur als Klarstellung, welcher Container bei künftigen Diagnosen zu prüfen ist.)*
+
+---
+
+## Hochrechnung Restlaufzeit VPS-Backfill (Stand 2026-09-16)
+
+Basis: erfolgreiche `scrape_runs` der letzten 7 Tage (09.–16.09.) pro Thread, hochgerechnet gegen die aktuell pending Gruppen je `thread_affinity`. Raspberry-Pi-Bestand ist bereits in den jeweiligen Föderations-Threads mitgezählt (siehe Umverteilung 29.07.). `dc_update_1` fehlt hier bewusst — P1/P2/P3-Monatsrefresh ist komplett durch (siehe Orchestrator-Abschnitt), Thread arbeitet nur noch 17 kleine AUT/GER/SUI-Restgruppen ab.
+
+| Thread | Pending | Ø Gruppen/Tag (7d) | Hochrechnung |
+|--------|--------:|---:|---|
+| dc_dach | 97 | 8,9 | ~11 Tage → **ca. 27.09.** |
+| dc_mx | 145 | 5,7 | ~25 Tage → **ca. 11.10.** |
+| dc_hk | 145 | 5,4 | ~27 Tage → **ca. 13.10.** |
+| dc_ae | 242 | 6,6 | ~37 Tage → **ca. 23.10.** |
+| dc_es | 358 | 5,7 | ~63 Tage → **ca. 18.11.** |
+| dc_us | 259 | 3,7 | ~70 Tage → **ca. 25.11.** |
+| dc_uk | 277 | 3,4 | ~81 Tage → **ca. 06.12.** |
+| dc_de | 302 | 3,6 | ~84 Tage → **ca. 09.12.** |
+| dc_in | 290 | 2,6 | ~112 Tage → **ca. 06.01.2027** |
+
+**`dc_in` bleibt der Flaschenhals** (2,6 Gruppen/Tag, weiterhin am langsamsten) — Verdacht auf Proxy-/Tarpit-Problem im IN-Pool ist nach wie vor nicht diagnostiziert. **Auffällig ggü. 05.09.: Tempo praktisch aller Threads spürbar gesunken** (z. B. dc_uk 8,3→3,4/Tag, dc_us 9,0→3,7/Tag, dc_de 6,1→3,6/Tag) — noch nicht untersucht, ob das an schwierigeren/älteren Jahrgängen (mehr Perioden bzw. weniger `skip`-fähige Kombis in den verbliebenen Bändern) liegt oder an einer echten Drossel (Proxy-Pool, Rate-Limiting). Lohnt sich vor der nächsten Statusprüfung genauer anzuschauen. Realistisches Ende des reinen Welt-Backfills bei aktuellem Tempo: **grob Anfang Januar 2027**, getrieben von `dc_in`/`dc_de`/`dc_uk`.
+---
+
+## Historie — Stand 2026-09-11
+
+*(Abschnitt aus der Session vom 11.09., durch den 16.09.-Stand oben überholt, als Verlauf erhalten.)*
 
 ## Gesamtstand DB (Live 2026-09-11)
 
@@ -204,7 +257,9 @@ Reihenfolge: jüngste Periode zuerst → älteste; **vollautomatische Chain** vi
 | DC-MX (Slot 105) | Datacenter | semi_conservative | FRA, BEL, NED, LUX | America/Mexico_City | ✅ aktiv |
 | DC-AE (Slot 106) | Datacenter | semi_conservative | SRB, CRO, BIH, MKD, MNE, SLO, KOS, ALB, GRE, TUR | Asia/Dubai | ✅ aktiv |
 | DC-DACH (Slot 107) | Datacenter | semi_conservative | GER, SUI, AUT (Vollbackfill) | Europe/Berlin | ✅ aktiv |
-| DC-UPDATE-1 (Slot 108) | Datacenter | semi_conservative | P1/P2/P3-Monatsrefresh (`update_only=1`) — **seit 11.08. wieder exklusiv**, DACH/FRA-Backfill-Mithilfe zurückgebaut (siehe Session 2026-08-11/12 unten) | Europe/Berlin | ✅ aktiv |
+| DI-UP-1 (Slot 108, `dc_update_1`, Label bis 02.09. `DI-UPDATE-1`) | Datacenter | semi_conservative | P1/P2/P3-Monatsrefresh (`update_only=1`) — **September-Zyklus seit 16.09. komplett durch** (P1 2/2, P2 7/7, P3 40/40), arbeitet bis zum nächsten Monatszyklus 17 restliche AUT/GER/SUI-Einzelgruppen ab | Europe/Berlin | ✅ aktiv |
+| DI-NP-1 (Slot 109, `dc_newplayers_1`) | Datacenter | semi_conservative | P0-Tier: nie gescrapte Neuzugänge, alle Föderationen — **neu seit 01.09.** | America/Santiago | ✅ aktiv |
+| DI-NP-2 (Slot 110, `dc_newplayers_2`) | Datacenter | semi_conservative | P0-Tier: nie gescrapte Neuzugänge, alle Föderationen — **neu seit 01.09.** | Asia/Ho_Chi_Minh | ✅ aktiv |
 
 **DC-UPDATE-1 ersetzt seit 2026-07-02 den alten `dc_update`-Thread** — siehe Session-Änderungen unten. Zwischen 2026-07-06 und 2026-08-11 half er zusätzlich als **zweiter DACH-Backfiller** (50/50-Split der pending DACH-Gruppen mit `dc_dach`, danach + FRA-Anteil), da er zwischen den monatlichen Update-Läufen sonst leerlief — am 11.08. wieder rückgängig gemacht, weil diese Backfill-Gruppen strukturell niedrigere (=dringlichere) Priorität hatten als die P1/P2/P3-Batches und den Thread dadurch nie an den eigentlichen Monatsrefresh kommen ließen.
 
@@ -256,6 +311,74 @@ Das liegt klar über den 655/Std. der Design-Annahme. **Aber:** P3 hat gerade er
 - Vorsichtig (Tempo des ersten, spürbar langsameren P3-Bandes): ~143h ≈ **6 Tage**
 
 → **Revidiertes Gesamtende: grob 16.–18.08.**, nicht erst 24.08. wie am 11.08. geschätzt. Belastbarer wird die Zahl, sobald mehrere echte P3-Bände durchgelaufen sind (Stand 12.08. 14:20 Uhr: 0 fertig, 1 läuft) — bei Gelegenheit erneut mit echten P3-Laufzeiten nachrechnen.
+
+### P1/P2/P3-Monatsrefresh — aktueller Zyklus (Stand 2026-09-02, Live-Abfrage)
+
+Label seit heute `DI-UP-1` (vorher `DI-UPDATE-1`, siehe Session unten). `federation`-Spalte in `scrape_groups` zeigt für diesen Zyklus P1/P2/P3-Tags **plus** vereinzelte ältere AUT/GER/SUI/FRA-Einzelgruppen (Herkunft nicht geklärt, keine funktionale Auswirkung):
+
+| Tier/Rest | Done | Running | Pending | Skipped |
+|---|---:|---:|---:|---:|
+| P1 (ELO ≥ 2300) | 2/2 ✅ | – | – | – |
+| P2 (GER/SUI/AUT < 2300) | 7/7 ✅ | – | – | – |
+| P3 (Rest, 40 Bänder) | 1 | 1 (ELO 2123–2193, seit 07:00 Uhr) | 38 (~112.162 Spieler) | – |
+| FRA | 89/89 ✅ | – | – | – |
+| AUT/GER/SUI (Einzelgruppen) | 267 | – | 58 (~9.666 Spieler) | 201 (~34.164) |
+
+**Live-Stand ~09:20 Uhr:** 367 von 464 relevanten Gruppen fertig (**~79 %**), 1 läuft, 96 offen. P1/P2 komplett durch, **P3 (die großen Bänder) läuft erst seit gestern (01.09.) an** — davor nur kleinere Restgruppen (FRA/AUT/GER/SUI), daher der sprunghafte Tagesdurchsatz von ~1.000 Spieler/Tag (23.–31.08.) auf 26.745 Spieler an einem einzigen Tag (01.09., 11 Bänder). Aktueller P3-Band braucht ~30–90 Min. (ein Ausreißer 2,5 Std.), ~2.800–2.950 Spieler/Band, seriell (kein zweiter `dc_update`-Thread aktiv).
+
+**Hochrechnung:** bei fortgesetztem P3-Tempo (~11 Bänder/aktivem Tag, 07–23 Uhr Berlin) **~8–14 Tage für die restlichen 39 P3-Bänder + 58 kleinen Restgruppen → ca. 10.–16.09.2026**. Nur 1 Tag Datenbasis seit dem Tempowechsel — Spanne bewusst breit, in ein paar Tagen erneut prüfen. Läuft der aktuelle Zyklus durch, wird er beim nächsten `monthly_update.sh`-Lauf (neuer Monat) automatisch zurückgesetzt (`reset_monthly_refresh.py`) — die 39 P3-Bänder sind also kein Einmal-Ziel, sondern wiederkehrende Monatsarbeit.
+
+**Neu seit 01.09.: P0-Tier / `dc_newplayers_1`+`dc_newplayers_2`** (nie gescrapte, aktive Neuzugänge — Commit `7bd302d`/`78731e2`, noch nicht in diesem Dokument beschrieben). Labels seit heute `DI-NP-1`/`DI-NP-2`. Live-Stand: `dc_newplayers_1` 1/73 Gruppen done (297 Spieler), `dc_newplayers_2` 2/73 done + 1 running (594+297 Spieler) — beide ganz am Anfang, ~10 Std./Gruppe beobachtet, noch keine belastbare Hochrechnung möglich.
+
+### Update 2026-09-03, ~08:15 UTC (Live-Abfrage)
+
+| Tier/Thread | Fertig | Läuft | Offen |
+|---|---:|---|---:|
+| P1 | 2/2 ✅ | – | – |
+| P2 | 7/7 ✅ | – | – |
+| P3 (40 Bänder) | 10 | 1 (ELO 1860–1877, 2.952 Spieler, seit 06:48 Uhr) | 29 |
+| FRA | 89/89 ✅ | – | – |
+| GER | 185 | – | 36 (+138 skipped, Jahresziel bis 2012) |
+| AUT | 38 | – | 10 (+30 skipped) |
+| SUI | 44 | – | 12 (+33 skipped) |
+| `dc_newplayers_1` (P0) | 4/73 | – (pausiert) | 69 |
+| `dc_newplayers_2` (P0) | 3/73 | 1 (seit 00:00 Uhr, ~8¼ Std.) | 69 |
+
+**P3 (Update-Thread):** 9 Bänder in 24 h (1→10) — Tempo deckt sich mit gestriger Hochrechnung (~11 Bänder/aktivem Tag), Zieldatum **~10.–16.09.** bleibt gültig.
+
+**P0 (New-Player-Threads) — Tempo geklärt (03.09., Live-Logs vom VPS geprüft):** effektiv nur ~1–1,5 Gruppen/Tag/Thread (echte Läufe 7–10¾ Std.) — bei 69 offenen Gruppen/Thread grob **6–10 Wochen** bis fertig. Zwei getrennte, beide verifizierte Ursachen (keine davon `active_hours` — die Fenster sind mit 14–16 Std./Tag ähnlich breit wie bei den übrigen DC-Threads):
+
+1. **Gruppenlaufzeit:** `worker.py::scrape_group()` holt pro Gruppe `valid_periods_for_year(group.year)` — bis zu 12 Monatsperioden. Bei P1/P2/P3 (Update) ist fast immer nur 1 Periode/Spieler offen (Spieler schon mal gescraped). Bei P0 (`never_scraped_only`) hat der Spieler noch **keinen** `scrape_periods`-Eintrag → alle 12 Perioden des Zieljahres sind offen. Log-Beleg (`docker logs orchestrator-worker-1`): 4 abgeschlossene Gruppen mit exakt `Spieler × 12 Perioden` combos, Laufzeit 7h10min–10h45min bei ~8,1–10,5 s/Request (297 Spieler × 12 ≈ 3.500 Requests/Gruppe) — Request-Tempo selbst ist normal fürs `semi_conservative`-Profil, nur eben 12× mehr Requests/Spieler als bei einer Update-Gruppe.
+2. **Die "Rate/h"-Spalte im Dashboard (Seite „Abgeschlossen") miedet keine Requests/Spieler, sondern `records_found / Laufzeit(h)`** (`orchestrator/store.py:322-331`) — also **gefundene Partien pro Stunde**. New-Player-Gruppen zeigen hier 24–31/h (z. B. P0/2025 1689–1703: 258 Partien / 10,75h = 24,0/h), weil brandneue/gerade erst aktive Spieler in ihren ersten Monaten naturgemäß wenige Partien haben (0,65–1,0 Partien/Spieler in den geprüften Gruppen). Das ist **kein New-Player-spezifisches Problem**: eine ganz normale DACH-Backfill-Gruppe mit wenig turnieraktiver Population (GER/2013, ELO 1583–1595: 104 Partien / 186 Spieler / 4,02h) zeigt mit **25,9/h** denselben niedrigen Wert — während turnieraktive Bänder (z. B. FRA/2022 1868–1879: 2.286 Partien/2,57h = 890/h; RUS/2023: 1.858/h) auf dem exakt gleichen Profil/Request-Tempo eine 30–70× höhere Rate/h zeigen. Die Kennzahl misst also Partien-Dichte der Population, nicht Scraper-Geschwindigkeit.
+
+### Update 2026-09-05 (Live-Abfrage)
+
+| Tier/Thread | Fertig | Läuft | Offen |
+|---|---:|---|---:|
+| P1 | 2/2 ✅ | – | – |
+| P2 | 7/7 ✅ | – | – |
+| P3 (40 Bänder) | 25 | 1 | 14 |
+| FRA (gesamt, alle 3 Threads) | 500 | 1 | 284 |
+| FRA auf `dc_update_1` | 89/89 ✅ | – | – |
+| GER (gesamt) | 1.129 | – | 103 (+244 skipped) |
+| AUT (gesamt) | 257 | – | 28 (+57 skipped) |
+| SUI (gesamt) | 238 | – | 32 (+54 skipped) |
+| `dc_newplayers_1` (P0) | 8/73 | – | 65 |
+| `dc_newplayers_2` (P0) | 7/73 | 1 | 65 |
+
+**P3:** von 10 (03.09.) auf 25 done in 2 Tagen (+15) — Tempo ~7,5 Bänder/Tag, etwas langsamer als die Hochrechnung vom 02./03.09. (~11/Tag), aber die verbleibenden 14+1 Bänder sind trotzdem in **~2 Tagen (ca. 07.09.)** durch.
+
+**P0 (New-Player-Threads):** von 7 auf 15 done in 2 Tagen (+8, ~4/Tag kombiniert bzw. ~2/Tag/Thread) — etwas schneller als die erste Schätzung vom 03.09. (~1–1,5/Tag/Thread), aber noch dünne Datenbasis. Bei aktuellem Tempo grob **~5–6 Wochen** für die restlichen 130 Gruppen (statt der ursprünglich geschätzten 6–10 Wochen) — in ein paar Tagen mit mehr Daten erneut prüfen.
+
+### Update 2026-09-16 (Live-Abfrage) — P1/P2/P3 komplett ✅, P0 fast fertig
+
+**P1/P2/P3-Monatsrefresh: alle 3 Tiers 100 % durch** (P1 2/2, P2 7/7, P3 40/40 — P3 war am 05.09. bei 25/40, seither die restlichen 15 Bänder abgearbeitet). Erheblich schneller fertig als die Hochrechnung vom 05.09. (~10.–16.09.) vorhersagte — traf mit ~16.09. den oberen Rand der Spanne. `dc_update_1` ist seither wieder frei und arbeitet die verbliebenen 17 kleinen AUT/GER/SUI-Einzelgruppen ab (Restbestand aus dem alten Backfill-Split, siehe Session 2026-08-11/12). **Nächster Monatszyklus:** wird beim nächsten `monthly_update.sh`-Lauf (Oktober-Periode) automatisch per `reset_monthly_refresh.py` neu aufgesetzt — reine Wiederholung, kein Handlungsbedarf.
+
+**P0 (`dc_newplayers_1`/`_2`): praktisch am Ende der ursprünglichen Warteschlange.** Beide Threads haben nur noch **1 Gruppe** offen — die jeweils letzte, größte Gruppe pro Thread (Rating-Band 0–1404, d. h. unbewertete/brandneue Spieler ohne Elo-Zahl). Diese läuft bei `dc_newplayers_1` seit 14.09. 11:00 Uhr (~45 Std.), bei `dc_newplayers_2` seit 14.09. 02:38 Uhr (~53 Std.) — deutlich länger als die bisher beobachteten 7–11 Std./Gruppe. **Live-Check bestätigt: kein Hänger** — `scrape_periods` zeigt laufend neue Einträge für Spieler mit `std_rating=0` (213 neue Zeilen in den letzten 15 Minuten), also aktiver Fortschritt, nur eben eine sehr viel größere/dichtere Spielerpopulation in diesem letzten Band als in den übrigen.
+
+> ⚠️ **TODO, sobald diese 2 letzten Gruppen fertig sind:** Der komplette P0-„Neuzugänge"-Bestand vom 01.09. ist dann abgearbeitet — **es braucht einen neuen Lauf, der seither neu hinzugekommene, nie gescrapte Spieler erfasst** (analog zum ursprünglichen P0-Batch-Generator vom 01.09., Commit `7bd302d`/`78731e2`), sonst laufen `dc_newplayers_1`/`_2` leer/ohne Arbeit. Noch nicht eingeplant/terminiert — beim nächsten Status-Check zuerst prüfen, ob die 2 Gruppen durch sind, und dann diesen Lauf anstoßen.
+
+*(Randnotiz zur Gruppenzahl: Anfang September wurden 73 Gruppen/Thread erwartet, jetzt zeigt die DB nur noch 58/Thread als Gesamtzahl — vermutlich wurde die Warteschlange zwischenzeitlich neu gebaut/konsolidiert; keine funktionale Auswirkung, nur als Erklärung für die Abweichung zur alten Hochrechnung.)*
 
 ---
 

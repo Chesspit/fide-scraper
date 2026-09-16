@@ -152,3 +152,5 @@ Bekannte nicht-spielbasierte FIDE-Ratinganpassungen.
 | `avg_opponent_diff` | `AVG(opponent_rating − own_rating)` |
 | `normalized_volatility` | `AVG(ABS(rating_change)) / k_factor` |
 | `no_data_rate` | `no_data / (ok + no_data)` |
+| `elo_band` (Notebook 13) | eigenes Rating in 50-Punkte-Bändern: `floor(own_rating / 50) * 50` |
+| `scope` (Notebook 13) | `tournament_type IN ('women','women_team')` → `women_only`, sonst `open_mixed` |

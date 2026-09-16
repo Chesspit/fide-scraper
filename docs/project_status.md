@@ -395,6 +395,31 @@ Fängt Spiegel-Deltas auf: monatliche Timing-Verschiebungen die sich über das J
 3. **2026-04** — April 2026 noch nicht gescrapt
 4. **2013–2018 Jahres-Δ** — 2–4% Jahresabweichungen bei schnell aufgestiegenen Spielern (K=40)
 
+### 6.3a Ursachen-Kategorisierung (neu 2026-07-11)
+
+Jedes non-ok-Fenster wird automatisch klassifiziert (`qc_rating_check.category`,
+Migration 014; Regeln + Präzedenz: `scripts/quality_check.py::classify()`, läuft
+nach jedem `run_qc()` automatisch mit):
+
+| Kategorie (Präzedenz ↓) | Regel |
+|---|---|
+| `struktur_2008` | `period_start < 2009-01-01` |
+| `fehlende_perioden` | `missing_periods > 0` |
+| `spiegel_delta` | direkt benachbartes Fenster mit entgegengesetztem Δadj, beide ≥ warn, Paarsumme ≤ warn |
+| `korrektur_rest` | `correction ≠ 0`, Residuum trotzdem über Schwelle |
+| `k40_verdacht` | K=40-Monat (`scrape_periods.k_factor`) im Fenster |
+| `unerklaert` | Rest — Kandidaten für genauere Analyse |
+
+Erstklassifikation 2026-07-11 (5.150 non-ok-Fenster): 4.352 struktur_2008,
+472 fehlende_perioden (fast alle 2026, offene Fenster), 150 spiegel_delta,
+78 k40_verdacht, 15 korrektur_rest (März 2024), **83 unerklaert**.
+OK-Fenster tragen `category = NULL`.
+
+**QC-Dashboard** (Analytics-Frontend, Navbar-Gruppe „QC"):
+- `/qc` QC Übersicht — KPIs (inkl. „Unerklärt"), Gruppen-Filter, Jahres→Monats-Drill-Down, **Ursachen nach Jahr** (Jahr × Kategorie)
+- `/qc-cases` **QC Fälle** (neu) — filterbare Fall-Liste (Jahr/Kategorie/Flag/Gruppe/Föderation/Name) → Klick öffnet Spieler-Monatszerlegung (Publiziert ELO / Partien-Δ / Korrektur / Unerklärtes Δ / Kumulativ + Jahres-Prüfsumme; quartals-tauglich vor 2012 — generalisiert Notebooks 10/11)
+- `/qc-corrections` FIDE 2024 Korrekturen
+
 ### 6.4 CLI
 
 ```bash
@@ -404,7 +429,14 @@ DATABASE_URL=postgresql://fide:nimzo194.@localhost:5434/fidedb \
 
 # Jahres-Report ohne Neuberechnung:
 python3 -m scripts.quality_check --report-only
+
+# Nur Ursachen-Kategorien neu berechnen (ohne Fenster-Neuberechnung, schnell):
+python3 -m scripts.quality_check --classify-only
 ```
+
+**Naht für den Monats-Update-Prozess** (noch nicht automatisiert): nach dem
+P1/P2/P3-Refresh `python3 -m scripts.quality_check --from-year <Jahr>` laufen
+lassen — klassifiziert automatisch mit; `MAX(checked_at)` zeigt den letzten Lauf.
 
 ### 6.5 FIDE Einmalkorrektur März 2024 — Details
 
@@ -423,6 +455,75 @@ python3 -m scripts.quality_check --report-only
 |---|---|
 | `10_qc_2024_detail.ipynb` | Pro Spieler: ELO Dez-23–Dez-24, Partien-Δ, unerklärtes Δ, Jahres-Prüfsumme |
 | `11_qc_2008_detail.ipynb` | Pro Spieler: ELO Okt-07–Jan-09, Partien-Δ (Apr/Jul/Okt-08), Jahres-Prüfsumme |
+
+### 6.7 Notebook 13 — Absoluter Elo-Vergleich female_top vs. male_control
+
+Beantwortet direkt die Kernfrage „Ist eine Frau mit Elo X gegen einen gleich starken Mann
+leichter/stärker/schwächer?" — bisher deckten Notebooks 01–06 nur Gruppenvergleiche ohne
+Gegner-Geschlecht ab, Notebook 07 nur `female_top` intern (nach *relativer* Gegnerstärke,
+nicht absolutem Rating).
+
+- **Primärachse:** eigenes Rating in 50-Punkte-Bändern (nicht relative Differenz wie in nb07)
+  — vergleicht `female_top` und `male_control` bei identischem absoluten Elo-Niveau.
+- **±50-Elo-Schwelle als Projekt-Standard:** die relative Stärke-Bucket-Schwelle wurde auf ±50
+  (wie Notebook 05) vereinheitlicht; Notebook 07 (±80) bleibt unverändert als historischer Stand.
+- **Turniertyp:** nicht gefiltert — jede Kerntabelle wird zusätzlich für `open_mixed`
+  (ohne `women`/`women_team`) parallel ausgewiesen, um den bekannten Bias (65,4 % der
+  `female_top`-Partien gegen Frauen) sichtbar statt versteckt zu halten.
+- **Signifikanztest:** Permutationstest auf Spieler-Ebene (nicht Partie-Ebene, wegen
+  Cluster-Effekt durch ungleiche Partienzahl pro Spieler:in), 10.000 Permutationen, kein
+  scipy/statsmodels nötig.
+- **Stand bei Erstellung (2026-07-31):** `female_top`/`male_control` sind laut `groups`-Tabelle
+  `backfill_status='partial'` — aktuell nur 23 von 66 bzw. 48 von 649 Spielern haben
+  `analysis_group` gesetzt, mit `active=TRUE` bleiben nur 2+4. Das Notebook läuft damit
+  fehlerfrei durch, zeigt aber noch sehr dünne/leere Zellen (856 Partien gesamt).
+- **⚠️ Noch am selben Tag ersetzt durch Notebook 14** (siehe 6.8) — die Gruppen-Zuordnung
+  erwies sich als methodisch schwächer als eine direkt aus `rating_history` abgeleitete
+  Kohorte. Notebook 13 bleibt als Code/Referenz im Repo, ist aber als veraltet markiert.
+
+### 6.8 Notebook 14 — Top-40-Frauen (Jahresende) vs. Männer im Elo-Band, dynamisch
+
+Ersetzt Notebook 13. Statt der statischen, nur teilweise befüllten Gruppen
+`female_top`/`male_control` wird die Studienkohorte direkt aus `rating_history.published_rating`
+abgeleitet — survivorship-bias-frei, ohne Label-Pflege, ohne neues Scraping (Umsetzung der
+Ideen **F2/F7** aus `docs/ideen_verbesserungen.md`).
+
+- **`top40_female`:** Union aller Frauen, die an mind. einem Jahresende Dez-2016…Dez-2025 zu
+  den Top 40 nach `published_rating` gehörten → **65 Spielerinnen** (Cutoff-Rating je Jahr
+  ~2448–2460). 47 davon aktuell `active=TRUE`, 18 nicht mehr.
+  52 von 65 haben bereits gescrapte Partien im Fenster 2016–2025 (27.059 Partien).
+  **2026-08-03 auf Top 40/10 Jahre erweitert** (vorher Top 50/2021–2025, 70 Spielerinnen).
+- **`male_2400_2600`:** alle Männer mit `std_rating` 2400–2600 zum jeweiligen Partie-Zeitpunkt
+  (2016–2025), keine Top-40-Beschränkung (sonst wäre das eine andere Rating-Klasse, ~2650+).
+  175.456 bereits gescrapte Partien, 587 distinkte Spieler — keine Nachscraping-Aktion nötig.
+- Downstream-Logik (Elo-Band 50pt, Stärke-Bucket ±50, `scope` open_mixed/women_only,
+  Permutationstest auf Spieler-Ebene) unverändert von Notebook 13 übernommen.
+- **Warum diese Definition besser ist:** unabhängig von `players.analysis_group` und dessen
+  Backfill-Status; jederzeit reproduzierbar per SQL-CTE ohne Datenbank-Schreibzugriff; deckt
+  auch inzwischen aus dem Elo-Band gefallene/inaktive Spielerinnen ab (kein Survivorship-Bias
+  wie beim April-2026-Snapshot).
+- Notebooks 01–04 und 07 (basieren ebenfalls auf `female_top`/`male_control`) sind als
+  methodisch überholt markiert (Hinweis-Banner in jedem Notebook), bleiben aber im Repo.
+
+### 6.9 Notebook 15 — Gleichstarke & stärkere Partien je Spielerin (Top-40-Kohorte)
+
+Pro Spielerin der Top-40-Jahresende-Kohorte aus Notebook 14 (siehe 6.8), über die ganze
+Karriere seit 2008: Partien gegen ungefähr gleich starke Gegner (±50 Elo, Rating zum
+Partie-Zeitpunkt) und separat gegen mindestens 50 Elo stärkere Gegner, jeweils
+Siege/Remis/Niederlagen, Punktequote und Ø `rating_change_weighted`, aufgeschlüsselt nach
+Gegner-Geschlecht. Zusätzlich eine Jahres-Übersicht der Ø-Gegner-Elo je Paarungs-Gruppe.
+
+- Datenbasis: 55.973 Partien gesamt über alle 65 Spielerinnen (ganze Karriere, nicht nur
+  2016–2025), davon 11.611 ±50-Elo-„gleich stark" und 12.084 ≥50-Elo-„stärker".
+- Export: `top40_equal_strength_summary_per_player.csv`,
+  `top40_stronger_opponent_summary_per_player.csv`,
+  `top40_yearly_avg_opponent_rating_equal.csv`, `top40_yearly_avg_opponent_rating_stronger.csv`
+  (alle in `notebooks/`).
+- **Hinweis zur DB-Verbindung:** `notebooks/_setup.py::get_conn()` setzt seit 2026-08-03
+  `max_parallel_workers_per_gather = 0` für jede Notebook-Session — der VPS-Postgres-Container
+  hat ein sehr kleines `/dev/shm`, größere Ad-hoc-Joins wie in diesem Notebook liefen davor in
+  `could not resize shared memory segment ... No space left on device`, sobald Postgres einen
+  parallelen Hash-Join/Sort startete.
 
 ---
 

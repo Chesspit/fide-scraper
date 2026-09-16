@@ -1,44 +1,77 @@
 # Scraping-Status
 
-Stand: 2026-07-29 (Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
+Stand: 2026-09-11 (Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
 Raspberry Pi: **vom User abgeschaltet (seit 2026-07-22)** — Restbestand (794 pending Gruppen) am 29.07. auf die DC-Threads umverteilt, kein Thema mehr, siehe Abschnitt unten.
+⚠️ **Backup-Cron seit 21./22.07. gebrochen (Root Cause: Container-Konsolidierung, fidedb + Kunden-DB tunnelbliq teilen sich seither einen Container) — am 25.08. entdeckt, Datenlücke per manuellem fidedb-Dump geschlossen, Cron-Fix selbst noch offen (Stand 25.08., nicht erneut geprüft in dieser Session). Details: Abschnitt „Backup-Status".**
 
 ---
 
-## Gesamtstand DB (Live 2026-07-29)
+## Gesamtstand DB (Live 2026-09-11)
 
 | Kennzahl | Wert |
 |----------|------|
-| Partien gesamt | **11.608.206** (+784.453 seit 22.07.; ~112 Tsd./Tag im Schnitt der letzten 7 Tage) |
+| Spieler gesamt / aktiv | **1.836.741** / **1.505.239** aktiv |
+| Partien gesamt | **16.020.525** (+1.348.377 seit 25.08.; ~79 Tsd./Tag im Schnitt — Rückgang erklärt, siehe „MB-Rückgang untersucht" unten) |
 | Gruppen complete | **108 / 253** (Stand 07.07., seither nicht neu geprüft) — bezieht sich auf die manuell gepflegten Mac-Mini-Analysegruppen, unabhängig vom P1/P2/P3-System (siehe unten) |
 | Global-Gruppen complete | **51 / 51** — ELO ≥ 2300 weltweit vollständig ✅ (Vorbehalt: siehe Top-Spieler-Lückenanalyse unten) |
-| VPS-Orchestrator-Queue gesamt | **5.479 done, 5.354 pending, 8 running, 0 failed, 13.873 skipped** — done +607 ggü. 22.07., skipped unverändert (keine neuen Jahresziel-Cutoffs) |
-| Aktive Threads | Alle 9 DI-Threads (DataImpulse Residential Rotating) laufen produktiv, siehe Proxy-Migration 16.07. unten; Durchsatz zwischen Threads sehr ungleich, siehe Hochrechnung unten |
+| VPS-Orchestrator-Queue gesamt | **8.520 done, 2.459 pending, 8 running, 0 failed, 13.873 skipped** — done +1.092 ggü. 25.08., **0 failed-Gruppen** (nur 27 einzelne Run-Retries am 01.09., alle danach erfolgreich) |
+| Aktive Threads | Alle 9 DC-Threads + `dc_update_1` + 2 neue `dc_newplayers_1/2` (P0, seit 01.09.) aktiv, alle innerhalb der letzten 24h gelaufen, keiner hängt |
+| Monatsrefresh P1/P2/P3 | ✅ Zyklus (Aug-Periode) **komplett fertig seit 06.09. ~13:54 Uhr** (49/49 Batches) |
+| P0-Neuzugangs-Tier (neu) | 🔄 **~71 % fertig** (104/145 Bänder) — nie zuvor gescrapte aktive Spieler, siehe eigener Abschnitt unten |
 
 ---
 
-## Hochrechnung Restlaufzeit VPS-Backfill (Stand 2026-07-29)
+## Hochrechnung Restlaufzeit VPS-Backfill (Stand 2026-09-11)
 
-Basis: erfolgreiche `scrape_runs` der letzten 7 Tage (22.–29.07.) pro Thread, hochgerechnet gegen die aktuell pending Gruppen je `thread_affinity`. Raspberry-Pi-Bestand (794 pending) ausgeklammert, da abgeschaltet.
+Basis: erfolgreiche `scrape_runs` der letzten 7 Tage (04.–11.09.) pro Thread, hochgerechnet gegen die aktuell pending Gruppen je `thread_affinity` (nur Welt-Backfill, `update_only=0`).
 
 | Thread | Pending | Ø Gruppen/Tag (7d) | Hochrechnung |
 |--------|--------:|---:|---|
-| dc_us | 530 | 19,3 | ~28 Tage → **ca. 26.08.** |
-| dc_hk | 357 | 12,4 | ~29 Tage → **ca. 27.08.** |
-| dc_ae | 443 | 10,4 | ~43 Tage → **ca. 10.09.** |
-| dc_dach | 389 | 8,9 | ~44 Tage → **ca. 11.09.** |
-| dc_mx | 236 | 6,4 | ~37 Tage → **ca. 04.09.** |
-| dc_update_1 | 531 | 8,7 | ~61 Tage → **ca. 28.09.** |
-| dc_uk | 564 | 8,0 | ~71 Tage → **ca. 08.10.** |
-| dc_es | 537 | 7,9 | ~68 Tage → **ca. 05.10.** |
-| dc_in | 445 | 4,7 | ~94 Tage → **ca. 31.10.** |
-| dc_de | 511 | 5,0 | ~102 Tage → **ca. 08.11.** |
+| dc_update_1 | 45 | 8,9 | ~5 Tage → **ca. 16.09.** |
+| dc_dach | 146 | 6,7 | ~22 Tage → **ca. 03.10.** |
+| dc_ae | 274 | 10,6 | ~26 Tage → **ca. 07.10.** |
+| dc_mx | 176 | 4,3 | ~41 Tage → **ca. 22.10.** |
+| dc_hk | 175 | 4,0 | ~44 Tage → **ca. 25.10.** |
+| dc_us | 277 | 5,9 | ~47 Tage → **ca. 28.10.** |
+| dc_es | 387 | 7,3 | ~53 Tage → **ca. 03.11.** |
+| dc_uk | 295 | 4,3 | ~69 Tage → **ca. 19.11.** |
+| dc_de | 322 | 3,9 | ~84 Tage → **ca. 03.12.** |
+| dc_in | 304 | 2,9 | ~106 Tage → **ca. 26.12.** |
 
-**Gesamt-Queue (alle Threads zusammen, ohne Pi):** 4.560 pending bei aktuell ~92 Gruppen/Tag Summendurchsatz → rein rechnerisch ~50 Tage. Das ist aber optimistisch, da jeder Thread nur seinen eigenen Pool abarbeitet: **der langsamste Thread bestimmt das reale Ende.** Aktuell sind das `dc_de` (5,0/Tag) und `dc_in` (4,7/Tag) — beide deutlich unter dem Schnitt (Vergleich `dc_us` 19,3/Tag, `dc_hk` 12,4/Tag, fast 4× schneller). Realistisches Ende des Welt-Backfills (ohne Pi, ohne Rebalancing): **Anfang bis Mitte November 2026**.
+**Bottleneck-Wechsel:** `dc_in` (2,9/Tag) hat `dc_de` (3,9/Tag) als langsamsten Thread überholt — in der 25.08.-Messung war es noch umgekehrt (dc_de 3,6, dc_in 4,3). Beide bleiben zusammen der reale Flaschenhals; Gesamtende des Welt-Backfills weiterhin grob **Ende Dezember 2026**, unverändert ggü. 25.08. **Weiterhin offen, noch nicht diagnostiziert:** das dc_de/dc_in-Tempoproblem besteht seit Juli unverändert fort (Proxy-/Tarpit-Verdacht, analog IN/HK/AE im Juni) — lohnt sich weiterhin zu prüfen, ist aber **nicht** die Ursache des unten untersuchten MB-Rückgangs (der ist strukturell, nicht technisch).
 
-**Auffällig:** dc_de/dc_in fallen ähnlich wie beim AUT/SUI-Prioritäts-Fix (22.07.) oder dem DACH/dc_update_1-Split (04.07.) durch reine Warteschlangen-Mechanik zurück, oder es liegt ein Proxy-/Tarpit-Problem im jeweiligen Länder-Pool vor (analog zur DC-Deaktivierung IN/HK/AE im Juni, siehe Memory). Lohnt sich zeitnah zu prüfen (Health-Check-Log dieser beiden Threads), bevor man Gruppen umverteilt — noch nicht diagnostiziert, reine Beobachtung aus den Live-Zahlen.
+---
 
-Pi-Bestand (794 pending, Jahr 2020) bleibt bis zur Reaktivierung oder Entscheidung zur Umverteilung außen vor.
+## MB-Rückgang im Dashboard untersucht (2026-09-11) — kein Fehler, sondern ELO-Mix
+
+**Befund: User-Vermutung bestätigt.** Der zuletzt im Orchestrator-Dashboard sichtbare Rückgang der gescrapten Megabyte/Tag ist **kein technisches Problem** (Request-Durchsatz pro Tag ist stabil, 0 failed-Gruppen, keine Proxy-Störung), sondern eine direkte Folge davon, dass die Queue aktuell überwiegend **schwache ELO-Bänder (<1800)** abarbeitet — sowohl im regulären Welt-Backfill (die meisten Länder haben ihre starken Bänder längst durch) als auch besonders im neuen P0-Tier (nie gescrapte, überwiegend niedrig geratete Spieler) und den übervollen P3-Bändern.
+
+| Messung (letzte 14 Tage, pro Spieler) | ≥2200 | 1800–2199 | <1800 |
+|---|---:|---:|---:|
+| Partien/Spieler (`records_found`) | 12,0 | 8,9 | **4,0** |
+| KB/Spieler (`mb_downloaded`) | 8,8 | 7,2 | **4,0** |
+
+Schwache Spieler liefern strukturell **weniger als halb so viel Datenvolumen pro Abfrage** wie starke (dünnere/keine Partiehistorie, mehr „No records found"-Antworten). Zusätzliche Belege:
+- Von den aktuell 2.459 pending Welt-Backfill-Gruppen liegen **~72 % im Band <1800** (verteilt über alle 9 Threads) — die starken Bänder sind fast überall schon `done`.
+- P0- und P3-Läufe seit 06.09. sind praktisch ausschließlich `<1800`; das erklärt zusätzlich, warum die Tages-MB seit dem 06.09. deutlicher gefallen sind als die reine Gruppen-/Run-Anzahl (die im normalen Rahmen 51–91/Tag blieb).
+- `mb_downloaded` ist ohnehin nur ein grober interner Zähler (siehe DataImpulse-Kalibrierungs-Diskrepanz vom 29.07., Faktor ~9 ggü. echtem Traffic) — als Trendindikator innerhalb der eigenen Historie aber brauchbar, und der Trend zeigt sauber auf den ELO-Mix, nicht auf einen Fehler.
+
+**Fazit:** nichts zu fixen. Die niedrigeren MB-Werte sind der erwartbare Verlauf, je tiefer der Backfill in schwächere Spielerpopulationen vordringt.
+
+---
+
+## P0-Neuzugangs-Tier — Fortschritt (Stand 2026-09-11)
+
+Neuer Tier seit 01.09. (Memory `std-rating-sync-fix-2026-09-01`): scrapt alle aktiven Spieler nach, die noch **nie** einen `scrape_periods`-Eintrag hatten (unabhängig vom Status ihrer Föderations-Gruppe), über die zwei dedizierten Threads `dc_newplayers_1`/`_2`.
+
+| | |
+|---|---|
+| Bänder (Jahre 2025+2026) | **104 done / 41 pending / 1 running** von 145 gesamt → **~71 %** |
+| Spieler-Perioden-Kombos | 30.868 done, 12.136 pending, 296 running |
+| Noch nie angefasste aktive Spieler | nur noch **2.586** (von ursprünglich ~26.000 im Zieljahrgang) |
+| `dc_update_1`-Leihgabe (30 Gruppen, Memory `dc-update-1-p0-boost-2026-09-06`) | ✅ komplett fertig — Thread lief bereits automatisch wieder auf DACH/FRA-Backfill zurück |
+
+Läuft deutlich schneller als die ursprüngliche ~30-Tage-Schätzung nahelegte.
 
 ---
 
@@ -187,19 +220,42 @@ Ersetzt die alten 4 UP-Jobs (lokal, Mac Mini) + föderationsbasierte `dc_update`
 
 **Erster Juli-Durchlauf am 06.07. abgeschlossen** (letzter P3-Batch 16:35–22:04 Uhr). Der Zyklus wurde am 06.07. ~16:30 zurückgesetzt (`last_run_at` genullt, `records_found` der pending-Batches blieb erhalten); der zweite Durchlauf läuft seither nebenher — P1/P2 gingen mangels neuer Daten in Minuten durch. Bei Bedarf per zweitem `dc_update_2`-Thread beschleunigbar (siehe `monthly_refresh_tiers.DC_UPDATE_POOL`).
 
-### P1/P2/P3-Monatsrefresh — aktueller Zyklus (Stand 2026-08-12, Live-Abfrage)
+### P1/P2/P3-Monatsrefresh — Zyklus abgeschlossen (Update 2026-08-25)
+
+✅ **Kompletter Zyklus fertig seit 16.08. ~14:56 Uhr** — letzte `update_only=1`-Gruppe an diesem Zeitpunkt auf `done` gelaufen (per `scrape_groups.last_run_at` verifiziert, 126 Gruppen insgesamt `done`, 0 pending/running). Die am 12.08. revidierte Projektion „grob 16.–18.08." hat exakt gepasst. Seit dem 16.08. läuft die Queue durchgehend nur noch mit Welt-Backfill-Gruppen (`update_only=0`) weiter, keine Refresh-Aktivität mehr bis zum nächsten manuellen `reset_monthly_refresh.py`-Anstoß (nächster fälliger Zyklus: nach dem nächsten Perioden-Import, siehe `docs/project_status.md`).
+
+### P1/P2/P3-Monatsrefresh — aktueller Zyklus (Stand 2026-08-12, Live-Abfrage, historisch)
 
 Zyklus neu gestartet am 11.08. (`orchestrator/reset_monthly_refresh.py`, nachdem `dc_update_1` von der DACH/FRA-Backfill-Last befreit wurde, siehe Session unten) — deckt die Juli-Periode ab (Import `standard_aug26frl.zip`, 562.979 Zeilen `rating_history`).
 
 | Tier | Filter | Batches | Spieler (Band-Summe) | Status |
 |---|---|---:|---:|---|
 | P1 | ELO ≥ 2300, alle Föderationen | 2 | ~4.189 | ✅ 2/2 fertig |
-| P2 | GER/SUI/AUT, ELO < 2300 | 7 | ~18.792 | 🔄 4/7 fertig, 1 läuft (ELO 1790–1862, seit 08:40 Uhr), 2 offen |
-| P3 | Rest (alle übrigen ≥1×gescrapten Spieler) | 40 | ~117.900 | ⏳ 0/40 gestartet |
+| P2 | GER/SUI/AUT, ELO < 2300 | 7 | ~18.792 | ✅ 7/7 fertig (seit ~12:25 Uhr) |
+| P3 | Rest (alle übrigen ≥1×gescrapten Spieler) | 40 | ~117.900 | 🔄 1 läuft (ELO 2123–2193, seit 12:25 Uhr), 39 offen |
 
-**Live-Stand 12.08. ~08:52 Uhr:** 6 von 49 Gruppen fertig, 1 läuft, 42 pending (**~12 %**). Laufender Job seit 08:40 Uhr ohne Auffälligkeiten (`scrape_runs` der letzten 2h zeigt saubere `success`-Einträge für `dc_update_1`, `dc_es`, `dc_uk`). Kein Fehler-/Hänger-Status.
+**Live-Stand 12.08. ~14:18 Uhr:** 9 von 49 Gruppen fertig, 1 läuft, 39 pending (**~18 %**). P2 seit dem Vormittags-Check komplett durchgelaufen, P3 hat begonnen. Kein Fehler-/Hänger-Status.
 
-⚠️ **Bekanntes Problem, bewusst unangetastet (User-Entscheidung 11.08.):** Die P1/P2/P3-Bänder wurden am 02.07. für Ziel 2.000–3.000 Spieler/Batch erzeugt; durch den parallel laufenden Welt-Backfill sind die Bänder seither deutlich übervoll gewachsen (P2 jetzt ~2.700/Band statt ~2.800 Ziel, P3-Live-Nachzählung am 11.08. zeigte 118.066 → 183.604, +55,5 %). Dadurch dauert jedes P3-Band ~6–8 Std. statt der geplanten 3–4 — Gesamtlaufzeit für den kompletten P1/P2/P3-Durchlauf revidiert von ~8 auf **~13 Tage** (bei einem Thread, ~655 Spieler/Std.) → Ende grob **Ende August**. Fix bei Bedarf: alte pending P3-Zeilen löschen + `generate_monthly_refresh_batches.py` neu laufen lassen (baut dann ~62 statt 40 Bänder) — wächst beim nächsten Zyklus vermutlich wieder aus dem Rahmen, solange der Welt-Backfill weiterläuft, also eher wiederkehrendes Thema als Einmal-Fix. Vorerst nichts weiter anfassen, in ein paar Tagen Fortschritt erneut prüfen.
+⚠️ **Bekanntes Problem, bewusst unangetastet (User-Entscheidung 11.08.):** Die P1/P2/P3-Bänder wurden am 02.07. für Ziel 2.000–3.000 Spieler/Batch erzeugt; durch den parallel laufenden Welt-Backfill sind die Bänder seither deutlich übervoll gewachsen (P2 jetzt ~2.700/Band statt ~2.800 Ziel, P3-Live-Nachzählung am 11.08. zeigte 118.066 → 183.604, +55,5 %). Fix bei Bedarf: alte pending P3-Zeilen löschen + `generate_monthly_refresh_batches.py` neu laufen lassen (baut dann ~62 statt 40 Bänder) — wächst beim nächsten Zyklus vermutlich wieder aus dem Rahmen, solange der Welt-Backfill weiterläuft, also eher wiederkehrendes Thema als Einmal-Fix. Vorerst nichts weiter anfassen, in ein paar Tagen Fortschritt erneut prüfen.
+
+#### Restlaufzeit neu gerechnet (12.08., ~14:20 Uhr) — 13-Tage-Schätzung war zu pessimistisch
+
+Die 11.08.-Schätzung (~13 Tage, Ende grob Ende August) basierte auf der **Design-Annahme** von ~655 Spieler/Std./Thread (Kommentar in `orchestrator/monthly_refresh_tiers.py`). Live aus den echten `scrape_runs`-Zeitstempeln dieses Zyklus nachgerechnet, sieht das Tempo deutlich höher aus:
+
+| Messgröße | Wert |
+|---|---|
+| P1+P2 gesamt (9 fertige Bände) | 23.670 Spieler in 18h36min Wall-Clock (17:49 Uhr 11.08. → 12:25 Uhr 12.08.) |
+| davon Nachtpause | 7h12min (21:48–05:00 Uhr) — offenbar festes Zeitfenster im DC-Profil |
+| **Reine Scrape-Zeit** | **~2.080 Spieler/Std.** |
+| **Blended inkl. Nachtpause** | **~1.270 Spieler/Std.** |
+
+Das liegt klar über den 655/Std. der Design-Annahme. **Aber:** P3 hat gerade erst begonnen — der erste laufende Batch (ELO 2123–2193) lief bereits **113 Minuten** (länger als der P1/P2-Schnitt von ~75–90 Min) und war um 14:18 Uhr immer noch nicht fertig. Das deckt sich mit dem Befund übervoller P3-Bänder oben (P3 vermutlich tatsächlich näher an 3.700–5.200 Spielern/Band als an den gespeicherten ~2.950).
+
+**Neuprojektion für P3** (117.898 gespeicherte Spieler, 40 Bänder), ab jetzt (12.08. ~12:25 Uhr, P3-Start):
+- Optimistisch (P1/P2-Tempo durchgehalten): ~92h ≈ **4 Tage**
+- Vorsichtig (Tempo des ersten, spürbar langsameren P3-Bandes): ~143h ≈ **6 Tage**
+
+→ **Revidiertes Gesamtende: grob 16.–18.08.**, nicht erst 24.08. wie am 11.08. geschätzt. Belastbarer wird die Zahl, sobald mehrere echte P3-Bände durchgelaufen sind (Stand 12.08. 14:20 Uhr: 0 fertig, 1 läuft) — bei Gelegenheit erneut mit echten P3-Laufzeiten nachrechnen.
 
 ---
 
@@ -322,6 +378,62 @@ Stand 2026-07-07, alle Threads aktiv:
 
 ---
 
+## ⚠️ Backup-Status — Cron gebrochen seit 21./22.07., manuelle Lücke am 25.08. geschlossen
+
+**Beide täglichen Cron-Backups auf dem VPS liefen seit 35 Tagen nicht mehr, ohne jede Fehlermeldung im Log.** Entdeckt bei einer Routine-Prüfung, nicht durch einen Vorfall. Am 25.08. manuell ein aktueller fidedb-Dump nachgezogen (siehe unten) — der Cron-Bug selbst ist **bewusst noch nicht gefixt** (User-Entscheidung: erstmal nur die Datenlücke schließen).
+
+| Backup-Baustein | Letzter automatischer Erfolg | Status |
+|---|---|---|
+| VPS-Cron `backup_fide_vps.sh` (fidedb + `orchestrator`-Schema) | 2026-07-21 03:47 Uhr (907 MB) | 🔴 Cron tot seit 35 Tagen — **✅ Lücke am 25.08. per manuellem Dump geschlossen** |
+| VPS-Cron `backup_db_vps.sh` (Kundenprojekt tunnelbliq, selbe Ursache) | 2026-07-21 17:53 Uhr | 🔴 Cron weiterhin tot — **bewusst nicht angefasst** (Kundendatenbank, User-Entscheidung 25.08.: nur fidedb) |
+| Mac-Mini-Offsite-Pull (`pull_backup_macmini.sh` via launchd) | nie automatisch gelaufen | 🔴 `launchd`-Plist nie installiert; **✅ am 25.08. manuell ein aktueller Dump lokal abgelegt** (`~/backups/fide-scraper/vps/`), Automatisierung selbst weiterhin nicht eingerichtet |
+
+**Root Cause — präziser als ursprünglich vermutet:** Es ist kein einfacher Namens-Rename, sondern eine **Infrastruktur-Konsolidierung am 2026-07-22**, exakt einen Tag nach dem letzten erfolgreichen Backup. An diesem Tag wurde der Container **`fide-tunnelbliq-shared-db`** neu angelegt (Docker-`Created`-Zeitstempel `2026-07-22T07:35:37Z`) — seither läuft die echte `fidedb` (14,67 Mio. `game_results`, 11 GB) **gemeinsam mit der `tunnelbliq`-Datenbank des Kundenprojekts** in diesem einen geteilten Postgres/TimescaleDB-Container, der auf dem Standard-Postgres-Port `0.0.0.0:5432` lauscht. Der alte, separate Container `fide-scraper-db-1` (existiert schon seit 13.05., läuft weiter, aber nur auf `127.0.0.1:5433`) ist dabei **nicht gelöscht, sondern praktisch leergelaufen** — er enthält nur noch 9 MB TimescaleDB-Katalogtabellen, keine einzige Zeile der eigentlichen Nutzdaten mehr.
+
+Beide Backup-Skripte (`backup_fide_vps.sh` **und** `backup_db_vps.sh` für tunnelbliq) ermitteln den Ziel-Container per `docker ps --format '{{.Names}}' | grep '^timescaledb-'` — ein Namensmuster, das vor der Konsolidierung offenbar gepasst hat, seit der Umbenennung auf `fide-scraper-db-1` / `fide-tunnelbliq-shared-db` aber nicht mehr matcht. **Das erklärt auch, warum beide unabhängigen Skripte exakt am selben Tag synchron ausgefallen sind** — keine zwei getrennten Zufälle, sondern ein und dieselbe Infrastrukturänderung. Mit `set -euo pipefail` bricht die Pipeline (`grep` liefert exit 1) das Skript sofort bei der Container-Ermittlung ab, **bevor die `log()`-Funktion je aufgerufen wird** — daher keine Fehlerzeile im `backup.log`, obwohl der Cronjob selbst pünktlich feuert. Silent failure, kein Alerting vorhanden.
+
+**⚠️ Falle beim manuellen Nachziehen:** Ein erster manueller Versuch am 25.08. lief versehentlich gegen den falschen (`fide-scraper-db-1`) Container und erzeugte einen scheinbar gültigen, aber nur 12 KB kleinen Dump ohne Nutzdaten — sofort an der Größe auffällig, verworfen und durch den korrekten Lauf gegen `fide-tunnelbliq-shared-db` ersetzt. **Bei einem künftigen Fix unbedingt gegen `fide-tunnelbliq-shared-db` zielen, nicht gegen `fide-scraper-db-1`.**
+
+**2026-08-25 — manuelle Lücke geschlossen:**
+- `docker exec fide-tunnelbliq-shared-db pg_dump -U fide -d fidedb -Fc` → `fidedb_2026-08-25T084823Z.dump`, **1,1 GB** (deutlich größer als die alten ~900-MB-Dumps, da die DB seit der Konsolidierung mitgewachsen ist), Laufzeit 3:50 Min, Eintrag in `/home/pit/backups/fide-scraper/backup.log`.
+- Per `scp` auf diesen Mac gezogen nach `~/backups/fide-scraper/vps/fidedb_2026-08-25T084823Z.dump`; SHA-256 zwischen VPS- und lokaler Kopie verifiziert, identisch.
+- **Nur fidedb** — die `tunnelbliq`-Kundendatenbank im selben Container wurde bewusst nicht gesichert (User-Entscheidung, nicht unser Datenbestand).
+- Der Cron-Bug selbst (Container-Namensmuster) ist **weiterhin ungefixt** — nächster automatischer Lauf um 03:45 Uhr wird wieder silent fehlschlagen, bis das Skript korrigiert wird.
+
+**Auswirkung der Lücke, falls nicht geschlossen worden wäre:** Rollback-Punkt bei einem VPS-Totalausfall wäre 35 Tage alt (21.07.) statt maximal 1 Tag gewesen — das hätte u. a. den kompletten P1/P2/P3-Monatsrefresh (16.08. fertig) und ~3,06 Mio. seit 29.07. gescrapte Partien gekostet. Die VPS-seitige 3-Dump-Rotation (`KEEP_DUMPS=3`) hatte unbemerkt nichts mehr zu rotieren.
+
+**Noch offen, falls/wenn gewünscht:**
+1. Container-Erkennung in `backup_fide_vps.sh` robuster machen (z. B. per Compose-Label/Image statt Namenspräfix), damit der tägliche Cron wieder greift.
+2. `net.chesspit.fide-backup-pull.plist` tatsächlich auf dem Mac installieren (`launchctl load`), damit der Offsite-Pull automatisch läuft statt manuell.
+3. Perspektivisch: einfaches Alerting bei `backup.log` ohne neuen Eintrag seit >24h.
+4. `backup_db_vps.sh` (tunnelbliq) ist vom selben Bug betroffen, aber bewusst nicht Teil dieser Session — liegt außerhalb des fide-scraper-Projekts.
+
+---
+
+## Änderungen Session 2026-09-11 — MB-Rückgang untersucht + Live-Stand aktualisiert
+
+| Was | Details |
+|-----|---------|
+| **MB-Rückgang aufgeklärt** | User bemerkte im Orchestrator-Dashboard sinkende Tages-MB und vermutete, dass zuletzt nur schwache Gruppen gescraped wurden. Bestätigt per Live-Query: `records_found`/Spieler und `mb_downloaded`/Spieler liegen im Band <1800 bei ~4,0 gegenüber ~8,8–12,0 bei ≥2200 — weniger als halb so viel Daten pro Spieler. ~72 % der pending Welt-Backfill-Gruppen liegen inzwischen im Band <1800 (starke Bänder in fast allen Ländern schon `done`), zusätzlich verstärkt durch die P0/P3-Läufe seit 06.09. (praktisch nur `<1800`). Kein technisches Problem: Run-Durchsatz/Tag blieb im normalen Rahmen (51–91), 0 failed-Gruppen. Details siehe eigener Abschnitt oben. |
+| **P1/P2/P3-Zyklus (Aug-Periode) fertig** | Kompletter Durchlauf (49/49 Batches) am 06.09. ~13:54 Uhr abgeschlossen. |
+| **P0-Neuzugangs-Tier: Fortschritt geprüft** | ~71 % der Bänder fertig (104/145), nur noch 2.586 aktive Spieler wirklich nie angefasst (von ursprünglich ~26.000). Die einmalige `dc_update_1`-Leihgabe von 30 P0-Gruppen (06.09.) ist komplett durchgelaufen, Thread lief danach automatisch zurück auf DACH/FRA-Backfill — kein manueller Eingriff nötig. |
+| **Restlaufzeit neu gerechnet** | `dc_in` (2,9 Gruppen/Tag) hat `dc_de` (3,9/Tag) als langsamsten Thread überholt — beide bleiben unverändert unter Verdacht (Proxy-/Tarpit), noch nicht diagnostiziert. Gesamtende Welt-Backfill weiterhin grob Ende Dezember 2026. |
+| **Games gesamt** | 16.020.525 (+1.348.377 seit 25.08., ~79 Tsd./Tag) — Rückgang ggü. der 25.08.-Spanne (85–120 Tsd./Tag) ist derselbe ELO-Mix-Effekt wie oben, kein separates Problem. |
+| **Dashboard-Grid: „komische Bänder" bei Spanien aufgeklärt + gefixt** | User meldete zwei auffällig breite Bänder in Spaniens Scraping-Grid (ELO 1664–1844 und 1845–2299, je ~5.400 Spieler statt der üblichen ~100–250). Ursache: Überbleibsel des vor dem 02.07. abgelösten Single-Thread-Refreshs `dc_update` — legte im Juni pro Föderation eine `ELO 0–2299/Jahr 2026`-Gruppe an, bei zu großen Populationen (ESP ~16.228, IND ~14.574) sogar 2–3 gleich breite Perzentil-Drittel statt einer. **Live-Check bestätigt: betrifft 73 von ~75 Föderationen (77 Zeilen insgesamt)** — überall dort, wo `dc_update` gelaufen ist, liegt die alte Zeile ungefiltert zwischen den viel feineren, laufenden Jahres-/ELO-Bändern und würde im Grid auffallen; bei ESP/IND am stärksten (3 statt 1 Zeile, mitten in der Sequenz). Alle 77 Gruppen sind seit 07.–15.06.2026 `done`, Thread `dc_update` läuft in keinem aktiven Pool mehr — **kein Effekt auf laufendes Scraping**, nur Dashboard-Optik. **Fix (nicht-destruktiv):** `orchestrator/store.py::query_grid()` filtert jetzt `thread_affinity != 'dc_update'` (Commit `f07f2e8`), gebaut + deployed (`docker compose build dashboard` + `up -d --force-recreate --no-deps dashboard`, Worker unangetastet). Die 77 DB-Zeilen selbst wurden **nicht gelöscht** (FK `scrape_runs.group_id` ist `NO ACTION` — Löschen hätte auch die zugehörigen `scrape_runs` mitreißen müssen und damit Juni-Historie aus dem Bericht-Tab entfernt), stattdessen mit erklärendem `notes`-Feld versehen. |
+
+---
+
+## Änderungen Session 2026-08-25 — VPN-bedingter Verbindungsausfall + Routine-Check + Backup-Lücke entdeckt
+
+| Was | Details |
+|-----|---------|
+| **VPS kurzzeitig unerreichbar** | User konnte Dashboard nicht erreichen; Diagnose zeigte VPS/SSH/DB/HTTPS allesamt tot, aber DNS + generelles Internet ok, Traceroute erreichte sauber Hostingers Netz und starb dann — sah wie VPS-Totalausfall aus. Ursache war ein **eingeschaltetes VPN auf dem Mac Mini**; nach Ausschalten sofort wieder alles erreichbar (Ping, SSH, Tunnel, Dashboard). Kein VPS-seitiges Problem. |
+| **Orchestrator-Gesundheitscheck** | 0 failed-Gruppen, 462/462 `scrape_runs` der letzten 7 Tage `success`, alle 9 DC-Threads innerhalb 24h aktiv, Worker-Log zeigt nur selbstheilende Proxy-Retries (kein echter Fehler), Disk 52 % belegt. Bestätigt: **Monatsrefresh P1/P2/P3 tatsächlich am 16.08. ~14:56 Uhr fertig geworden**, wie am 12.08. projiziert. |
+| **Backup-Lücke entdeckt (⚠️ ungelöst)** | Beide VPS-Cron-Backups (fidedb + tunnelbliq) seit 21.07. tot durch einen Container-Namens-Match-Bug, der das Skript beim Start silent abbrechen lässt; die Mac-Mini-Offsite-Kopie lief noch nie automatisch (launchd-Plist nie installiert). Details siehe eigener Abschnitt „Backup-Status" oben. Noch nicht gefixt — Rückfrage beim User, wie vorgegangen werden soll. |
+| **Hochrechnung Restlaufzeit aktualisiert** | `dc_de` bleibt/verschärft sich als Flaschenhals (3,6 statt 5,0 Gruppen/Tag), Gesamtende jetzt auf **Ende Dezember 2026** revidiert (ggü. ~19.11. am 29.07.) — Ursache weiterhin nicht diagnostiziert. |
+
+---
+
 ## Änderungen Session 2026-08-11/12 — dc_update_1 von DACH/FRA-Backfill befreit + Monatsrefresh neu gestartet
 
 | Was | Details |
@@ -330,6 +442,7 @@ Stand 2026-07-07, alle Threads aktiv:
 | **Juli-Periode importiert** | `standard_aug26frl.zip` (Periode 2026-08-01, enthält Juli-Partien) importiert — 562.979 Zeilen `rating_history`. |
 | **Monatsrefresh neu gestartet** | `orchestrator/reset_monthly_refresh.py` angestoßen — P1 (2 Gruppen)/P2 (7)/P3 (40) auf `pending` zurückgesetzt. Live-Stand 12.08. ~08:52 Uhr: **P1 2/2 fertig, P2 4/7 fertig + 1 läuft, P3 0/40** — siehe Detailtabelle im Orchestrator-Abschnitt oben. |
 | **P3-Bänder übervoll (bekannt, unangetastet)** | Live-Nachzählung 11.08.: P3-Population von 118.066 (Stand 02.07., Bänder erzeugt) auf 183.604 gewachsen (+55,5 %, getrieben vom parallel laufenden Welt-Backfill) — alle 40 Bänder liegen jetzt bei 3.694–5.187 Spielern statt Zielgröße. Kein Korrektheitsproblem (Bänder lückenlos 0–2299, Worker fragt live gegen DB ab), aber Gesamtlaufzeit für den P1/P2/P3-Durchlauf revidiert von ~8 auf ~13 Tage. **User-Entscheidung:** vorerst nichts anfassen (keine Neu-Erzeugung der Bänder), in ein paar Tagen Fortschritt erneut prüfen. |
+| **Restlaufzeit neu gerechnet (12.08. nachmittags) — 13-Tage-Schätzung zu pessimistisch** | Aus den echten `scrape_runs`-Zeitstempeln von P1+P2 (9 fertige Bände, 23.670 Spieler in 18h36min) ergibt sich ein Ist-Tempo von ~2.080 Spieler/Std. reine Scrape-Zeit bzw. ~1.270 Spieler/Std. blended inkl. einer beobachteten ~7h12min-Nachtpause (21:48–05:00 Uhr) — deutlich über der 655/Std.-Design-Annahme, auf der die 13-Tage-Schätzung beruhte. P3 hat aber gerade erst begonnen (0 Bänder fertig, 1 läuft seit 113+ Min., länger als der P1/P2-Schnitt) — erstes Indiz, dass P3-Bänder tatsächlich wie oben vermerkt übervoll sind. Neuprojektion für die restlichen 117.898 P3-Spieler: **~4 Tage** (optimistisch, P1/P2-Tempo) bis **~6 Tage** (vorsichtig, Tempo des ersten P3-Bandes) → **revidiertes Gesamtende grob 16.–18.08.** statt 24.08. Details/Rechnung siehe Abschnitt „Restlaufzeit neu gerechnet" im Orchestrator-Abschnitt oben. Belastbarer erst mit mehreren abgeschlossenen P3-Bändern. |
 
 ---
 

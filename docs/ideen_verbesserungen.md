@@ -400,7 +400,7 @@ GROUP BY 1, 2, 3, 4
 
 ---
 
-### F2. Historische weibliche Population — die "wahre female_top"
+### F2. Historische weibliche Population — die "wahre female_top" — ✅ umgesetzt in Notebook 14 (2026-07-31)
 
 **Problem:** `female_top` bildet nur Spielerinnen ab, die 2026 noch aktiv und im
 Rating-Band 2400–2600 sind. Spielerinnen, die dort 2013–2020 waren und danach
@@ -416,6 +416,13 @@ der Frauen ≥ 2400 identifiziert werden:
 
 Diese Population ist für den Geschlechtervergleich methodisch sauberer als der
 April-2026-Snapshot. **Kein Scraping nötig — nur `rating_history` + `players`.**
+
+**Umsetzung:** `notebooks/14_top40_female_vs_band_men.ipynb` (`_generate_14.py`) — Top-40-Frauen
+je Jahresende Dez-2016…Dez-2025 (Union → 65 Spielerinnen, zunächst als Top-50/2021–2025
+mit 70 Spielerinnen umgesetzt, 2026-08-03 auf Top 40/10 Jahre erweitert) statt einer fixen
+Elo-Range, kombiniert mit F7 (siehe unten) für die Männer-Vergleichspopulation. Ersetzt
+Notebook 13, das noch auf der statischen (und unvollständig befüllten)
+`female_top`/`male_control`-Zuordnung basierte.
 
 ---
 
@@ -499,7 +506,7 @@ vergleiche im Projekt.
 
 ---
 
-### F7. Survivorship-freie weibliche Studiengruppe
+### F7. Survivorship-freie weibliche Studiengruppe — 🟡 teilweise umgesetzt in Notebook 14 (2026-07-31)
 
 Die Kombination aus F2 (historische Population) und vorhandenem Scraping ermöglicht:
 
@@ -510,6 +517,13 @@ Die Kombination aus F2 (historische Population) und vorhandenem Scraping ermögl
 
 Das ist die methodisch stärkste Grundlage für den Geschlechtervergleich — und
 erfordert deutlich weniger Scraping als eine komplette Neudefinition der Gruppen.
+
+**Umsetzung (Teilausschnitt, 2016–2025 statt seit 2012):** Notebook 14 nutzt exakt dieses
+Prinzip — 65 Top-40-Frauen (Jahresende 2016–2025) plus dynamische Männer-Vergleichspopulation
+im Elo-Band 2400–2600 (587 Spieler, 175.456 Partien, alles bereits gescrapt, kein Nachscrapen
+nötig für diesen Zeitraum). Die volle F7-Vision (seit 2012, ~150–200 Spielerinnen, gezieltes
+Nachscrapen für Lücken) ist noch offen — bewusst zurückgestellt, siehe
+`docs/project_status.md` Abschnitt 6.8.
 
 ---
 

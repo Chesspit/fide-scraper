@@ -149,6 +149,15 @@ gescrapten Rating-/Partiedaten über 4 feste, sichere Query-Tools (kein Text-to-
 | 07 | female_top Peer-Performance (Kohorte × Stärke-Bucket × Gegner-Geschlecht) |
 | 08 | QC Elo-Analyse |
 | 10–11 | QC-Detail 2024 / 2008 |
+| 13 | ⚠️ veraltet — s. Notebook 14 |
+| 14 | Top-40-Frauen (Jahresende 2016–2025, dynamisch aus `rating_history`) vs. Männer im Elo-Band 2400–2600 × Gegner-Geschlecht × Turniertyp + Permutationstest |
+| 15 | Pro Spielerin der Top-40-Kohorte: Partien/Ergebnis/Rating-Δ gegen gleich starke (±50) bzw. stärkere (≥50) Gegner, ganze Karriere, nach Gegner-Geschlecht |
+
+Notebooks 01–04 und 07 basieren auf den Gruppen `female_top`/`male_control`
+(`players.analysis_group`), die aktuell nur unvollständig befüllt sind — siehe
+`docs/project_status.md` Abschnitt 6.7/6.8. Für den Frauen-vs-Männer-Vergleich Notebook 14
+verwenden (dynamische Kohorte aus `rating_history.published_rating`, kein Scraping-Backfill
+nötig).
 
 Verbindung: `DATABASE_URL` aus `.env.notebook` → `localhost:5434`.
 Generatoren (Quelle der Wahrheit): `notebooks/_generate_*.py`.

@@ -32,7 +32,7 @@ TIER_BOUNDS: dict[str, tuple[int, int]] = {
     "P1": (2300, 9999),
     "P2": (0, 2299),
     "P3": (0, 2299),
-    "P0": (0, 9999),
+    "P0": (1, 9999),  # std_rating=0 (unbewertet) bewusst ausgeschlossen, siehe generate_new_entrant_batches.py
 }
 
 TIER_CONTINENT = "GLOBAL"

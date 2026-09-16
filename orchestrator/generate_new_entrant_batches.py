@@ -58,6 +58,13 @@ def load_new_entrant_population() -> list[int]:
     generate_monthly_refresh_batches.py (NOT EXISTS statt EXISTS status='ok') —
     absichtlich eine eigene, kleine Funktion statt die bestehende zu
     überladen, um das laufende P1/P2/P3-System nicht anzufassen.
+
+    std_rating > 0: unbewertete Spieler (std_rating=0, ~1,26 Mio. aktive
+    Spieler) werden bewusst nicht gescraped — User-Entscheidung 16.09.2026.
+    Ohne diesen Filter kollabiert das unterste Band in build_tier_bands()
+    (alle std_rating=0-Spieler teilen sich denselben Wert) zu einer einzigen
+    ~1,2-Mio.-Spieler-Gruppe statt vieler 200-300er-Bänder — siehe
+    Memory project_failed_groups_2026-09-14_oom für den Vorfall.
     """
     conn = psycopg2.connect(get_database_url())
     with conn.cursor() as cur:
@@ -72,6 +79,7 @@ def load_new_entrant_population() -> list[int]:
             CROSS JOIN latest
             WHERE rh.period = latest.p AND rh.published_rating IS NOT NULL
               AND p.active = TRUE
+              AND p.std_rating > 0
               AND NOT EXISTS (SELECT 1 FROM scrape_periods sp WHERE sp.fide_id = p.fide_id)
             ORDER BY p.std_rating DESC
             """

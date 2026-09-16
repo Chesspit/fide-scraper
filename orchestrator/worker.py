@@ -182,7 +182,12 @@ def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
     semantics; P0 groups always imply never_scraped_only semantics.
     """
     if never_scraped_only:
+        # std_rating=0 (unbewertet, ~1,26 Mio. aktive Spieler) bewusst ausgeschlossen —
+        # User-Entscheidung 16.09.2026, macht keinen Sinn zu scrapen. Ohne diesen
+        # Filter kann eine elo_min=0-Gruppe (P0-Auffangband) Millionen Spieler statt
+        # der beabsichtigten 200-300 treffen, siehe project_failed_groups_2026-09-14_oom.
         scraped_filter = (
+            "AND std_rating > 0 "
             "AND NOT EXISTS (SELECT 1 FROM scrape_periods sp "
             "WHERE sp.fide_id = players.fide_id)"
         )

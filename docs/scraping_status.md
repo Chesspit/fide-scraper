@@ -382,12 +382,16 @@ Label seit heute `DI-UP-1` (vorher `DI-UPDATE-1`, siehe Session unten). `federat
 > Population live per `never_scraped_only` ermittelt wird, greifen dieselben Bänder automatisch
 > die Neuzugänge ab. Kein manueller Batch-Neubau nötig.
 >
-> **Stand 16.09. 16:10 UTC:** 145 von 146 P0-Gruppen `done`. Offen nur noch
-> `dc_newplayers_2` (Jahr 2026, ELO 1–1404), läuft seit 10:20 UTC — bei 2.224 Kombinationen
-> und ~8–10 s je Abfrage im Plan. Die Schwestergruppe (Jahr 2025) ist seit 11:22 UTC fertig
-> und fand **6 Partien für 278 Spieler** — wenig, aber plausibel: nie gescrapte Spieler mit
-> ELO 1–1404 sind selten turnieraktiv. Bestätigt nebenbei die Entscheidung, unbewertete
-> Spieler (`std_rating = 0`) gar nicht erst anzufassen.
+> **✅ Abgeschlossen 16.09. 16:20 UTC: 146 von 146 P0-Gruppen `done`**, nichts mehr offen oder
+> laufend. Die beiden letzten (Auffangbänder ELO 1–1404, je 278 Spieler):
+> Jahr 2025 fertig 11:22 UTC mit **6 Partien**, Jahr 2026 fertig 16:20 UTC mit **397 Partien**
+> (Laufzeit exakt 6 Std.). Der große Unterschied ist erwartbar — 2026 ist das laufende Jahr,
+> in dem diese Spieler gerade erst aktiv geworden sind. Die magere 2025er-Ausbeute bestätigt
+> nebenbei die Entscheidung, unbewertete Spieler (`std_rating = 0`) gar nicht erst anzufassen.
+>
+> Beide `dc_newplayers`-Threads ruhen jetzt bis zum nächsten Monatsimport; `DI-NP-2` ging nach
+> Abschluss direkt in den Zeitzonen-Schlaf (bis 07:00 Asia/Ho_Chi_Minh), nicht in den
+> Leerlauf-Pfad — der `active_hours`-Check kommt in `run_dc_slot()` vor dem Queue-Check.
 >
 > *(Die Gesamtzahl 146 liegt über den 116 Gruppen der beiden `dc_newplayers`-Threads: 30
 > P0-Gruppen waren per `orchestrator/reassign_p0_boost.py` an `dc_update_1` abgegeben worden.)*

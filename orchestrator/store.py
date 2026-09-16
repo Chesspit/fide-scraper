@@ -576,3 +576,82 @@ def query_laender_data() -> list[dict]:
             "_r_mb":           mb,
         })
     return result
+
+
+# ---------------------------------------------------------------------------
+# Coverage (Ground-Truth-Abdeckung, orchestrator/coverage.py)
+# ---------------------------------------------------------------------------
+# Eigener Cache statt des 5-Min-Musters von query_pg_players(): die
+# Coverage-Aggregate scannen scrape_periods + game_results ueber mehrere Jahre
+# und brauchen gemessen 9-30 s pro Aufruf. Der Wert aendert sich in Stunden,
+# nicht in Minuten — 15 Min TTL halten das Dashboard benutzbar, ohne die
+# produktive (mit tunnelbliq geteilte) DB unnoetig zu belasten.
+_coverage_cache: dict[tuple, object] = {}
+_coverage_cache_ts: dict[tuple, float] = {}
+_COVERAGE_TTL = 900.0   # 15 Min
+
+COVERAGE_DIMENSIONS = {
+    "federation":     "Föderation",
+    "band":           "Band (Geschlecht + 50 ELO)",
+    "elo_band":       "ELO-Band (100er, numerisch)",
+    "analysis_group": "Analysegruppe (Legacy)",
+}
+
+
+def _coverage_call(dimension: str, year_from: int, year_to: int):
+    from orchestrator import coverage as cov
+    fns = {
+        "federation":     cov.coverage_by_federation,
+        "band":           cov.coverage_by_band,
+        "elo_band":       cov.coverage_by_elo_band,
+        "analysis_group": cov.coverage_by_analysis_group,
+    }
+    return fns[dimension], cov.coverage_totals
+
+
+def query_coverage(dimension: str, year_from: int, year_to: int) -> list[dict]:
+    """Coverage-Zeilen einer Dimension (gecacht, 15 Min TTL).
+
+    Liefert bei DB-Problemen den letzten bekannten Stand statt einer Exception —
+    dieselbe Abwaegung wie in query_pg_players(): stale ist besser als nichts,
+    das Dashboard soll nicht wegen eines Tunnel-Hickups weiss bleiben.
+    """
+    key = ("rows", dimension, year_from, year_to)
+    if time.time() - _coverage_cache_ts.get(key, 0.0) < _COVERAGE_TTL:
+        return _coverage_cache.get(key, [])
+    try:
+        from scraper.config import get_database_url
+        import psycopg2
+        fn, _ = _coverage_call(dimension, year_from, year_to)
+        pg = psycopg2.connect(get_database_url(), connect_timeout=5)
+        rows = fn(pg, year_from=year_from, year_to=year_to)
+        pg.close()
+        _coverage_cache[key] = rows
+        _coverage_cache_ts[key] = time.time()
+        return rows
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Coverage-Query (%s) fehlgeschlagen: %s",
+                                            dimension, exc)
+        return _coverage_cache.get(key, [])
+
+
+def query_coverage_totals(year_from: int, year_to: int) -> dict:
+    """Kopfzahl: Gesamtabdeckung ueber den Zeitraum (gecacht, 15 Min TTL)."""
+    key = ("totals", year_from, year_to)
+    if time.time() - _coverage_cache_ts.get(key, 0.0) < _COVERAGE_TTL:
+        return _coverage_cache.get(key, {})
+    try:
+        from scraper.config import get_database_url
+        import psycopg2
+        from orchestrator import coverage as cov
+        pg = psycopg2.connect(get_database_url(), connect_timeout=5)
+        totals = cov.coverage_totals(pg, year_from=year_from, year_to=year_to)
+        pg.close()
+        _coverage_cache[key] = totals
+        _coverage_cache_ts[key] = time.time()
+        return totals
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Coverage-Totals fehlgeschlagen: %s", exc)
+        return _coverage_cache.get(key, {})

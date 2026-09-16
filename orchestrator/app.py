@@ -1244,6 +1244,119 @@ tab_bericht2 = dbc.Container(fluid=True, children=[
 ], className="py-3")
 
 # ---------------------------------------------------------------------------
+# Tab 9 — Abdeckung (Ground Truth, orchestrator/coverage.py)
+# ---------------------------------------------------------------------------
+# Misst an den Daten selbst (players ⨯ scrape_periods ⨯ game_results), nicht an
+# der Queue: beantwortet "wie vollständig ist der Datenbestand?" statt "wie viele
+# Gruppen sind abgearbeitet?". Die Queue kann leer sein und trotzdem Lücken lassen
+# (uebersprungene Jahresziele, nie geseedete Spieler).
+_COV_YEAR_NOW = time.localtime().tm_year
+
+_COV_COLS = [
+    {"name": "Dimension",         "id": "_dim"},
+    {"name": "Jahr",              "id": "_year"},
+    {"name": "Spieler aktiv",     "id": "_players_active"},
+    {"name": "davon gescrapt",    "id": "_players_scraped"},
+    {"name": "% Spieler",         "id": "_pct_players"},
+    {"name": "Perioden versucht", "id": "_periods_attempted"},
+    {"name": "Perioden Soll",     "id": "_periods_expected"},
+    {"name": "% Perioden",        "id": "_pct_periods"},
+    {"name": "Partien",           "id": "_games"},
+]
+
+tab_coverage = dbc.Container(fluid=True, children=[
+    # 15 Min statt der sonst üblichen 5: die Aggregate scannen mehrere Jahre
+    # scrape_periods/game_results (gemessen 9–30 s je Abfrage).
+    dcc.Interval(id="interval-coverage", interval=900_000, n_intervals=0),
+
+    dbc.Row([
+        dbc.Col(metric_card("Perioden-Abdeckung im Zeitraum", "cov-pct", "#0d6efd"), width=3),
+        dbc.Col(metric_card("Perioden versucht", "cov-attempted", "#198754"), width=3),
+        dbc.Col(metric_card("Perioden Soll", "cov-expected", "#6c757d"), width=3),
+        dbc.Col(metric_card("Aktive Spieler (mit Rating)", "cov-players", "#6f42c1"), width=3),
+    ], className="g-2 mb-3"),
+
+    dbc.Row([
+        dbc.Col([
+            html.Small("Dimension", className="text-muted"),
+            dcc.Dropdown(
+                id="cov-dimension",
+                options=[{"label": v, "value": k}
+                         for k, v in store.COVERAGE_DIMENSIONS.items()],
+                value="band", clearable=False,
+            ),
+        ], width=4),
+        dbc.Col([
+            html.Small("Von Jahr", className="text-muted"),
+            dcc.Dropdown(
+                id="cov-year-from",
+                options=[{"label": str(y), "value": y} for y in range(2008, _COV_YEAR_NOW + 1)],
+                value=2020, clearable=False,
+            ),
+        ], width=2),
+        dbc.Col([
+            html.Small("Bis Jahr", className="text-muted"),
+            dcc.Dropdown(
+                id="cov-year-to",
+                options=[{"label": str(y), "value": y} for y in range(2008, _COV_YEAR_NOW + 1)],
+                value=_COV_YEAR_NOW, clearable=False,
+            ),
+        ], width=2),
+    ], className="g-2 mb-2"),
+
+    html.P(
+        ["Nenner: aktive Spieler mit ", html.Code("std_rating > 0"),
+         " — unbewertete Spieler werden bewusst nicht gescrapt und zählen daher "
+         "nicht mit. Soll-Perioden = aktive Spieler × gültige FIDE-Perioden des Jahres. "
+         "Erste Abfrage nach Tab-Wechsel dauert je nach Zeitraum einige Sekunden."],
+        style={"fontSize": "11px", "color": "#777", "marginBottom": "8px"},
+    ),
+
+    dcc.Loading(
+        type="default",
+        children=html.Div(
+            dash_table.DataTable(
+                id="coverage-datatable",
+                columns=_COV_COLS,
+                data=[],
+                sort_action="native",
+                page_size=100,
+                style_table={"overflowX": "auto"},
+                style_cell={
+                    "backgroundColor": "#FFFFFF", "color": "#333",
+                    "border": "1px solid #dee2e6", "fontFamily": "monospace",
+                    "fontSize": "14px", "padding": "8px 12px",
+                    "textAlign": "right", "whiteSpace": "nowrap",
+                },
+                style_cell_conditional=[
+                    {"if": {"column_id": "_dim"}, "textAlign": "left", "minWidth": "180px"},
+                ],
+                style_header={
+                    "fontWeight": "bold", "color": "#444",
+                    "border": "1px solid #dee2e6", "fontSize": "13px",
+                    "textAlign": "center", "backgroundColor": "#f0f4f8",
+                    "padding": "8px 12px",
+                },
+                style_data_conditional=[
+                    {"if": {"filter_query": "{_pct_periods_num} >= 95",
+                            "column_id": "_pct_periods"},
+                     "color": "#198754", "fontWeight": "600"},
+                    {"if": {"filter_query": "{_pct_periods_num} < 50",
+                            "column_id": "_pct_periods"},
+                     "color": "#dc3545"},
+                ],
+                style_as_list_view=True,
+            ),
+            style={
+                "backgroundColor": "#FFFFFF", "border": "1px solid #E0E0E0",
+                "borderRadius": "6px", "padding": "12px 16px",
+            },
+        ),
+    ),
+], className="py-3")
+
+
+# ---------------------------------------------------------------------------
 # Main layout
 # ---------------------------------------------------------------------------
 app.layout = dbc.Container(fluid=True, children=[
@@ -1260,6 +1373,7 @@ app.layout = dbc.Container(fluid=True, children=[
         dbc.Tab(tab_completed,label="✅ Abgeschlossen",     tab_id="tab-completed"),
         dbc.Tab(tab_bericht,  label="📊 Bericht Scraper",    tab_id="tab-bericht"),
         dbc.Tab(tab_bericht2, label="🗺 Bericht Länder",     tab_id="tab-bericht2"),
+        dbc.Tab(tab_coverage, label="📈 Abdeckung",          tab_id="tab-coverage"),
     ], id="main-tabs", active_tab="tab-heatmap"),
 ], style={"backgroundColor": "#F8F9FA", "minHeight": "100vh", "paddingBottom": "40px"})
 
@@ -2415,6 +2529,70 @@ def toggle_bericht2_expand(active_cell, table_data, expand_state):
         return state, None
 
     return dash.no_update, None
+
+
+# ===========================================================================
+# Callbacks — Tab 9 (Abdeckung)
+# ===========================================================================
+
+@app.callback(
+    Output("coverage-datatable", "data"),
+    Output("cov-pct", "children"),
+    Output("cov-attempted", "children"),
+    Output("cov-expected", "children"),
+    Output("cov-players", "children"),
+    Input("interval-coverage", "n_intervals"),
+    Input("cov-dimension", "value"),
+    Input("cov-year-from", "value"),
+    Input("cov-year-to", "value"),
+    Input("main-tabs", "active_tab"),
+)
+def refresh_coverage(_, dimension, year_from, year_to, active_tab):
+    """Laedt Coverage-Zeilen + Kopfzahlen (gecacht in store, 15 Min TTL).
+
+    Der Tab-Guard ist hier nicht Kosmetik: ohne ihn liefe die mehrere Sekunden
+    dauernde Aggregation alle 15 Min auch dann, wenn niemand den Tab ansieht.
+    """
+    if active_tab != "tab-coverage":
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+
+    year_from = int(year_from or 2020)
+    year_to   = int(year_to or _COV_YEAR_NOW)
+    if year_to < year_from:
+        year_from, year_to = year_to, year_from
+
+    totals = store.query_coverage_totals(year_from, year_to)
+    rows   = store.query_coverage(dimension, year_from, year_to)
+
+    dim_key = {"federation": "federation", "band": "band",
+               "elo_band": "elo_band", "analysis_group": "analysis_group"}[dimension]
+
+    data = [{
+        "_dim":               str(r.get(dim_key)),
+        "_year":              r["year"],
+        "_players_active":    f"{r['players_active']:,}".replace(",", "."),
+        "_players_scraped":   f"{r['players_scraped']:,}".replace(",", "."),
+        "_pct_players":       f"{r['pct_players']} %",
+        "_periods_attempted": f"{r['periods_attempted']:,}".replace(",", "."),
+        "_periods_expected":  f"{r['periods_expected']:,}".replace(",", "."),
+        "_pct_periods":       f"{r['pct_periods']} %",
+        # numerisch fuer style_data_conditional — DataTable kann auf dem
+        # formatierten String ("76.1 %") nicht vergleichen.
+        "_pct_periods_num":   r["pct_periods"],
+        "_games":             f"{r['games']:,}".replace(",", "."),
+    } for r in rows]
+
+    if not totals:
+        return data, "—", "—", "—", "—"
+
+    fmt = lambda n: f"{n:,}".replace(",", ".")
+    return (
+        data,
+        f"{totals['pct_periods']} %",
+        fmt(totals["periods_attempted"]),
+        fmt(totals["periods_expected"]),
+        fmt(totals["players_active"]),
+    )
 
 
 # ---------------------------------------------------------------------------

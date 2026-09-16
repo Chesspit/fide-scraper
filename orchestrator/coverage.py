@@ -6,7 +6,9 @@ misst dieses Modul die Abdeckung direkt an den Daten: players ⨯ scrape_periods
 
     coverage_by_federation      Federation/Land × Jahr
     coverage_by_analysis_group  Analysegruppe (female_top/male_control/…) × Jahr
-    coverage_by_elo_band        ELO-Band (players.std_rating) × Jahr
+    coverage_by_elo_band        ELO-Band, numerisch (players.std_rating) × Jahr
+    coverage_by_band            Geschlecht + 50er-Band (fn_elo_group) × Jahr
+    coverage_totals             eine Zeile: Gesamtabdeckung über den Zeitraum
 
 Kennzahlen pro Zeile:
     players_active     aktive Spieler der Dimension (heutiger Stand)
@@ -21,6 +23,14 @@ Kennzahlen pro Zeile:
 Gültige Perioden je Jahr kommen aus sync_done_groups.valid_periods_for_year
 (kanonisch, basiert auf scraper.db.is_valid_fide_period — Quartale vor 2012-08
 werden korrekt berücksichtigt, Zukunftsmonate gedeckelt).
+
+Nenner-Caveat: Als aktiv gilt players.active = TRUE. orchestrator/store.py:397-414
+argumentiert, dass "in der zuletzt importierten FIDE-Standardliste UND aktiv" der
+sauberere Nenner waere — zumal scripts/import_rating_snapshots.py::insert_new_players()
+mit ON CONFLICT DO NOTHING arbeitet und players.active fuer Bestandsspieler beim
+Monatsimport nie auffrischt, das Flag also driftet. Bewusst NICHT im selben Zug
+umgestellt: sonst waeren die Coverage-Zahlen vor/nach der Aenderung nicht mehr
+vergleichbar. Wer das angeht, sollte es als eigene, datierte Aenderung tun.
 
 Rating-Drift-Caveat (ELO-Band-Dimension): Band-Zugehörigkeit nach HEUTIGEM
 std_rating, nicht dem historischen. Reine Funktionen (conn → list[dict]) im
@@ -111,14 +121,40 @@ def _coverage_by_dimension(
     return rows
 
 
+# Warum überall "std_rating > 0" statt "IS NOT NULL":
+# std_rating = 0 heißt "unbewertet" — das sind 1.261.674 der 1.505.239 aktiven
+# Spieler (Stand 16.09.2026). Sie werden per Entscheid nicht gescrapt (siehe
+# worker.py::get_fide_ids(), never_scraped_only-Zweig), gehören also auch nicht
+# in den Nenner. Mit dem alten IS-NOT-NULL-Filter meldete die ELO-Band-Dimension
+# ein Band "0" mit 1,26 Mio Spielern und 10,09 Mio Soll-Perioden allein für 2026
+# und druckte damit die Gesamtabdeckung von 76 % auf ~1 %.
+_RATED_ONLY = "AND p.std_rating > 0"
+
+
 def coverage_by_federation(conn, year_from: int = DEFAULT_YEAR_FROM,
-                           year_to: int = DEFAULT_YEAR_TO) -> list[dict]:
+                           year_to: int = DEFAULT_YEAR_TO,
+                           rated_only: bool = True) -> list[dict]:
+    """Abdeckung je Föderation × Jahr.
+
+    rated_only=True (Default) klammert unbewertete Spieler aus. Ohne das sind
+    die Nenner durchgehend von den ~1,26 Mio Ungerateten dominiert und die
+    Prozentwerte praktisch bedeutungslos.
+    """
     return _coverage_by_dimension(conn, "p.federation", "federation",
-                                  year_from, year_to)
+                                  year_from, year_to,
+                                  where_extra=_RATED_ONLY if rated_only else "")
 
 
 def coverage_by_analysis_group(conn, year_from: int = DEFAULT_YEAR_FROM,
                                year_to: int = DEFAULT_YEAR_TO) -> list[dict]:
+    """Abdeckung je kuratierter Analysegruppe × Jahr.
+
+    Bewusst UNVERÄNDERT gelassen (kein rated_only): Diese Dimension ist die
+    historische Vergleichsachse zu den kuratierten Gruppen aus System A, ihre
+    Zahlen sollen mit früheren Auswertungen vergleichbar bleiben. Achtung bei
+    der Interpretation: die Gruppen sind laut docs/project_status.md 6.7 nur
+    teilweise befüllt (z.B. male_control 48 von 649 gelabelt).
+    """
     return _coverage_by_dimension(
         conn, "p.analysis_group", "analysis_group", year_from, year_to,
         where_extra="AND p.analysis_group IS NOT NULL",
@@ -128,8 +164,49 @@ def coverage_by_analysis_group(conn, year_from: int = DEFAULT_YEAR_FROM,
 def coverage_by_elo_band(conn, band_width: int = 100,
                          year_from: int = DEFAULT_YEAR_FROM,
                          year_to: int = DEFAULT_YEAR_TO) -> list[dict]:
+    """Abdeckung je ELO-Band (numerisch, frei wählbare Breite) × Jahr."""
     dim_sql = f"(FLOOR(p.std_rating / {int(band_width)}) * {int(band_width)})::int"
     return _coverage_by_dimension(
         conn, dim_sql, "elo_band", year_from, year_to,
-        where_extra="AND p.std_rating IS NOT NULL",
+        where_extra=_RATED_ONLY,
     )
+
+
+def coverage_by_band(conn, year_from: int = DEFAULT_YEAR_FROM,
+                     year_to: int = DEFAULT_YEAR_TO) -> list[dict]:
+    """Abdeckung je Geschlecht+50er-Band (f_2400_2449, m_1850_1899, …) × Jahr.
+
+    Nutzt fn_elo_group() aus migrations/017 — dieselben Bandnamen wie in den
+    Notebooks, damit Coverage und Auswertung dieselbe Sprache sprechen.
+    """
+    return _coverage_by_dimension(
+        conn, "fn_elo_group(p.std_rating, p.sex)", "band", year_from, year_to,
+        where_extra=_RATED_ONLY,
+    )
+
+
+def coverage_totals(conn, year_from: int = 2020,
+                    year_to: int = DEFAULT_YEAR_TO,
+                    rated_only: bool = True) -> dict:
+    """Eine Zeile: Gesamtabdeckung über den Zeitraum — die Kopfzahl fürs Dashboard.
+
+    Keine eigene Zähllogik, nur ein Aggregat über die Jahreszeilen derselben
+    Kernabfrage. players_active wird NICHT summiert (der Wert ist in jeder
+    Jahreszeile derselbe heutige Bestand, Summieren würde ihn vervielfachen).
+    """
+    rows = _coverage_by_dimension(
+        conn, "'gesamt'", "dim", year_from, year_to,
+        where_extra=_RATED_ONLY if rated_only else "",
+    )
+    attempted = sum(r["periods_attempted"] for r in rows)
+    expected = sum(r["periods_expected"] for r in rows)
+    return {
+        "year_from": year_from,
+        "year_to": year_to,
+        "players_active": rows[0]["players_active"] if rows else 0,
+        "periods_attempted": attempted,
+        "periods_expected": expected,
+        "pct_periods": round(100.0 * attempted / expected, 1) if expected else 0.0,
+        "periods_ok": sum(r["periods_ok"] for r in rows),
+        "games": sum(r["games"] for r in rows),
+    }

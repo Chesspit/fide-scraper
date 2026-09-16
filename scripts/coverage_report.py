@@ -22,14 +22,16 @@ from orchestrator.coverage import (
     DEFAULT_YEAR_FROM,
     DEFAULT_YEAR_TO,
     coverage_by_analysis_group,
+    coverage_by_band,
     coverage_by_elo_band,
     coverage_by_federation,
+    coverage_totals,
 )
 from orchestrator.setup_db import connect
 
 logger = logging.getLogger(__name__)
 
-DIMENSIONS = ("federation", "analysis-group", "elo")
+DIMENSIONS = ("federation", "analysis-group", "elo", "band")
 
 
 def print_table(rows: list[dict], dim_key: str):
@@ -78,11 +80,22 @@ def main():
         elif args.dimension == "analysis-group":
             rows, dim_key = coverage_by_analysis_group(
                 conn, args.year_from, args.year_to), "analysis_group"
+        elif args.dimension == "band":
+            # Geschlecht + 50er-Band aus fn_elo_group() — dieselben Namen wie
+            # im Dashboard-Tab "Abdeckung" und in den Notebooks.
+            rows, dim_key = coverage_by_band(
+                conn, args.year_from, args.year_to), "band"
         else:
             rows, dim_key = coverage_by_elo_band(
                 conn, args.band_width, args.year_from, args.year_to), "elo_band"
+        totals = coverage_totals(conn, args.year_from, args.year_to)
     finally:
         conn.close()
+
+    print(f"\n  Gesamt {args.year_from}-{args.year_to}: "
+          f"{totals['pct_periods']} % der Soll-Perioden versucht "
+          f"({totals['periods_attempted']:,} von {totals['periods_expected']:,}), "
+          f"{totals['players_active']:,} aktive Spieler mit Rating")
 
     if args.federation and dim_key == "federation":
         feds = set(args.federation.split(","))

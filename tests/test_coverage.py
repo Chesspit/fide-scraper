@@ -6,6 +6,7 @@ from orchestrator.coverage import (
     coverage_by_analysis_group,
     coverage_by_elo_band,
     coverage_by_federation,
+    coverage_totals,
 )
 from orchestrator.setup_db import connect
 from orchestrator.sync_done_groups import valid_periods_for_year
@@ -102,3 +103,51 @@ class TestEloBandDimension:
         data_db.insert_player(1, std_rating=None)
         rows = coverage_by_elo_band(conn, year_from=2024, year_to=2024)
         assert rows == []
+
+
+class TestUnratedExcluded:
+    """std_rating = 0 heißt 'unbewertet' und darf nicht in den Nenner.
+
+    Vor dem Fix (16.09.2026) filterte coverage_by_elo_band auf
+    'std_rating IS NOT NULL' — die 0 rutschte durch und erzeugte ein Band 0 mit
+    1,26 Mio Spielern und 10,09 Mio Soll-Perioden allein für 2026, was die
+    Gesamtabdeckung von 76 % optisch auf ~1 % drückte.
+    """
+
+    def test_elo_band_ignores_unrated(self, data_db, conn):
+        data_db.insert_player(1, std_rating=0)
+        data_db.insert_player(2, std_rating=2450)
+        rows = coverage_by_elo_band(conn, band_width=100, year_from=2024, year_to=2024)
+        assert all(r["elo_band"] != 0 for r in rows), "Band 0 darf nicht auftauchen"
+        assert _row(rows, elo_band=2400, year=2024)["players_active"] == 1
+
+    def test_federation_ignores_unrated_by_default(self, data_db, conn):
+        data_db.insert_player(1, std_rating=0, federation="GER")
+        data_db.insert_player(2, std_rating=1800, federation="GER")
+        rows = coverage_by_federation(conn, year_from=2024, year_to=2024)
+        assert _row(rows, federation="GER", year=2024)["players_active"] == 1
+
+    def test_federation_can_opt_out(self, data_db, conn):
+        """rated_only=False bleibt möglich — z.B. um die Drift von players.active
+        gegen die Standardliste zu untersuchen."""
+        data_db.insert_player(1, std_rating=0, federation="GER")
+        data_db.insert_player(2, std_rating=1800, federation="GER")
+        rows = coverage_by_federation(conn, year_from=2024, year_to=2024,
+                                      rated_only=False)
+        assert _row(rows, federation="GER", year=2024)["players_active"] == 2
+
+
+class TestTotals:
+    def test_sums_periods_and_keeps_player_count_flat(self, data_db, conn):
+        """players_active darf NICHT über die Jahre summiert werden — der Wert
+        ist in jeder Jahreszeile derselbe heutige Bestand."""
+        data_db.insert_player(1, std_rating=2000)
+        data_db.insert_player(2, std_rating=2000)
+        data_db.insert_period(1, "2024-01-01", status="ok")
+        data_db.insert_period(1, "2025-01-01", status="no_data")
+
+        totals = coverage_totals(conn, year_from=2024, year_to=2025)
+        assert totals["players_active"] == 2
+        assert totals["periods_attempted"] == 2
+        expected = 2 * (len(valid_periods_for_year(2024)) + len(valid_periods_for_year(2025)))
+        assert totals["periods_expected"] == expected

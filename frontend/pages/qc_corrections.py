@@ -92,6 +92,22 @@ layout = dbc.Container(
                         style={"fontSize": "0.9rem"},
                     ),
                 ], md=2),
+                dbc.Col([
+                    html.Label("Grundgesamtheit", style=LABEL_STYLE),
+                    dcc.Dropdown(
+                        id="qcc-group-filter",
+                        options=data_qc.get_group_options(),
+                        # Default "curated" statt "all": beim naechsten
+                        # quality_check.py --rebuild enthaelt qc_rating_check die
+                        # gesamte gescrapte Population (243k statt 2.150 Spieler).
+                        # Ein fest verdrahtetes "all" wuerde die Kennzahlen dann
+                        # stillschweigend auf eine andere Grundgesamtheit
+                        # umstellen, ohne dass es jemand merkt.
+                        value="curated",
+                        clearable=False,
+                        style={"fontSize": "0.9rem"},
+                    ),
+                ], md=3),
             ], className="g-2 align-items-end"),
         ]),
 
@@ -112,17 +128,19 @@ layout = dbc.Container(
 @callback(
     Output("qcc-player-table", "children"),
     Output("qcc-table-note",   "children"),
-    Input("qcc-name-filter", "value"),
-    Input("qcc-fed-filter",  "value"),
+    Input("qcc-name-filter",  "value"),
+    Input("qcc-fed-filter",   "value"),
+    Input("qcc-group-filter", "value"),
 )
-def update_table(name_filter, fed_filter):
+def update_table(name_filter, fed_filter, group):
     TABLE_LIMIT = 500
     name_filter = name_filter or ""
     fed_filter  = fed_filter  or ""
+    group       = group       or "curated"
 
     try:
         df = data_qc.load_corrections_table(
-            "all", name_filter=name_filter, fed_filter=fed_filter, limit=TABLE_LIMIT
+            group, name_filter=name_filter, fed_filter=fed_filter, limit=TABLE_LIMIT
         )
     except Exception as e:
         return html.Div(f"Fehler: {e}", style={"color": C_NEG}), ""
@@ -130,12 +148,17 @@ def update_table(name_filter, fed_filter):
     if df.empty:
         return html.Div("Keine Spieler gefunden.", style={"color": C_MUTED}), ""
 
-    total = data_qc.load_corrections_kpis("all").get("spieler", 0)
+    total = data_qc.load_corrections_kpis(group).get("spieler", 0)
+    scope = data_qc.load_scope_summary(group)
     note = (
         f"— {len(df):,} von {total:,} Spielern (gefiltert/begrenzt)"
         if len(df) >= TABLE_LIMIT or (name_filter or fed_filter)
         else f"— {len(df):,} Spieler"
     )
+    # Grundgesamtheit immer mit ausweisen: sonst ist einer Zahl nicht anzusehen,
+    # ob sie sich auf die kuratierten 2.150 oder die volle gescrapte Population
+    # bezieht (siehe data_qc._group_where()).
+    note += f"  ·  Grundgesamtheit: {scope['spieler']:,} Spieler / {scope['fenster']:,} QC-Fenster"
 
     # Spaltenköpfe: id für Daten, name für Anzeige (mit Zeilenumbruch)
     columns = [

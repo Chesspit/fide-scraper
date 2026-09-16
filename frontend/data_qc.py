@@ -31,6 +31,11 @@ CATEGORY_EXPLANATIONS = {
 }
 
 
+# Präfix, das einen Band-Wert im Gruppen-Dropdown von einem analysis_group-Namen
+# unterscheidbar macht (beide landen im selben Dropdown-Value).
+BAND_PREFIX = "band:"
+
+
 def _db():
     return psycopg2.connect(DATABASE_URL)
 
@@ -46,11 +51,47 @@ def _fetch(sql: str, params=None) -> pd.DataFrame:
 
 
 def _group_where(group: str) -> tuple[str, dict]:
-    """Gibt WHERE-Clause und params-Dict für Gruppen-Filter zurück."""
+    """Gibt WHERE-Clause und params-Dict für Gruppen-Filter zurück.
+
+    "all" heißt wörtlich ALLES, was in qc_rating_check steht.
+
+    Stand 16.09.2026 ist das noch unkritisch: die Tabelle enthält 2.150 Spieler
+    in 250.872 Fenstern, und alle stammen aus den kuratierten Gruppen — die 271
+    Spieler ohne analysis_group (42.311 Fenster) sind durchweg swiss_2026, also
+    ebenfalls bewusst ausgewählt. "all" und "curated" liefern deshalb aktuell
+    identische Zahlen.
+
+    Das ändert sich beim nächsten scripts/quality_check.py --rebuild: der speist
+    qc_rating_check ungefiltert aus scrape_periods, und das sind inzwischen
+    243.541 Spieler statt 2.150. Ab dann beschreibt "all" eine völlig andere
+    Grundgesamtheit als bisher, ohne dass es der Kennzahl anzusehen wäre — genau
+    dafür gibt es "curated" und die Anzeige der effektiven Population auf der
+    Seite (siehe load_scope_summary()).
+    """
     if not group or group == "all":
         return "TRUE", {}
+    if group == "curated":
+        # Alle kuratierten Gruppen zusammen — der Scope, den die QC-Seiten vor
+        # dem Welt-Backfill faktisch hatten.
+        return "(p.analysis_group IS NOT NULL OR p.swiss_2026 = TRUE)", {}
+    if group == "rated":
+        return "p.std_rating > 0", {}
     if group == "swiss_2026":
         return "p.swiss_2026 = TRUE", {}
+    if group.startswith(BAND_PREFIX):
+        # Bewusst p.std_rating, NICHT q.published_start: diese Clause wird auch
+        # von den Korrektur-Queries benutzt, die aus rating_corrections rc lesen
+        # und gar keinen q-Alias haben — eine Referenz auf q wäre dort ein
+        # SQL-Fehler. Nur p ist in jeder Query garantiert vorhanden.
+        #
+        # Rating-Drift-Caveat (wie in orchestrator/coverage.py): Das Band folgt
+        # damit dem HEUTIGEN Rating, nicht dem zum Zeitpunkt des Fensters. Ein
+        # Spieler, der 2015 bei 1600 stand und heute 2100 hat, erscheint in
+        # f_2100_2149. Soll stattdessen nach published_start gebändert werden,
+        # braucht _group_where() einen rating_expr-Parameter und jede
+        # qc_rating_check-Query muss ihn setzen — bewusst nicht jetzt.
+        return ("fn_elo_group(p.std_rating, p.sex) = %(group)s",
+                {"group": group[len(BAND_PREFIX):]})
     return "p.analysis_group = %(group)s", {"group": group}
 
 
@@ -71,16 +112,63 @@ def get_federation_options() -> list[dict]:
 
 
 def get_group_options() -> list[dict]:
-    """Dropdown-Optionen: Alle + analysis_group-Werte + swiss_2026."""
+    """Dropdown-Optionen: Sammel-Scopes + analysis_group-Werte + ELO-Bänder.
+
+    Die Bänder kommen aus fn_elo_group() (Migration 017) — dieselben Namen wie
+    im Coverage-Tab und in den Notebooks. Sie werden aus den tatsächlich in
+    qc_rating_check vorhandenen Fenstern abgeleitet, damit keine leeren
+    Auswahlmöglichkeiten in der Liste stehen.
+    """
+    opts = [
+        {"label": "Alle (gesamte gescrapte Population)", "value": "all"},
+        {"label": "Nur kuratierte Gruppen", "value": "curated"},
+        {"label": "Nur bewertete Spieler (std_rating > 0)", "value": "rated"},
+    ]
+
     df = _fetch(
         "SELECT DISTINCT analysis_group FROM players "
         "WHERE analysis_group IS NOT NULL ORDER BY analysis_group"
     )
-    opts = [{"label": "Alle Gruppen", "value": "all"}]
     for g in df["analysis_group"].tolist():
         opts.append({"label": g, "value": g})
     opts.append({"label": "swiss_2026", "value": "swiss_2026"})
+
+    try:
+        bands = _fetch("""
+            SELECT DISTINCT fn_elo_group(p.std_rating, p.sex) AS band
+            FROM qc_rating_check q
+            JOIN players p USING (fide_id)
+            WHERE p.std_rating > 0
+            ORDER BY band
+        """)
+        for b in bands["band"].dropna().tolist():
+            opts.append({"label": f"Band {b}", "value": f"{BAND_PREFIX}{b}"})
+    except Exception:
+        # Ohne Migration 017 fehlt fn_elo_group — die Seite soll trotzdem laden,
+        # nur eben ohne Band-Auswahl.
+        pass
+
     return opts
+
+
+def load_scope_summary(group: str) -> dict:
+    """Effektive Grundgesamtheit des gewählten Scopes.
+
+    Gehört sichtbar auf die Seite: sonst ist einer Kennzahl nicht anzusehen, ob
+    sie sich auf 2.150 kuratierte oder 243.541 gescrapte Spieler bezieht.
+    """
+    clause, params = _group_where(group)
+    df = _fetch(f"""
+        SELECT COUNT(DISTINCT q.fide_id) AS spieler, COUNT(*) AS fenster
+        FROM qc_rating_check q
+        JOIN players p USING (fide_id)
+        WHERE {clause}
+    """, params)
+    row = df.iloc[0] if not df.empty else {}
+    return {
+        "spieler": int(row.get("spieler", 0) or 0),
+        "fenster": int(row.get("fenster", 0) or 0),
+    }
 
 
 # ---------------------------------------------------------------------------

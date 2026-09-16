@@ -59,16 +59,25 @@ YEAR_END     = '2008-10-01'
 code("""
 # Players with 2008 warn/error
 df_players = pd.read_sql(\"\"\"
-    SELECT DISTINCT q.fide_id, p.name, p.analysis_group
+    SELECT DISTINCT q.fide_id, p.name, COALESCE(p.analysis_group, 'ohne Gruppe') AS analysis_group
     FROM qc_rating_check q
     JOIN players p USING (fide_id)
     WHERE EXTRACT(YEAR FROM q.period_end) = 2008
       AND q.flag IN ('warn', 'error')
-    ORDER BY p.analysis_group, p.name
+    ORDER BY analysis_group, p.name
 \"\"\", conn)
 
 print(f"Spieler mit 2008-Abweichungen: {len(df_players)}")
 print(df_players.groupby('analysis_group')['fide_id'].count().to_string())
+
+# Explizit statt implizit: pandas' groupby(dropna=True) laesst Spieler ohne
+# analysis_group stillschweigend verschwinden. Durch COALESCE oben heissen sie
+# jetzt 'ohne Gruppe' und tauchen in der Zaehlung auf. Relevant, weil
+# quality_check.py qc_rating_check ungefiltert aus scrape_periods speist: beim
+# naechsten --rebuild waechst diese Menge von heute 0 auf die gesamte
+# gescrapte Population.
+n_ohne = (df_players['analysis_group'] == 'ohne Gruppe').sum()
+print(f"davon ohne kuratierte Gruppe: {n_ohne} von {len(df_players)}")
 """)
 
 code("""

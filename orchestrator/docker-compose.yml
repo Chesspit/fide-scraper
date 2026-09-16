@@ -128,6 +128,21 @@ services:
     # 'docker compose stop'. Worker selbst exitiert nicht mehr bei "stopped"-Command,
     # sondern wartet im Poll-Loop auf den Start-Befehl vom Dashboard.
     restart: unless-stopped
+    # Memory-Vorfall 12.–14.09.2026: Worker-RSS ist über mehrere Tage Laufzeit auf
+    # >5 GB gewachsen und hat dabei den Host so knapp gemacht, dass der Kernel-OOM-Killer
+    # stattdessen einen Postgres-Backend-Prozess (fide-tunnelbliq-shared-db) erschossen hat.
+    # Hartes Limit hier begrenzt den Schaden auf den Worker selbst (cgroup-OOM statt
+    # Host-weiter Kernel-OOM) — behebt das zugrunde liegende Leck nicht, verhindert aber,
+    # dass der Worker wieder Nachbar-Container mit in den Abgrund reisst.
+    mem_limit: 4g
+    mem_reservation: 2g
+    # Default-Log-Rotation (10m × 3 = 30MB) reicht bei der Log-Menge des Workers oft nur
+    # für Stunden statt Tage — genau das hat die Forensik zum 12.09.-Vorfall verhindert.
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "10"
 
 volumes:
   orchestrator_data:

@@ -18,7 +18,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 def get_conn():
     cfg = dotenv_values(PROJECT_ROOT / ".env.notebook")
-    return psycopg2.connect(cfg["DATABASE_URL"])
+    conn = psycopg2.connect(cfg["DATABASE_URL"])
+    # VPS-Container hat ein sehr kleines /dev/shm; parallele Hash-Joins/-Sorts
+    # laufen dort in "could not resize shared memory segment ... No space left
+    # on device" (beobachtet bei größeren Ad-hoc-Joins, z.B. Notebook 15).
+    with conn.cursor() as cur:
+        cur.execute("SET max_parallel_workers_per_gather = 0")
+    conn.commit()
+    return conn
 
 
 def load_view(name: str) -> pd.DataFrame:

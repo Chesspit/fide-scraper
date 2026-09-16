@@ -41,7 +41,20 @@ def make_notebook(path: Path, cells: list[tuple[str, str]]):
 # ------------------------------------------------------------
 # 01 — Opponent structure
 # ------------------------------------------------------------
+DEPRECATION_NOTICE = (
+    "> ⚠️ **Methodisch überholt (2026-07-31):** Diese Analyse nutzt die statischen Gruppen "
+    "`female_top`/`male_control` (`players.analysis_group`), die aktuell nur unvollständig "
+    "befüllt sind (`groups.backfill_status='partial'`, nur 23/66 bzw. 48/649 Spieler gelabelt "
+    "— siehe `docs/project_status.md` Abschnitt 6.7). Für den Frauen-vs-Männer-Vergleich siehe "
+    "stattdessen **Notebook 14** (`14_top40_female_vs_band_men.ipynb`): survivorship-bias-freie "
+    "Kohorte (Top-40-Frauen nach `rating_history.published_rating` je Jahresende 2016–2025) vs. "
+    "Männer im selben Elo-Band, dynamisch aus `rating_history` abgeleitet — kein "
+    "Scraping-Backfill nötig, kein Label-Pflegeaufwand "
+    "(siehe `docs/ideen_verbesserungen.md`, Abschnitte F2/F7)."
+)
+
 nb01 = [
+    ("md", DEPRECATION_NOTICE),
     ("md", "# 01 — Gegnerstruktur\n\n"
            "Frage: *Unterscheidet sich die Gegnerstruktur zwischen female_top (ELO 2400–2600) "
            "und male_control (age-matched)?*\n\n"
@@ -110,6 +123,7 @@ make_notebook(NBDIR / "01_opponent_structure.ipynb", nb01)
 # 02 — Rating volatility
 # ------------------------------------------------------------
 nb02 = [
+    ("md", DEPRECATION_NOTICE),
     ("md", "# 02 — Rating-Volatilität\n\n"
            "Frage: *Schwanken die Ratings in einer Gruppe stärker als in der anderen?*\n\n"
            "Kennzahl: `normalized_volatility` = Ø |rating_change| geteilt durch K-Faktor — "
@@ -168,6 +182,7 @@ make_notebook(NBDIR / "02_rating_volatility.ipynb", nb02)
 # 03 — Tournament frequency
 # ------------------------------------------------------------
 nb03 = [
+    ("md", DEPRECATION_NOTICE),
     ("md", "# 03 — Turnierfrequenz\n\n"
            "Frage: *Spielen die beiden Gruppen gleich oft?*\n\n"
            "Kennzahlen: `num_games` und `num_tournaments` pro (Spieler, Periode)."),
@@ -225,6 +240,7 @@ make_notebook(NBDIR / "03_tournament_frequency.ipynb", nb03)
 # 04 — Rating progression
 # ------------------------------------------------------------
 nb04 = [
+    ("md", DEPRECATION_NOTICE),
     ("md", "# 04 — Rating-Progression\n\n"
            "Frage: *Entwickelt sich das Rating der beiden Gruppen über Zeit unterschiedlich?*\n\n"
            "Kennzahl: `rating_delta_from_start` pro Spieler × Periode (Median + IQR pro Gruppe)."),

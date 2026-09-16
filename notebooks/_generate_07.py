@@ -40,7 +40,19 @@ def make_notebook(path: Path, cells: list[tuple[str, str]]):
     print(f"wrote {path}")
 
 
+DEPRECATION_NOTICE = (
+    "> ⚠️ **Methodisch überholt (2026-07-31):** Diese Analyse nutzt die statische Gruppe "
+    "`female_top` (`players.analysis_group`), die aktuell nur unvollständig befüllt ist "
+    "(`groups.backfill_status='partial'`, nur 23 von 66 Spielerinnen gelabelt — siehe "
+    "`docs/project_status.md` Abschnitt 6.7). Für den Frauen-vs-Männer-Vergleich siehe "
+    "stattdessen **Notebook 14** (`14_top40_female_vs_band_men.ipynb`): survivorship-bias-freie "
+    "Kohorte (Top-40-Frauen nach `rating_history.published_rating` je Jahresende 2016–2025) vs. "
+    "Männer im selben Elo-Band, dynamisch aus `rating_history` abgeleitet "
+    "(siehe `docs/ideen_verbesserungen.md`, Abschnitte F2/F7)."
+)
+
 nb07 = [
+    ("md", DEPRECATION_NOTICE),
     ("md", "# 07 — Peer- / Stärke-Performance der Top-Spielerinnen\n\n"
            "**Drei Fragen pro Alters-Kohorte, jeweils aufgeteilt nach Gegnerstärke und Gegner-Geschlecht:**\n"
            "1. Wie viele Partien insgesamt — stärker / gleich / schwächer?\n"

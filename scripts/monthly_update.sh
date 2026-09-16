@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Monatliches FIDE-Update: TXT-Snapshot importieren, dann P1/P2/P3-Monatsrefresh
-# auf dem VPS-Orchestrator anstoßen.
+# Monatliches FIDE-Update: Rating-Liste herunterladen, TXT-Snapshot importieren,
+# dann P1/P2/P3-Monatsrefresh und P0-Neuzugänge auf dem VPS-Orchestrator anstoßen.
 #
 # Läuft komplett ohne Mac Mini / MacBook Pro — das eigentliche Nachscrapen
 # übernehmen die dc_update_1/2/3-Threads auf dem VPS (siehe
 # orchestrator/generate_monthly_refresh_batches.py / reset_monthly_refresh.py).
 #
-# Voraussetzung: TXT-Datei bereits in data/ abgelegt
-#   data/players_list_foa_YYYY-MM.txt  (oder .zip)  bzw. standard_*frl.zip
+# TÄGLICH LAUFEN LASSEN, nicht monatlich: FIDE veröffentlicht die neue Liste
+# nicht an einem festen Kalendertag. Ist sie noch nicht da, endet das Skript
+# sauber mit Exit 0 (No-Op) und versucht es am nächsten Tag erneut. Der Import
+# selbst ist idempotent (period_already_imported() in import_rating_snapshots.py),
+# ein Doppellauf schadet also nicht.
+# Automatisierung: scripts/net.chesspit.fide-monthly-update.plist (launchd, Mac).
 #
 # Verwendung:
 #   bash scripts/monthly_update.sh 2026-05-01    # expliziter Monat
@@ -18,8 +22,30 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DB_URL="${DATABASE_URL:-postgresql://fide:nimzo194.@localhost:5434/fidedb}"
 
+# launchd erbt KEIN interaktives Shell-Environment — ein blankes "python3" wäre
+# dort entweder das System-Python (ohne psycopg2) oder gar nicht auffindbar.
+PY="$SCRIPT_DIR/.venv/bin/python3"
+[ -x "$PY" ] || PY="$(command -v python3)"
+
+# FIDE-Download: verifiziert am 2026-09-16 — standard_sep26frl.zip liefert
+# HTTP 200 (application/zip, 13,3 MB), noch nicht veröffentlichte Monate
+# (oct26, jan27) sauber HTTP 404. Das neuere Schema
+# standard_rating_list_<mmm><yy>.zip existiert unter /download/ NICHT (404),
+# auch wenn import_rating_snapshots.py es beim Einlesen unterstützt.
+FIDE_DOWNLOAD_BASE="https://ratings.fide.com/download"
+
+# Doppellauf verhindern (RunAtLoad + StartCalendarInterval können am selben Tag
+# beide feuern). Kein flock: macOS liefert nur Bash 3.2 ohne flock(1), siehe
+# denselben Hinweis in scripts/pull_backup_macmini.sh.
+LOCKDIR="/tmp/fide-monthly-update.lock"
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+    echo "$(date): Ein anderer Lauf ist noch aktiv ($LOCKDIR) — überspringe."
+    exit 0
+fi
+trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
+
 # Ziel-Monat ermitteln
-NEW_PERIOD=${1:-$(python3 -c "
+NEW_PERIOD=${1:-$("$PY" -c "
 from datetime import date
 t = date.today()
 m = t.month - 1 or 12
@@ -31,8 +57,49 @@ echo "$(date): ========================================"
 echo "$(date): Monatliches FIDE-Update: $NEW_PERIOD"
 echo "$(date): ========================================"
 
-# --- Schritt 1: TXT-Datei suchen (unterstützt alle FIDE-Namensformate) ---
-IMPORT_FILE=$(NEW_PERIOD="$NEW_PERIOD" SCRIPT_DIR="$SCRIPT_DIR" python3 - <<'PYEOF'
+# --- Schritte 3+4 (Definition): VPS-Orchestrator — Refresh-Gruppen requeuen ---
+# Schritt 3 setzt NUR die P1/P2/P3-Gruppen zurück (federation-Sentinel, siehe
+# orchestrator/monthly_refresh_tiers.py), Schritt 4 NUR die P0-Gruppen (nie
+# gescrapte aktive Spieler, ohne Jahres-Rollover — P0 ist bewusst mehrjährig).
+# Der laufende Welt-Backfill (dc_ae/de/es/hk/in/mx/uk/us/dach) bleibt in beiden
+# Fällen unangetastet; scrape_periods sorgt für idempotentes Überspringen
+# bereits gescrapter Perioden.
+run_vps_resets() {
+    local ok=0
+    echo ""
+    echo "$(date): === Schritt 3/4: VPS-Orchestrator — P1/P2/P3-Monatsrefresh requeuen ==="
+    ssh pit@187.124.181.116 \
+        "cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_monthly_refresh.py" \
+        || { echo "$(date): WARNUNG: reset_monthly_refresh.py fehlgeschlagen."; ok=1; }
+
+    echo ""
+    echo "$(date): === Schritt 4/4: VPS-Orchestrator — P0-Neuzugänge requeuen ==="
+    ssh pit@187.124.181.116 \
+        "cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_new_entrant_refresh.py" \
+        || { echo "$(date): WARNUNG: reset_new_entrant_refresh.py fehlgeschlagen."; ok=1; }
+
+    return $ok
+}
+
+# Offener Reset aus einem früheren Lauf (SSH war z.B. unterwegs nicht erreichbar)?
+# Zuerst nachholen — sonst liegt ein importierter Monat da, den niemand nachscrapt.
+PENDING_RESET_MARKER="$SCRIPT_DIR/data/.pending_vps_reset"
+if [ -f "$PENDING_RESET_MARKER" ]; then
+    echo "$(date): Offener VPS-Reset aus früherem Lauf gefunden — hole ihn zuerst nach."
+    if run_vps_resets; then
+        rm -f "$PENDING_RESET_MARKER"
+        echo "$(date): Nachgeholter Reset erfolgreich."
+    else
+        echo "$(date): Nachholen erneut fehlgeschlagen — Marker bleibt bestehen."
+    fi
+fi
+
+# data/ liegt nicht im Repo (nur .gitignore-Einträge) und fehlt auf frischen
+# Checkouts komplett — ohne mkdir scheitert die Suche unten am fehlenden Ordner.
+mkdir -p "$SCRIPT_DIR/data"
+
+find_import_file() {
+    NEW_PERIOD="$NEW_PERIOD" SCRIPT_DIR="$SCRIPT_DIR" "$PY" - <<'PYEOF'
 import sys, os
 sys.path.insert(0, os.environ['SCRIPT_DIR'])
 from pathlib import Path
@@ -46,12 +113,55 @@ for f in sorted(data_dir.glob('*.txt')) + sorted(data_dir.glob('*.zip')):
         sys.exit(0)
 sys.exit(1)
 PYEOF
-)
+}
+
+# --- Schritt 1: TXT-Datei suchen (unterstützt alle FIDE-Namensformate) ---
+IMPORT_FILE=$(find_import_file)
+
+# --- Schritt 1b: fehlt sie, von FIDE laden ---
+# Bewusst NACH der Suche: liegt die Periode bereits unter einem anderen
+# Namensschema vor (z.B. players_list_foa_2026-04.txt), wird nichts geladen.
+if [ -z "$IMPORT_FILE" ]; then
+    TARGET_NAME=$(NEW_PERIOD="$NEW_PERIOD" "$PY" -c "
+import os
+y, m, _ = os.environ['NEW_PERIOD'].split('-')
+# Feste Monatsliste statt strftime('%b') — das waere locale-abhaengig und
+# lieferte unter einer deutschen Locale 'Okt' statt 'oct'.
+mmm = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'][int(m)-1]
+print(f'standard_{mmm}{y[2:]}frl.zip')
+")
+    TARGET_PATH="$SCRIPT_DIR/data/$TARGET_NAME"
+    URL="$FIDE_DOWNLOAD_BASE/$TARGET_NAME"
+
+    echo "$(date): Keine lokale Datei für $NEW_PERIOD — lade $URL"
+    # Nach .part laden und erst danach umbenennen: ein abgebrochener Download
+    # unter dem Zielnamen wuerde von find_import_file() als gueltig erkannt.
+    HTTP=$(curl -sS -L --max-time 900 --retry 3 --retry-delay 5 \
+                -o "$TARGET_PATH.part" -w '%{http_code}' "$URL" 2>/dev/null)
+
+    if [ "$HTTP" = "404" ]; then
+        rm -f "$TARGET_PATH.part"
+        echo "$(date): FIDE-Liste $TARGET_NAME noch nicht veröffentlicht (HTTP 404) — nichts zu tun."
+        echo "$(date): (Kein Fehler: das Skript läuft täglich und holt sie, sobald sie da ist.)"
+        exit 0
+    fi
+
+    # Echte ZIP? curl schreibt auch Fehlerseiten in die Datei, deshalb Magic-Bytes
+    # pruefen statt nur den Statuscode.
+    if [ "$HTTP" != "200" ] || [ ! -s "$TARGET_PATH.part" ] \
+       || [ "$(head -c 2 "$TARGET_PATH.part")" != "PK" ]; then
+        rm -f "$TARGET_PATH.part"
+        echo "$(date): FEHLER: Download von $URL fehlgeschlagen (HTTP $HTTP)."
+        exit 1
+    fi
+
+    mv "$TARGET_PATH.part" "$TARGET_PATH"
+    echo "$(date): Heruntergeladen: $TARGET_PATH ($(wc -c < "$TARGET_PATH" | tr -d ' ') Bytes)"
+    IMPORT_FILE=$(find_import_file)
+fi
 
 if [ -z "$IMPORT_FILE" ]; then
-    echo ""
-    echo "FEHLER: Keine TXT/ZIP-Datei für Monat $NEW_PERIOD in data/ gefunden."
-    echo "Herunterladen von: https://ratings.fide.com/download_lists.phtml"
+    echo "$(date): FEHLER: Datei für $NEW_PERIOD auch nach dem Download nicht auffindbar."
     exit 1
 fi
 echo "$(date): TXT-Datei: $IMPORT_FILE"
@@ -65,36 +175,38 @@ if echo "$DB_URL" | grep -q ":5434"; then
     fi
 fi
 
-# --- Schritt 2: TXT-Snapshot importieren ---
-echo ""
-echo "$(date): === Schritt 2/3: TXT-Snapshot importieren ==="
-DATABASE_URL="$DB_URL" python3 "$SCRIPT_DIR/scripts/import_rating_snapshots.py" \
-    --file "$IMPORT_FILE"
-
-# --- Schritt 3: VPS-Orchestrator — P1/P2/P3-Monatsrefresh requeuen ---
-# Setzt NUR die P1/P2/P3-Gruppen (federation-Sentinel, siehe
-# orchestrator/monthly_refresh_tiers.py) zurück — der separate, laufende
-# Welt-Backfill (dc_ae/de/es/hk/in/mx/uk/us/dach) bleibt unangetastet.
-# PostgreSQL scrape_periods sorgt für idempotentes Überspringen bereits
-# gescrapter Perioden — nur der neue Monat wird tatsächlich nachgeholt.
-echo ""
-echo "$(date): === Schritt 3/4: VPS-Orchestrator — P1/P2/P3-Monatsrefresh requeuen ==="
-if ! ssh pit@187.124.181.116 \
-    "cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_monthly_refresh.py"; then
-    echo "$(date): WARNUNG: reset_monthly_refresh.py auf VPS fehlgeschlagen — manuell nachholen:"
-    echo "  ssh pit@187.124.181.116 \"cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_monthly_refresh.py\""
+# Ein lauschender Port heißt noch nicht, dass die DB antwortet (halb toter
+# Tunnel nach Netzwechsel). Ohne diesen Check liefe der Import in einen
+# minutenlangen Timeout statt sofort verständlich abzubrechen.
+if ! DB_URL="$DB_URL" "$PY" -c "
+import os, sys
+import psycopg2
+try:
+    psycopg2.connect(os.environ['DB_URL'], connect_timeout=10).cursor().execute('SELECT 1')
+except Exception as exc:
+    print(exc, file=sys.stderr)
+    sys.exit(1)
+"; then
+    echo "$(date): FEHLER: Keine DB-Verbindung über $DB_URL — Tunnel prüfen (scripts/tunnel.sh)."
+    exit 1
 fi
 
-# --- Schritt 4: VPS-Orchestrator — P0-Neuzugänge requeuen ---
-# Setzt NUR die P0-Gruppen zurück (nie gescrapte, aktive Spieler seit dem
-# letzten Lauf, siehe orchestrator/reset_new_entrant_refresh.py) — anders
-# als P1/P2/P3 KEIN Jahres-Rollover (P0 ist bewusst mehrjährig, 2025+2026).
+# --- Schritt 2: TXT-Snapshot importieren ---
 echo ""
-echo "$(date): === Schritt 4/4: VPS-Orchestrator — P0-Neuzugänge requeuen ==="
-if ! ssh pit@187.124.181.116 \
-    "cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_new_entrant_refresh.py"; then
-    echo "$(date): WARNUNG: reset_new_entrant_refresh.py auf VPS fehlgeschlagen — manuell nachholen:"
-    echo "  ssh pit@187.124.181.116 \"cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_new_entrant_refresh.py\""
+echo "$(date): === Schritt 2/4: TXT-Snapshot importieren ==="
+if ! DATABASE_URL="$DB_URL" "$PY" "$SCRIPT_DIR/scripts/import_rating_snapshots.py" \
+    --file "$IMPORT_FILE"; then
+    echo "$(date): FEHLER: Import von $IMPORT_FILE fehlgeschlagen — VPS-Schritte werden übersprungen."
+    exit 1
+fi
+
+if run_vps_resets; then
+    rm -f "$PENDING_RESET_MARKER"
+else
+    # Ohne Marker bliebe ein gescheiterter Reset unbemerkt liegen: der Import
+    # gilt dann als erledigt, aber niemand scrapt den neuen Monat nach.
+    touch "$PENDING_RESET_MARKER"
+    echo "$(date): Reset vorgemerkt ($PENDING_RESET_MARKER) — der nächste Lauf holt ihn nach."
 fi
 
 echo ""

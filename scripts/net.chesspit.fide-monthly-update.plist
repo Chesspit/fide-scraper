@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- fide-scraper: taeglicher Versuch, die neue FIDE-Rating-Liste zu holen und den
+     Monatsrefresh (P1/P2/P3) + die P0-Neuzugaenge auf dem VPS anzustossen
+     (siehe scripts/monthly_update.sh).
+
+     Warum TAEGLICH statt monatlich: FIDE veroeffentlicht die Liste nicht an einem
+     festen Kalendertag. Das Skript prueft, ob die Datei schon da ist; wenn nicht,
+     endet es mit Exit 0 (No-Op) und versucht es am naechsten Tag erneut. Import und
+     Requeue sind idempotent, ein Mehrfachlauf im selben Monat schadet also nicht.
+
+     RunAtLoad zusaetzlich zu StartCalendarInterval: der Mac Mini faehrt nachts
+     komplett runter (echter Shutdown, kein Sleep) und bootet erst gegen 08-09 Uhr
+     wieder hoch. Nach laengerer Abwesenheit holt RunAtLoad den Lauf beim ersten
+     Boot nach; StartCalendarInterval (10:00, also nach dem 09:30-Backup-Pull, um
+     nicht mit dessen rsync um den SSH-Tunnel zu konkurrieren) bleibt der Normalfall.
+     Doppellaeufe durch beide Trigger am selben Tag faengt der mkdir-Lock im Skript ab.
+
+     Install:  cp scripts/net.chesspit.fide-monthly-update.plist ~/Library/LaunchAgents/
+               launchctl load ~/Library/LaunchAgents/net.chesspit.fide-monthly-update.plist -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>net.chesspit.fide-monthly-update</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/macminipit/PARA/1_Projects_Git/fide-scraper/scripts/monthly_update.sh</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>10</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/macminipit/backups/fide-scraper/monthly.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/macminipit/backups/fide-scraper/monthly.err</string>
+</dict>
+</plist>

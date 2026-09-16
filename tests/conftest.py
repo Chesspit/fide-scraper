@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS public.players (
     name            TEXT,
     federation      CHAR(3),
     std_rating      INTEGER,
+    sex             CHAR(1),
     active          BOOLEAN DEFAULT TRUE,
     analysis_group  TEXT
 );
@@ -184,12 +185,12 @@ class DataTestDB(QueueTestDB):
 
     def insert_player(self, fide_id: int, **kwargs) -> int:
         defaults = dict(name=f"Player {fide_id}", federation="GER",
-                        std_rating=2000, active=True, analysis_group=None)
+                        std_rating=2000, sex="M", active=True, analysis_group=None)
         defaults.update(kwargs)
         self.execute(
             """INSERT INTO public.players
-               (fide_id, name, federation, std_rating, active, analysis_group)
-               VALUES (%(fide_id)s,%(name)s,%(federation)s,%(std_rating)s,
+               (fide_id, name, federation, std_rating, sex, active, analysis_group)
+               VALUES (%(fide_id)s,%(name)s,%(federation)s,%(std_rating)s,%(sex)s,
                        %(active)s,%(analysis_group)s)""",
             {"fide_id": fide_id, **defaults},
         )

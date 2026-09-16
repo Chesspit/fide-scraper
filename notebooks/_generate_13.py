@@ -13,7 +13,7 @@ BOILERPLATE = [
     "import sys",
     "from pathlib import Path",
     "sys.path.insert(0, str(Path.cwd()))",
-    "from _setup import load_query, apply_style, GROUP_PALETTE, GROUP_ORDER",
+    "from _setup import load_query, apply_style, elo_band, GROUP_PALETTE, GROUP_ORDER",
     "",
     "import numpy as np",
     "import pandas as pd",
@@ -119,11 +119,6 @@ nb13 = [
         "df['opponent_rating'] = pd.to_numeric(df['opponent_rating'], errors='coerce')\n"
         "df['diff'] = df['opponent_rating'] - df['own_rating']\n"
         "\n"
-        "def elo_band(r):\n"
-        "    if pd.isna(r):\n"
-        "        return 'unknown'\n"
-        "    lo = int(r // 50) * 50\n"
-        "    return f'{lo}-{lo + 49}'\n"
         "df['elo_band'] = df['own_rating'].apply(elo_band)\n"
         "\n"
         "def strength_bucket(d):\n"

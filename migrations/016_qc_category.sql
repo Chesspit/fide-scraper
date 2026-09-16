@@ -1,4 +1,7 @@
--- Migration 014: Ursachen-Kategorie für QC-Fenster
+-- Migration 016: Ursachen-Kategorie für QC-Fenster
+-- (16.09.2026 von 014 auf 016 umnummeriert: die Nummer 014 war bereits durch
+--  014_claimed_by.sql belegt. Inhaltlich unverändert, beide waren zu dem
+--  Zeitpunkt längst angewendet.)
 --
 -- category wird nur für flag != 'ok' gesetzt (OK-Fenster: NULL).
 -- Taxonomie + Klassifikationsregeln: scripts/quality_check.py::classify()

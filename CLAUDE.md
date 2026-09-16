@@ -165,6 +165,30 @@ neue Liste nicht an einem festen Kalendertag.
 
 Ohne Schritt 4 werden neue Spieler nie nachgezogen. Log: `~/backups/fide-scraper/monthly.log`.
 
+⚠️ **Der launchd-Job gehört auf genau EIN Gerät** (aktuell: Mac Mini). Der Lock liegt unter
+`/tmp` und wirkt nur lokal — zwei Rechner mit demselben Job würden sich gegenseitig nicht
+sehen und beide den VPS-Requeue auslösen. Auf einem zweiten Gerät das Skript nur manuell
+aufrufen, die `.plist` dort **nicht** installieren.
+
+---
+
+## Zweites Gerät einrichten (z. B. MacBook Pro)
+
+Repo klonen bzw. `git pull` reicht nicht — vier Dinge liegen bewusst nicht im Git:
+
+| Was | Wie |
+|---|---|
+| `.env` | aus `.env.example` erzeugen (DB_PASSWORD, DATABASE_URL, Proxy-Credentials) |
+| `.env.notebook` | eine Zeile: `DATABASE_URL=postgresql://fide:…@localhost:5434/fidedb` (nur für Notebooks) |
+| `.venv` | neu anlegen: `python3 -m venv .venv && .venv/bin/pip install -r scraper/requirements.txt` |
+| SSH-Key für den VPS | sonst scheitern Tunnel und die VPS-Schritte in `monthly_update.sh` |
+
+Danach `bash scripts/tunnel.sh` — ohne den Tunnel geht weder Notebook noch Import.
+
+**Nicht mit übernehmen:** die launchd-Jobs (`net.chesspit.fide-monthly-update`,
+`net.chesspit.fide-backup-pull`). Beide enthalten absolute Pfade unter
+`/Users/macminipit/…` und sind als Single-Instance gedacht — siehe Warnung oben.
+
 ---
 
 ## ARPAD (Chatbot)

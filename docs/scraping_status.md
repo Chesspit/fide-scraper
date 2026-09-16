@@ -376,7 +376,21 @@ Label seit heute `DI-UP-1` (vorher `DI-UPDATE-1`, siehe Session unten). `federat
 
 **P0 (`dc_newplayers_1`/`_2`): praktisch am Ende der ursprünglichen Warteschlange.** Beide Threads haben nur noch **1 Gruppe** offen — die jeweils letzte, größte Gruppe pro Thread (Rating-Band 0–1404, d. h. unbewertete/brandneue Spieler ohne Elo-Zahl). Diese läuft bei `dc_newplayers_1` seit 14.09. 11:00 Uhr (~45 Std.), bei `dc_newplayers_2` seit 14.09. 02:38 Uhr (~53 Std.) — deutlich länger als die bisher beobachteten 7–11 Std./Gruppe. **Live-Check bestätigt: kein Hänger** — `scrape_periods` zeigt laufend neue Einträge für Spieler mit `std_rating=0` (213 neue Zeilen in den letzten 15 Minuten), also aktiver Fortschritt, nur eben eine sehr viel größere/dichtere Spielerpopulation in diesem letzten Band als in den übrigen.
 
-> ⚠️ **TODO, sobald diese 2 letzten Gruppen fertig sind:** Der komplette P0-„Neuzugänge"-Bestand vom 01.09. ist dann abgearbeitet — **es braucht einen neuen Lauf, der seither neu hinzugekommene, nie gescrapte Spieler erfasst** (analog zum ursprünglichen P0-Batch-Generator vom 01.09., Commit `7bd302d`/`78731e2`), sonst laufen `dc_newplayers_1`/`_2` leer/ohne Arbeit. Noch nicht eingeplant/terminiert — beim nächsten Status-Check zuerst prüfen, ob die 2 Gruppen durch sind, und dann diesen Lauf anstoßen.
+> ✅ **Erledigt (16.09.):** Der TODO-Punkt „neuer Lauf für seither hinzugekommene Spieler" ist
+> durch die Automatisierung des Monatslaufs abgedeckt — `reset_new_entrant_refresh.py` setzt
+> die P0-Gruppen bei jedem erfolgreichen Monatsimport selbst auf `pending` zurück, und da die
+> Population live per `never_scraped_only` ermittelt wird, greifen dieselben Bänder automatisch
+> die Neuzugänge ab. Kein manueller Batch-Neubau nötig.
+>
+> **Stand 16.09. 16:10 UTC:** 145 von 146 P0-Gruppen `done`. Offen nur noch
+> `dc_newplayers_2` (Jahr 2026, ELO 1–1404), läuft seit 10:20 UTC — bei 2.224 Kombinationen
+> und ~8–10 s je Abfrage im Plan. Die Schwestergruppe (Jahr 2025) ist seit 11:22 UTC fertig
+> und fand **6 Partien für 278 Spieler** — wenig, aber plausibel: nie gescrapte Spieler mit
+> ELO 1–1404 sind selten turnieraktiv. Bestätigt nebenbei die Entscheidung, unbewertete
+> Spieler (`std_rating = 0`) gar nicht erst anzufassen.
+>
+> *(Die Gesamtzahl 146 liegt über den 116 Gruppen der beiden `dc_newplayers`-Threads: 30
+> P0-Gruppen waren per `orchestrator/reassign_p0_boost.py` an `dc_update_1` abgegeben worden.)*
 
 *(Randnotiz zur Gruppenzahl: Anfang September wurden 73 Gruppen/Thread erwartet, jetzt zeigt die DB nur noch 58/Thread als Gesamtzahl — vermutlich wurde die Warteschlange zwischenzeitlich neu gebaut/konsolidiert; keine funktionale Auswirkung, nur als Erklärung für die Abweichung zur alten Hochrechnung.)*
 

@@ -44,3 +44,9 @@ frontend/*.parquet
 
 # Frontend-Daten-Export
 frontend_data/
+
+# Analyse-Deliverables (generiert von scripts/generate_*_export.py)
+exports/
+
+# Lokale Claude-Code-Settings (nicht projektweit, pro Maschine/User)
+.claude/

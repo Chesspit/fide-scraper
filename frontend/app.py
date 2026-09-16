@@ -15,7 +15,7 @@ app.title = "ELO-Einsichten"
 # Aktiv: order 1–9  |  Test: order 10+  |  QC: order 20+
 _AKTIV_PATHS = {"/c", "/dist", "/player-profile", "/arpad"}
 _TEST_PATHS  = {"/games", "/titles"}
-_QC_PATHS    = {"/qc", "/qc-corrections"}
+_QC_PATHS    = {"/qc", "/qc-corrections", "/qc-cases"}
 
 
 def _nav_group(label: str, paths: set) -> html.Span:

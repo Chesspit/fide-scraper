@@ -15,10 +15,14 @@ Flags:
     warn  |delta| <= ERROR_THRESHOLD (default 15)
     error |delta| >  ERROR_THRESHOLD
 
+After computation every non-ok window is classified into a cause category
+(column qc_rating_check.category, see CATEGORIES below).
+
 Usage:
-    python quality_check.py                   # run + report
+    python quality_check.py                   # run + classify + report
     python quality_check.py --rebuild         # truncate + full rebuild
     python quality_check.py --report-only     # print report from existing data
+    python quality_check.py --classify-only   # re-classify existing windows only
     python quality_check.py --csv out.csv     # export warn+error rows to CSV
     python quality_check.py --warn 10 --error 25
 """
@@ -40,6 +44,17 @@ logger = logging.getLogger(__name__)
 
 WARN_THRESHOLD  = 5
 ERROR_THRESHOLD = 15
+
+# Ursachen-Taxonomie für non-ok-Fenster (Präzedenz = Reihenfolge; erste Regel gewinnt).
+# Quelle der Kategorien: docs/project_status.md §6.3.
+CATEGORIES = {
+    "struktur_2008":     "Fenster vor 2009: Quartalsfenster + global-Gruppen ohne Early-Scraping",
+    "fehlende_perioden": "Monate im Fenster ohne scrape_periods-Eintrag (Scraping-Lücke/offen)",
+    "spiegel_delta":     "Nachbarfenster mit entgegengesetztem Δadj, hebt sich im Paar auf",
+    "korrektur_rest":    "Bekannte FIDE-Korrektur im Fenster, erklärt das Delta nur teilweise",
+    "k40_verdacht":      "K=40-Monat im Fenster: Timing-Effekte schnell aufsteigender Spieler",
+    "unerklaert":        "Keine bekannte Ursache — genauer untersuchen",
+}
 
 # ── SQL ───────────────────────────────────────────────────────────────────────
 
@@ -234,6 +249,73 @@ def run_qc(
     return len(values)
 
 
+# ── Klassifikation ───────────────────────────────────────────────────────────
+
+_CLASSIFY_SQL = """
+WITH adj AS (
+    SELECT
+        fide_id,
+        period_start,
+        period_end,
+        (delta - correction) AS delta_adj,
+        LAG(delta - correction)  OVER w AS prev_adj,
+        LEAD(delta - correction) OVER w AS next_adj,
+        LAG(period_end)          OVER w AS prev_end,
+        LEAD(period_start)       OVER w AS next_start
+    FROM qc_rating_check
+    WINDOW w AS (PARTITION BY fide_id ORDER BY period_start)
+)
+UPDATE qc_rating_check q
+SET category = CASE
+    WHEN q.period_start < DATE '2009-01-01' THEN 'struktur_2008'
+    WHEN q.missing_periods > 0              THEN 'fehlende_perioden'
+    WHEN (a.next_start = q.period_end
+          AND ABS(a.delta_adj) >= %(warn)s AND ABS(a.next_adj) >= %(warn)s
+          AND ABS(a.delta_adj + a.next_adj) <= %(warn)s
+          AND a.delta_adj * a.next_adj < 0)
+      OR (a.prev_end = q.period_start
+          AND ABS(a.delta_adj) >= %(warn)s AND ABS(a.prev_adj) >= %(warn)s
+          AND ABS(a.delta_adj + a.prev_adj) <= %(warn)s
+          AND a.delta_adj * a.prev_adj < 0) THEN 'spiegel_delta'
+    WHEN q.correction <> 0                  THEN 'korrektur_rest'
+    WHEN EXISTS (
+        SELECT 1 FROM scrape_periods sp
+        WHERE sp.fide_id = q.fide_id
+          AND sp.period >  q.period_start
+          AND sp.period <= q.period_end
+          AND sp.k_factor = 40
+    )                                       THEN 'k40_verdacht'
+    ELSE 'unerklaert'
+END
+FROM adj a
+WHERE a.fide_id      = q.fide_id
+  AND a.period_start = q.period_start
+  AND a.period_end   = q.period_end
+  AND q.flag != 'ok'
+"""
+
+_CLASSIFY_RESET_SQL = """
+UPDATE qc_rating_check SET category = NULL
+WHERE flag = 'ok' AND category IS NOT NULL
+"""
+
+
+def classify(conn, warn: float) -> int:
+    """Klassifiziert alle non-ok-Fenster nach Ursache (Spalte category).
+
+    Präzedenz siehe CATEGORIES. Idempotent; OK-Fenster werden auf NULL
+    zurückgesetzt (relevant nach Re-Runs, wenn ein Fenster wieder ok wird).
+    Returns: Anzahl klassifizierter Fenster.
+    """
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute(_CLASSIFY_SQL, {"warn": warn})
+            n = cur.rowcount
+            cur.execute(_CLASSIFY_RESET_SQL)
+    logger.info("  %d non-ok windows classified", n)
+    return n
+
+
 # ── Report ────────────────────────────────────────────────────────────────────
 
 def print_report(conn, warn: float, error: float):
@@ -288,6 +370,34 @@ def print_report(conn, warn: float, error: float):
     for yr, n, ok_n, warn_n, err_n, avg_d, missing in year_rows:
         print(f"  {yr:<6} {n:>7,} {100*ok_n/n:>5.1f}% {warn_n:>5} {err_n:>5} {avg_d:>7} {missing:>9}")
     print()
+
+    # Kategorien nach Jahr (non-ok-Fenster)
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT
+                EXTRACT(YEAR FROM period_end)::int AS yr,
+                category,
+                COUNT(*) AS n
+            FROM qc_rating_check
+            WHERE flag != 'ok' AND category IS NOT NULL
+            GROUP BY yr, category
+            ORDER BY yr
+        """)
+        cat_rows = cur.fetchall()
+
+    if cat_rows:
+        cats = list(CATEGORIES)
+        by_year: dict[int, dict[str, int]] = {}
+        for yr, cat, n in cat_rows:
+            by_year.setdefault(yr, {})[cat] = n
+        print("  Ursachen-Kategorien (non-ok-Fenster) nach Jahr:")
+        header = "  " + f"{'Jahr':<6}" + "".join(f"{c[:14]:>16}" for c in cats)
+        print(header)
+        print("  " + "-" * (6 + 16 * len(cats)))
+        for yr in sorted(by_year):
+            row = by_year[yr]
+            print("  " + f"{yr:<6}" + "".join(f"{row.get(c, 0):>16,}" for c in cats))
+        print()
 
     # Annual checksum (2013+): Dec[Y-1] + Σ games + corrections = Dec[Y]
     with conn.cursor() as cur:
@@ -386,7 +496,8 @@ def print_report(conn, warn: float, error: float):
                 q.correction,
                 q.delta - q.correction          AS delta_adj,
                 q.missing_periods,
-                q.flag
+                q.flag,
+                q.category
             FROM qc_rating_check q
             JOIN players p USING (fide_id)
             WHERE q.flag != 'ok'
@@ -398,14 +509,14 @@ def print_report(conn, warn: float, error: float):
     if bad:
         print(f"  Top flagged windows (worst {len(bad)}, ordered by |Δ_adj|):")
         print(f"  {'FIDE-ID':>8} {'Name':<28} {'Gruppe':<14} {'T1':<10} {'T2':<10} "
-              f"{'Exp':>5} {'Got':>7} {'Δ':>6} {'Corr':>5} {'Δadj':>6} {'Miss':>5} {'Flag':<6}")
-        print("  " + "-" * 116)
+              f"{'Exp':>5} {'Got':>7} {'Δ':>6} {'Corr':>5} {'Δadj':>6} {'Miss':>5} {'Flag':<6} {'Kategorie':<18}")
+        print("  " + "-" * 135)
         for (fide_id, name, group, swiss, t1, t2,
-             pub_s, pub_e, exp, got, delta, corr, delta_adj, miss, flag) in bad:
+             pub_s, pub_e, exp, got, delta, corr, delta_adj, miss, flag, cat) in bad:
             grp = group or ("swiss" if swiss else "-")
             print(f"  {fide_id:>8} {name:<28.27} {grp:<14} {str(t1):<10} {str(t2):<10} "
                   f"{exp:>+5.0f} {got:>+7.1f} {delta:>+6.1f} {corr:>+5.0f} {delta_adj:>+6.1f} "
-                  f"{miss:>5} {flag:<6}")
+                  f"{miss:>5} {flag:<6} {cat or '-':<18}")
     else:
         print("  No flagged windows — data looks clean.")
     print()
@@ -420,7 +531,7 @@ def export_csv(conn, path: str):
                 q.published_start, q.published_end,
                 q.expected_change, q.scraped_change, q.delta,
                 q.correction, q.delta - q.correction AS delta_adj,
-                q.missing_periods, q.flag
+                q.missing_periods, q.flag, q.category
             FROM qc_rating_check q
             JOIN players p USING (fide_id)
             WHERE q.flag != 'ok'
@@ -451,6 +562,8 @@ def main():
                         help="Truncate qc_rating_check before computing")
     parser.add_argument("--report-only", action="store_true",
                         help="Print report from existing data, skip computation")
+    parser.add_argument("--classify-only", action="store_true",
+                        help="Re-classify existing windows (category), skip computation")
     parser.add_argument("--csv", metavar="FILE",
                         help="Export warn+error rows to CSV")
     parser.add_argument("--warn",  type=float, default=WARN_THRESHOLD,
@@ -468,9 +581,12 @@ def main():
         options="-c statement_timeout=1800000",  # 30 min; QC cross-join can be slow
     )
     try:
-        if not args.report_only:
+        if not args.report_only and not args.classify_only:
             run_qc(conn, warn=args.warn, error=args.error, rebuild=args.rebuild,
                    from_year=args.from_year, to_year=args.to_year)
+
+        if not args.report_only:
+            classify(conn, warn=args.warn)
 
         print_report(conn, warn=args.warn, error=args.error)
 

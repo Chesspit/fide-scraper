@@ -693,17 +693,3 @@ def start_coverage_warmer() -> None:
             time.sleep(COVERAGE_WARM_INTERVAL)
 
     threading.Thread(target=loop, name="coverage-warmer", daemon=True).start()
-    try:
-        from scraper.config import get_database_url
-        import psycopg2
-        from orchestrator import coverage as cov
-        pg = psycopg2.connect(get_database_url(), connect_timeout=5)
-        totals = cov.coverage_totals(pg, year_from=year_from, year_to=year_to)
-        pg.close()
-        _coverage_cache[key] = totals
-        _coverage_cache_ts[key] = time.time()
-        return totals
-    except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning("Coverage-Totals fehlgeschlagen: %s", exc)
-        return _coverage_cache.get(key, {})

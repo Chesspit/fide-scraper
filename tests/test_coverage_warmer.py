@@ -69,3 +69,13 @@ def test_failure_keeps_last_value(fake_compute, monkeypatch):
 
     monkeypatch.setattr(store, "_coverage_compute", boom)
     assert store.query_coverage("band", 2015, 2016) == [{"k": key}]
+
+
+def test_start_coverage_warmer_runs_in_background(fake_compute, monkeypatch):
+    monkeypatch.setattr(store, "COVERAGE_WARM_INTERVAL", 3600)
+    store.start_coverage_warmer()   # darf nicht blockieren oder werfen
+    for _ in range(50):
+        if len(fake_compute) >= 1 + len(store.COVERAGE_DIMENSIONS):
+            break
+        time.sleep(0.02)
+    assert len(fake_compute) >= 1 + len(store.COVERAGE_DIMENSIONS)

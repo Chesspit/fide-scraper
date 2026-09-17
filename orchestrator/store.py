@@ -581,14 +581,18 @@ def query_laender_data() -> list[dict]:
 # ---------------------------------------------------------------------------
 # Coverage (Ground-Truth-Abdeckung, orchestrator/coverage.py)
 # ---------------------------------------------------------------------------
-# Eigener Cache statt des 5-Min-Musters von query_pg_players(): die
-# Coverage-Aggregate scannen scrape_periods + game_results ueber mehrere Jahre
-# und brauchen gemessen 9-30 s pro Aufruf. Der Wert aendert sich in Stunden,
-# nicht in Minuten — 15 Min TTL halten das Dashboard benutzbar, ohne die
-# produktive (mit tunnelbliq geteilte) DB unnoetig zu belasten.
+# Die Aggregate scannen scrape_periods + game_results ueber mehrere Jahre und
+# brauchen gemessen 37-94 s pro Aufruf (VPS, 2026-09-17) — zu lange fuer einen
+# Klick. Deshalb rechnet start_coverage_warmer() die Standardansicht (alle
+# Dimensionen, COVERAGE_DEFAULT_YEAR_FROM bis heute) stuendlich im Hintergrund
+# vor; der Tab liest nur den Cache. Andere Zeitraeume werden beim ersten Aufruf
+# berechnet und eine Stunde gehalten. Die produktive DB ist mit tunnelbliq
+# geteilt, daher laufen die Abfragen im Warmer nacheinander, nie parallel.
 _coverage_cache: dict[tuple, object] = {}
 _coverage_cache_ts: dict[tuple, float] = {}
-_COVERAGE_TTL = 900.0   # 15 Min
+_COVERAGE_TTL = 3600.0            # on demand berechnete Zeitraeume
+COVERAGE_WARM_INTERVAL = 3600.0   # Vorberechnung der Standardansicht
+COVERAGE_DEFAULT_YEAR_FROM = 2020
 
 COVERAGE_DIMENSIONS = {
     "federation":     "Föderation",
@@ -598,7 +602,10 @@ COVERAGE_DIMENSIONS = {
 }
 
 
-def _coverage_call(dimension: str, year_from: int, year_to: int):
+def _coverage_compute(key: tuple):
+    """Rechnet einen Cache-Eintrag ('rows', dim, von, bis) bzw. ('totals', von, bis)."""
+    from scraper.config import get_database_url
+    import psycopg2
     from orchestrator import coverage as cov
     fns = {
         "federation":     cov.coverage_by_federation,
@@ -606,41 +613,86 @@ def _coverage_call(dimension: str, year_from: int, year_to: int):
         "elo_band":       cov.coverage_by_elo_band,
         "analysis_group": cov.coverage_by_analysis_group,
     }
-    return fns[dimension], cov.coverage_totals
+    pg = psycopg2.connect(get_database_url(), connect_timeout=5)
+    try:
+        if key[0] == "totals":
+            return cov.coverage_totals(pg, year_from=key[1], year_to=key[2])
+        return fns[key[1]](pg, year_from=key[2], year_to=key[3])
+    finally:
+        pg.close()
+
+
+def _coverage_warm_keys() -> list[tuple]:
+    year_from, year_to = COVERAGE_DEFAULT_YEAR_FROM, time.localtime().tm_year
+    return ([("totals", year_from, year_to)]
+            + [("rows", d, year_from, year_to) for d in COVERAGE_DIMENSIONS])
+
+
+def _coverage_get(key: tuple, empty):
+    """Cache lesen. Vorberechnete Schluessel nie synchron rechnen (der Warmer
+    liefert sie nach), alle anderen bei Bedarf rechnen. Bei DB-Problemen gilt
+    der letzte bekannte Stand — stale ist besser als ein weisses Dashboard."""
+    if key in _coverage_cache and (
+        key in _coverage_warm_keys()
+        or time.time() - _coverage_cache_ts[key] < _COVERAGE_TTL
+    ):
+        return _coverage_cache[key]
+    if key in _coverage_warm_keys():
+        return _coverage_cache.get(key, empty)
+    try:
+        value = _coverage_compute(key)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Coverage-Query %s fehlgeschlagen: %s", key, exc)
+        return _coverage_cache.get(key, empty)
+    _coverage_cache[key] = value
+    _coverage_cache_ts[key] = time.time()
+    return value
 
 
 def query_coverage(dimension: str, year_from: int, year_to: int) -> list[dict]:
-    """Coverage-Zeilen einer Dimension (gecacht, 15 Min TTL).
-
-    Liefert bei DB-Problemen den letzten bekannten Stand statt einer Exception —
-    dieselbe Abwaegung wie in query_pg_players(): stale ist besser als nichts,
-    das Dashboard soll nicht wegen eines Tunnel-Hickups weiss bleiben.
-    """
-    key = ("rows", dimension, year_from, year_to)
-    if time.time() - _coverage_cache_ts.get(key, 0.0) < _COVERAGE_TTL:
-        return _coverage_cache.get(key, [])
-    try:
-        from scraper.config import get_database_url
-        import psycopg2
-        fn, _ = _coverage_call(dimension, year_from, year_to)
-        pg = psycopg2.connect(get_database_url(), connect_timeout=5)
-        rows = fn(pg, year_from=year_from, year_to=year_to)
-        pg.close()
-        _coverage_cache[key] = rows
-        _coverage_cache_ts[key] = time.time()
-        return rows
-    except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning("Coverage-Query (%s) fehlgeschlagen: %s",
-                                            dimension, exc)
-        return _coverage_cache.get(key, [])
+    """Coverage-Zeilen einer Dimension (siehe _coverage_get)."""
+    return _coverage_get(("rows", dimension, year_from, year_to), [])
 
 
 def query_coverage_totals(year_from: int, year_to: int) -> dict:
-    """Kopfzahl: Gesamtabdeckung ueber den Zeitraum (gecacht, 15 Min TTL)."""
-    key = ("totals", year_from, year_to)
-    if time.time() - _coverage_cache_ts.get(key, 0.0) < _COVERAGE_TTL:
-        return _coverage_cache.get(key, {})
+    """Kopfzahl: Gesamtabdeckung ueber den Zeitraum (siehe _coverage_get)."""
+    return _coverage_get(("totals", year_from, year_to), {})
+
+
+def coverage_stand(dimension: str, year_from: int, year_to: int) -> float | None:
+    """Zeitpunkt (epoch) der angezeigten Tabellenzeilen, None = noch nie berechnet."""
+    return _coverage_cache_ts.get(("rows", dimension, year_from, year_to))
+
+
+def coverage_is_warm_key(dimension: str, year_from: int, year_to: int) -> bool:
+    return ("rows", dimension, year_from, year_to) in _coverage_warm_keys()
+
+
+def warm_coverage_once() -> None:
+    """Ein Durchlauf der Vorberechnung, Schluessel nacheinander."""
+    import logging
+    log = logging.getLogger(__name__)
+    for key in _coverage_warm_keys():
+        t0 = time.time()
+        try:
+            _coverage_cache[key] = _coverage_compute(key)
+            _coverage_cache_ts[key] = time.time()
+            log.info("Coverage vorberechnet %s in %.0f s", key, time.time() - t0)
+        except Exception as exc:
+            log.warning("Coverage-Vorberechnung %s fehlgeschlagen: %s", key, exc)
+
+
+def start_coverage_warmer() -> None:
+    """Daemon-Thread: Standardansicht sofort und dann stuendlich vorberechnen."""
+    import threading
+
+    def loop():
+        while True:
+            warm_coverage_once()
+            time.sleep(COVERAGE_WARM_INTERVAL)
+
+    threading.Thread(target=loop, name="coverage-warmer", daemon=True).start()
     try:
         from scraper.config import get_database_url
         import psycopg2

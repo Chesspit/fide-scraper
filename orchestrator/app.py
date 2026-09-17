@@ -11,7 +11,9 @@ Then open http://localhost:8050
 import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -1265,9 +1267,10 @@ _COV_COLS = [
 ]
 
 tab_coverage = dbc.Container(fluid=True, children=[
-    # 15 Min statt der sonst üblichen 5: die Aggregate scannen mehrere Jahre
-    # scrape_periods/game_results (gemessen 9–30 s je Abfrage).
-    dcc.Interval(id="interval-coverage", interval=900_000, n_intervals=0),
+    # Liest nur den Cache (store.start_coverage_warmer rechnet vor) — deshalb
+    # darf das Intervall kurz sein: nach dem Start erscheinen die Zahlen, sobald
+    # die erste Vorberechnung fertig ist.
+    dcc.Interval(id="interval-coverage", interval=60_000, n_intervals=0),
 
     dbc.Row([
         dbc.Col(metric_card("Perioden-Abdeckung im Zeitraum", "cov-pct", "#0d6efd"), width=3),
@@ -1308,9 +1311,11 @@ tab_coverage = dbc.Container(fluid=True, children=[
         ["Nenner: aktive Spieler mit ", html.Code("std_rating > 0"),
          " — unbewertete Spieler werden bewusst nicht gescrapt und zählen daher "
          "nicht mit. Soll-Perioden = aktive Spieler × gültige FIDE-Perioden des Jahres. "
-         "Erste Abfrage nach Tab-Wechsel dauert je nach Zeitraum einige Sekunden."],
-        style={"fontSize": "11px", "color": "#777", "marginBottom": "8px"},
+         "Die Ansicht ab 2020 wird stündlich im Hintergrund vorberechnet; andere "
+         "Zeiträume brauchen beim ersten Aufruf 1–2 Minuten."],
+        style={"fontSize": "11px", "color": "#777", "marginBottom": "4px"},
     ),
+    html.P(id="cov-stand", style={"fontSize": "12px", "color": "#555", "marginBottom": "8px"}),
 
     dcc.Loading(
         type="default",
@@ -2541,6 +2546,7 @@ def toggle_bericht2_expand(active_cell, table_data, expand_state):
     Output("cov-attempted", "children"),
     Output("cov-expected", "children"),
     Output("cov-players", "children"),
+    Output("cov-stand", "children"),
     Input("interval-coverage", "n_intervals"),
     Input("cov-dimension", "value"),
     Input("cov-year-from", "value"),
@@ -2554,7 +2560,7 @@ def refresh_coverage(_, dimension, year_from, year_to, active_tab):
     dauernde Aggregation alle 15 Min auch dann, wenn niemand den Tab ansieht.
     """
     if active_tab != "tab-coverage":
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+        return (dash.no_update,) * 6
 
     year_from = int(year_from or 2020)
     year_to   = int(year_to or _COV_YEAR_NOW)
@@ -2563,6 +2569,14 @@ def refresh_coverage(_, dimension, year_from, year_to, active_tab):
 
     totals = store.query_coverage_totals(year_from, year_to)
     rows   = store.query_coverage(dimension, year_from, year_to)
+    ts = store.coverage_stand(dimension, year_from, year_to)
+    if ts:
+        berlin = datetime.fromtimestamp(ts, ZoneInfo("Europe/Berlin"))
+        stand = (f"Stand: {berlin:%d.%m.%Y %H:%M}"
+                 + (" · stündliche Vorberechnung"
+                    if store.coverage_is_warm_key(dimension, year_from, year_to) else ""))
+    else:
+        stand = "Erste Vorberechnung läuft (einige Minuten) — die Tabelle erscheint automatisch."
 
     dim_key = {"federation": "federation", "band": "band",
                "elo_band": "elo_band", "analysis_group": "analysis_group"}[dimension]
@@ -2583,7 +2597,7 @@ def refresh_coverage(_, dimension, year_from, year_to, active_tab):
     } for r in rows]
 
     if not totals:
-        return data, "—", "—", "—", "—"
+        return data, "—", "—", "—", "—", stand
 
     fmt = lambda n: f"{n:,}".replace(",", ".")
     return (
@@ -2592,10 +2606,17 @@ def refresh_coverage(_, dimension, year_from, year_to, active_tab):
         fmt(totals["periods_attempted"]),
         fmt(totals["periods_expected"]),
         fmt(totals["players_active"]),
+        stand,
     )
 
 
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+    # Beim Debug-Reloader nur im Kindprozess starten, sonst rechnet es doppelt.
+    if not debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        import logging
+        logging.basicConfig(level=logging.INFO,
+                            format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        store.start_coverage_warmer()
     app.run(debug=debug, host="0.0.0.0", port=8050)

@@ -29,12 +29,13 @@ fide-scraper/
 │   ├── parser.py              ← BeautifulSoup HTML-Parser
 │   ├── db.py                  ← PostgreSQL UPSERT; ensure_connection(); is_valid_fide_period()
 │   └── config.py              ← config.yaml + .env kombiniert
-├── migrations/                ← 001_initial.sql … 017_elo_band_function.sql
+├── migrations/                ← 001_initial.sql … 019_scrape_groups_only_period.sql
 ├── notebooks/                 ← 01–17 Analysen + notebooks/_generate_*.py (Generatoren)
 ├── scripts/
 │   ├── seed_players.py        ← ⚠️ System A, eingefroren (s. „Gruppen: zwei Systeme")
 │   ├── monthly_update.sh      ← FIDE-Liste laden + importieren + VPS-Requeue (täglich per launchd)
 │   ├── coverage_report.py     ← Abdeckung je Föderation/Band/Jahr (CLI zum Dashboard-Tab)
+│   ├── audit_data.py          ← Datenprüfung ab Stichtag: vollständig + Elo-plausibel? (s. unten)
 │   ├── backfill.py            ← Historische Perioden nachladen
 │   ├── run_local_backfill.sh  ← caffeinate + Auto-Restart + Tunnel-Check
 │   ├── resolve_opponents.py   ← Gegner-FIDE-IDs per Lookup befüllen
@@ -112,6 +113,10 @@ Summary-Zeile `<tr bgcolor=#e6e6e6>`: Spalte 1 = **Ro** → `rating_history.std_
 Eine Quelle für Coverage, QC-Frontend und Notebooks; der pandas-Zwilling liegt in
 `notebooks/_setup.py::elo_band()`, `tests/test_elo_bands.py` prüft beide gegeneinander.
 
+Migration 018: `fn_fide_expected(diff)` → FIDE-Erwartungswert (Tabelle, nicht gerundete
+Normalverteilung), `fn_fide_diff_cap(period)` → 400 bzw. NULL (keine Kappung 2022-02 bis
+2024-03, aus den Daten abgeleitet). Python-Zwilling in `orchestrator/audit.py`.
+
 Schlüsselentscheide: `game_index` löst Duplikate bei Doppelrunden; `opponent_fide_id` per nachträglichem Lookup (kein ID in AJAX-Response); beide `rating_change`-Felder gespeichert (ungewichtet + K×Δ).
 
 ---
@@ -152,6 +157,32 @@ WHERE group_name='GRUPPENNAME';
 
 ---
 
+## Datenprüfung (`scripts/audit_data.py`)
+
+Frage: *Sind ab Stichtag alle Spieler erfasst, und ergibt die Elo-Entwicklung Sinn?* Maßstab ist
+die **offizielle Liste**, nicht die Queue: Soll = jede Kombination (Spieler, Periode) mit
+`rating_history.num_games > 0` — auch heute inaktive Spieler. Logik in `orchestrator/audit.py`.
+
+```bash
+python scripts/audit_data.py --since 2020-01 --report audit.md      # alles
+python scripts/audit_data.py --since 2026-01 --federation LIE       # schnell, ein Land
+```
+
+| Ebene | Prüft | hart wenn |
+|---|---|---|
+| 0 | Liste je Periode vorhanden (sonst wird die Periode übersprungen) | Liste fehlt |
+| 1 | Soll-Kombos gescrapt? Spieler im Zeitraum nie gescrapt? no_data trotz Liste? | > 0 |
+| 2 | Partienzahl = `num_games`; Integritätschecks im Zeitraum | weniger Partien (außer Erstbewertung) |
+| 3 | Kette `Liste[P] − Liste[vorher] = Σ K×Δ`, Elo-Formel je Partie, K×Δ, Wertebereiche | unerklärte Kette > 2 % je Periode, Formel > 0,1 % |
+
+Die **Kette** schließt fachlich nicht immer (K=40 und Ro ≠ Vorliste bei nachgewerteten
+Turnieren → „erklärt"), deshalb eine Schwelle statt Einzelbefunden. Die **Formel** ist
+exakt (509.691 Partien, 0 Abweichungen), aber nur für Perioden mit genau einem Turnier
+prüfbar, weil die Summary-Zeile ein einziges Ro liefert. Exit 1 bei harten Befunden;
+solange der Backfill läuft, ist das der Normalzustand.
+
+---
+
 ## Monatslauf (automatisch)
 
 `scripts/monthly_update.sh` läuft **täglich** per launchd auf dem Mac
@@ -162,6 +193,8 @@ neue Liste nicht an einem festen Kalendertag.
 2. Liste von `ratings.fide.com/download/standard_<mmm><yy>frl.zip` laden (404 = noch nicht da → Exit 0)
 3. Importieren
 4. **Nur wenn wirklich importiert wurde:** P1/P2/P3-Refresh + P0-Neuzugänge auf dem VPS requeuen
+5. **Nur nach Import:** Datenprüfung ab 2020 (`FIDE_AUDIT_SINCE`), Einzeiler ins Log, Bericht nach
+   `~/backups/fide-scraper/audit/audit_<datum>.md`
 
 Ohne Schritt 4 werden neue Spieler nie nachgezogen. Log: `~/backups/fide-scraper/monthly.log`.
 
@@ -215,6 +248,8 @@ gescrapten Rating-/Partiedaten über 4 feste, sichere Query-Tools (kein Text-to-
 | VPS-IP von FIDE geblockt | Primär lokal scrapen via `run_local_backfill.sh` |
 | `_generate_NN.py` ausführen löscht Notebook-Ergebnisse | Der Generator schreibt die `.ipynb` ohne Outputs neu (NB14 verlor so 1952 Zeilen Tabellen/Grafiken). Nur regenerieren, wenn danach auch ausgeführt wird |
 | `std_rating = 0` heißt „unbewertet", nicht „schwach" | Betrifft 1,26 von 1,5 Mio aktiven Spielern. In Filtern immer `std_rating > 0` statt `IS NOT NULL` — sonst Phantom-Band 0 bzw. Millionen Phantom-Soll-Perioden |
+| DB-Tests: `permission denied to create database` | Der `fide`-User darf `fide_orch_test` nicht anlegen. Lokale Wegwerf-PG nutzen und `ORCH_TEST_DATABASE_URL` setzen (z. B. `pip install pgserver` in einem Python-3.12-venv) |
+| Fehlerhafte Liste → stiller Datenverlust | Der Pre-Filter in `worker.py::scrape_group()` markiert Kombos mit `num_games = 0` **ohne Abruf** als `no_data`. Nach einem Listen-Neuimport die falschen Zeilen löschen und mit `orchestrator/generate_period_repair_batches.py --period YYYY-MM-01` GAP-Gruppen (nur diese Periode) anlegen — Vorfall 2024-06, `docs/project_status.md` 6.4a |
 | `COALESCE(...) AS x` + `SELECT DISTINCT` | Dann muss `ORDER BY` den **Alias** nutzen, nicht die Ursprungsspalte („ORDER BY expressions must appear in select list") |
 
 ---

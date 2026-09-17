@@ -177,6 +177,24 @@ CREATE TABLE IF NOT EXISTS public.rating_history (
     num_games         INTEGER,
     PRIMARY KEY (fide_id, period)
 );
+CREATE TABLE IF NOT EXISTS public.rating_corrections (
+    fide_id     INTEGER NOT NULL,
+    period      DATE NOT NULL,
+    amount      INTEGER NOT NULL,
+    corr_type   TEXT NOT NULL DEFAULT 'fide_one_off',
+    PRIMARY KEY (fide_id, period, corr_type)
+);
+-- Spalten für audit.py (Ebene 3) — ALTER statt CREATE, weil bestehende
+-- Test-DBs die Tabellen schon in der schmaleren Form haben.
+ALTER TABLE public.rating_history ADD COLUMN IF NOT EXISTS std_rating INTEGER;
+ALTER TABLE public.game_results
+    ADD COLUMN IF NOT EXISTS result           TEXT,
+    ADD COLUMN IF NOT EXISTS rating_change    NUMERIC(5,2),
+    ADD COLUMN IF NOT EXISTS opponent_name    TEXT,
+    ADD COLUMN IF NOT EXISTS opponent_rating  INTEGER,
+    ADD COLUMN IF NOT EXISTS tournament_name  TEXT,
+    ADD COLUMN IF NOT EXISTS tournament_start_date DATE;
+ALTER TABLE public.rating_corrections ADD COLUMN IF NOT EXISTS source TEXT;
 """
 
 
@@ -208,21 +226,31 @@ class DataTestDB(QueueTestDB):
         )
 
     def insert_game(self, fide_id: int, period: str, game_index: int = 1,
-                    rating_change_weighted: float = 2.5) -> None:
+                    rating_change_weighted: float = 2.5, **kwargs) -> None:
+        defaults = dict(result="1", rating_change=None, opponent_name=None,
+                        opponent_rating=None, tournament_name="T",
+                        tournament_start_date=None)
+        defaults.update(kwargs)
         self.execute(
             """INSERT INTO public.game_results
-               (fide_id, period, game_index, rating_change_weighted)
-               VALUES (%s,%s,%s,%s)""",
-            (fide_id, period, game_index, rating_change_weighted),
+               (fide_id, period, game_index, rating_change_weighted, result,
+                rating_change, opponent_name, opponent_rating, tournament_name,
+                tournament_start_date)
+               VALUES (%(fide_id)s,%(period)s,%(game_index)s,%(rcw)s,%(result)s,
+                       %(rating_change)s,%(opponent_name)s,%(opponent_rating)s,
+                       %(tournament_name)s,%(tournament_start_date)s)""",
+            {"fide_id": fide_id, "period": period, "game_index": game_index,
+             "rcw": rating_change_weighted, **defaults},
         )
 
     def insert_rating(self, fide_id: int, period: str,
-                      published_rating: int = 2000, num_games: int | None = None) -> None:
+                      published_rating: int = 2000, num_games: int | None = None,
+                      std_rating: int | None = None) -> None:
         self.execute(
             """INSERT INTO public.rating_history
-               (fide_id, period, published_rating, num_games)
-               VALUES (%s,%s,%s,%s)""",
-            (fide_id, period, published_rating, num_games),
+               (fide_id, period, published_rating, num_games, std_rating)
+               VALUES (%s,%s,%s,%s,%s)""",
+            (fide_id, period, published_rating, num_games, std_rating),
         )
 
 
@@ -237,6 +265,6 @@ def data_db(queue_dsn, monkeypatch) -> DataTestDB:
     )
     db.execute(
         "TRUNCATE public.players, public.scrape_periods, public.game_results, "
-        "public.rating_history RESTART IDENTITY CASCADE"
+        "public.rating_history, public.rating_corrections RESTART IDENTITY CASCADE"
     )
     return db

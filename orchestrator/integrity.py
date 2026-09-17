@@ -47,26 +47,40 @@ class CheckDef:
     fn: Callable  # (conn, **kwargs) -> list[dict]
 
 
+def _period_filter(alias: str, since, until) -> tuple[str, tuple]:
+    """Optionaler Zeitraumfilter (audit.py prüft ab Stichtag). Ohne Grenzen
+    bleibt das Verhalten unverändert: der ganze Bestand wird geprüft."""
+    sql, params = "", ()
+    if since is not None:
+        sql += f" AND {alias}.period >= %s"
+        params += (since,)
+    if until is not None:
+        sql += f" AND {alias}.period <= %s"
+        params += (until,)
+    return sql, params
+
+
 # ── Check 1: ok ohne Partien ──────────────────────────────────────────────────
 
-def check_ok_without_games(conn, **_) -> list[dict]:
+def check_ok_without_games(conn, since=None, until=None, **_) -> list[dict]:
     """status='ok' verspricht einen erfolgreichen Save — aber es gibt keine
     einzige game_results-Zeile. Hart, wenn die offizielle Liste (num_games > 0)
     Partien belegt; weich, wenn num_games NULL/0 ist (parsed-but-empty möglich).
     """
+    pf, params = _period_filter("sp", since, until)
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT sp.fide_id, sp.period, rh.num_games
             FROM scrape_periods sp
             LEFT JOIN rating_history rh
                    ON rh.fide_id = sp.fide_id AND rh.period = sp.period
-            WHERE sp.status = 'ok'
+            WHERE sp.status = 'ok'{pf}
               AND NOT EXISTS (
                   SELECT 1 FROM game_results gr
                   WHERE gr.fide_id = sp.fide_id AND gr.period = sp.period
               )
             ORDER BY sp.fide_id, sp.period
-        """)
+        """, params)
         rows = cur.fetchall()
     return [
         {
@@ -83,18 +97,19 @@ def check_ok_without_games(conn, **_) -> list[dict]:
 
 # ── Check 2: no_data mit Partien ─────────────────────────────────────────────
 
-def check_no_data_with_games(conn, **_) -> list[dict]:
+def check_no_data_with_games(conn, since=None, until=None, **_) -> list[dict]:
     """status='no_data' behauptet eine leere Periode — aber Partien existieren."""
+    pf, params = _period_filter("sp", since, until)
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT sp.fide_id, sp.period, COUNT(gr.id)
             FROM scrape_periods sp
             JOIN game_results gr
                  ON gr.fide_id = sp.fide_id AND gr.period = sp.period
-            WHERE sp.status = 'no_data'
+            WHERE sp.status = 'no_data'{pf}
             GROUP BY sp.fide_id, sp.period
             ORDER BY sp.fide_id, sp.period
-        """)
+        """, params)
         rows = cur.fetchall()
     return [
         {
@@ -111,20 +126,21 @@ def check_no_data_with_games(conn, **_) -> list[dict]:
 
 # ── Check 3: dauerhaft blockierte Fehler-Zeilen ──────────────────────────────
 
-def check_blocked_error_rows(conn, **_) -> list[dict]:
+def check_blocked_error_rows(conn, since=None, until=None, **_) -> list[dict]:
     """Zeilen, die nie erfolgreich gefetcht wurden, aber jeden Retry blockieren:
     get_pending_periods (scraper/db.py) gibt nur Kombos zurück, die noch GAR
     NICHT in scrape_periods stehen — status='error' oder no_data mit
     HTTP-Fehlerstatus (429/403) bleiben damit für immer liegen.
     """
+    pf, params = _period_filter("sp", since, until)
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT fide_id, period, status, http_status, scraped_at
-            FROM scrape_periods
-            WHERE status = 'error'
-               OR (status = 'no_data' AND http_status >= 400)
+            FROM scrape_periods sp
+            WHERE (status = 'error'
+                   OR (status = 'no_data' AND http_status >= 400)){pf}
             ORDER BY fide_id, period
-        """)
+        """, params)
         rows = cur.fetchall()
     return [
         {
@@ -231,22 +247,23 @@ def check_done_groups_missing_combos(conn, threshold_pct: float = 2.0, **_) -> l
 
 # ── Check 5: Partien ohne Tracking ───────────────────────────────────────────
 
-def check_orphan_games(conn, **_) -> list[dict]:
+def check_orphan_games(conn, since=None, until=None, **_) -> list[dict]:
     """game_results-Zeilen, deren (fide_id, period) keine scrape_periods-Zeile
     hat: Daten vorhanden, Buchführung fehlt — invers zum False Positive,
     verzerrt aber jede scrape_periods-basierte Coverage-Aussage.
     """
+    pf, params = _period_filter("gr", since, until)
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT gr.fide_id, gr.period, COUNT(*)
             FROM game_results gr
             WHERE NOT EXISTS (
                 SELECT 1 FROM scrape_periods sp
                 WHERE sp.fide_id = gr.fide_id AND sp.period = gr.period
-            )
+            ){pf}
             GROUP BY gr.fide_id, gr.period
             ORDER BY gr.fide_id, gr.period
-        """)
+        """, params)
         rows = cur.fetchall()
     return [
         {

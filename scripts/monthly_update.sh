@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Monatliches FIDE-Update: Rating-Liste herunterladen, TXT-Snapshot importieren,
-# dann P1/P2/P3-Monatsrefresh und P0-Neuzugänge auf dem VPS-Orchestrator anstoßen.
+# dann P1/P2/P3-Monatsrefresh und P0-Neuzugänge auf dem VPS-Orchestrator anstoßen,
+# zuletzt die Datenprüfung (scripts/audit_data.py) als Bericht ablegen.
 #
 # Läuft komplett ohne Mac Mini / MacBook Pro — das eigentliche Nachscrapen
 # übernehmen die dc_update_1/2/3-Threads auf dem VPS (siehe
@@ -275,6 +276,28 @@ else
     # gilt dann als erledigt, aber niemand scrapt den neuen Monat nach.
     touch "$PENDING_RESET_MARKER"
     echo "$(date): Reset vorgemerkt ($PENDING_RESET_MARKER) — der nächste Lauf holt ihn nach."
+fi
+
+# --- Schritt 5: Datenprüfung (nur nach echtem Import) ------------------------
+# Vollständigkeit + Elo-Plausibilität gegen die offizielle Liste, siehe
+# orchestrator/audit.py. Kein --until nötig: audit_data.py deckelt selbst auf
+# den Vormonat, die gerade importierte Liste zählt also noch nicht als Lücke.
+# Harte Befunde (Exit 1) sind der Normalzustand, solange der Backfill läuft —
+# sie dürfen den Monatslauf nicht als fehlgeschlagen markieren.
+AUDIT_SINCE="${FIDE_AUDIT_SINCE:-2020-01}"
+AUDIT_DIR="$HOME/backups/fide-scraper/audit"
+AUDIT_REPORT="$AUDIT_DIR/audit_$(date +%Y-%m-%d).md"
+mkdir -p "$AUDIT_DIR"
+echo ""
+echo "$(date): === Schritt 5: Datenprüfung ab $AUDIT_SINCE ==="
+AUDIT_LINE=$(DATABASE_URL="$DB_URL" "$PY" "$SCRIPT_DIR/scripts/audit_data.py" \
+    --since "$AUDIT_SINCE" --summary-only --report "$AUDIT_REPORT" \
+    2>>"$AUDIT_DIR/audit.log")
+if [ -n "$AUDIT_LINE" ]; then
+    echo "$(date): $AUDIT_LINE"
+    echo "$(date): Bericht: $AUDIT_REPORT"
+else
+    echo "$(date): WARNUNG: Datenprüfung abgebrochen — siehe $AUDIT_DIR/audit.log"
 fi
 
 echo ""

@@ -438,6 +438,62 @@ python3 -m scripts.quality_check --classify-only
 P1/P2/P3-Refresh `python3 -m scripts.quality_check --from-year <Jahr>` laufen
 lassen — klassifiziert automatisch mit; `MAX(checked_at)` zeigt den letzten Lauf.
 
+### 6.4a Datenprüfung ab Stichtag (`scripts/audit_data.py`, neu 2026-09-16)
+
+Ergänzt QC und Reconciliation um eine Gesamtantwort: *Ist ab Stichtag alles da, und ergibt
+die Elo-Entwicklung Sinn?* Maßstab ist die offizielle Liste: Soll = (Spieler, Periode) mit
+`num_games > 0`, **auch heute inaktive Spieler**. Vier Ebenen (Referenz → Vollständigkeit →
+Partien → Plausibilität), Logik in `orchestrator/audit.py`, läuft automatisch als Schritt 5
+von `monthly_update.sh` (Bericht unter `~/backups/fide-scraper/audit/`).
+
+```bash
+python scripts/audit_data.py --since 2020-01 --report audit.md   # ~31 min
+python scripts/audit_data.py --since 2026-01 --federation LIE    # ~1 min
+```
+
+**Aus den Daten abgeleitete FIDE-Regeln** (Migration 018, jeweils mit Test):
+
+| Regel | Beleg |
+|---|---|
+| Δ je Partie = Ergebnis − E(Ro − Gegner), E aus der FIDE-Tabelle | 509.691 Partien, 0 Abweichungen; im Vollauf 62 von 7,4 Mio |
+| 400-Punkte-Kappung nach **Turnierbeginn**: keine Kappung für Start 2022-01 … 2024-02 | 57.902 Partien mit \|Δ\| > 400, alle ungekappt; sonst zeigt FIDE das Gegnerrating bereits auf Ro ± 400 begrenzt |
+| K ist jede ganze Zahl 1–40 (700er-Regel) und kann je Turnier abweichen | 393k Partien mit K 30/36/38 …; `K×Δ / Δ` ist immer ganzzahlig |
+| März-2024-Korrektur = 0,4 × (2000 − (Vorliste + Σ Partien)) | schließt 96 % der Fenster; mit den gespeicherten `rating_corrections` nur 12 % |
+| Kette schließt fachlich nicht immer | Reste fast nur bei K=40 und Ro ≠ Vorliste (nachgewertete Turniere) → Schwelle je Periode statt Einzelbefund |
+| Liste und Berechnungsseite weichen bei FIDE selbst ab | Stichprobe: FIDE zeigt 7 statt gelisteter 8 Partien bzw. „No records" trotz Listeneintrag |
+
+**Erster Vollauf 2020-01 bis 2026-08** (16.09.2026; der Bericht liegt nicht im Repo, ein neuer entsteht mit `--report`):
+
+| Kennzahl | Wert |
+|---|---:|
+| Soll-Spieler / davon im Zeitraum mind. einmal gescrapt | 402.629 / 59,3 % |
+| Soll-Kombinationen / gescrapt / vollständig | 3.335.249 / 75,7 % / 73,0 % |
+| Partien vorhanden | 75,2 % (12,47 von 16,59 Mio) |
+| Kette Liste ↔ Σ K×Δ | 91,0 % ok, 0,4 % unerklärt |
+| Integritätschecks, K×Δ, Wertebereiche | 0 Befunde |
+
+**Befunde daraus** (offen, siehe Abschnitt 9):
+- ✅ **Liste 2024-06 war falsch importiert** (faktisch eine Juli-Fassung, 73 % identisch mit
+  2024-07). **Behoben 17.09.2026:** echte `standard_jun24frl.zip` eingespielt (464.401 Zeilen =
+  Datei; Juli-Ro passt jetzt zu 79 % statt 1,7 %). Mai und Juli 2024 waren korrekt.
+  **Folgeschaden:** Der Pre-Filter in `worker.py::scrape_group()` hatte 22.830 Juni-Kombos mit
+  laut falscher Liste 0 Partien ohne Abruf als `no_data` markiert. Die Zeilen sind gelöscht
+  (Backup `~/backups/fide-scraper/manual/`), 12 GAP-Gruppen (`only_period`, Migration 019,
+  `generate_period_repair_batches.py`) holen 25.453 Juni-Kombos über `dc_newplayers_1/2` nach.
+  Der Ausreißer `game_count_fewer` 2024-07 kam von der falschen Liste (jetzt 0,8 %).
+- **Liste 2026-03 ist korrekt**, enthält aber FIDE-seitig 16.538 Spieler, die weder im Februar
+  noch im April stehen (fast alle 6 oder 8 Partien, Jahrgänge 2009–2014). Ursache unklar.
+- **`rating_corrections` für 2024-03 veraltet:** Die `source='formula'`-Zeilen nutzen Ro statt
+  des Ratings nach den Partien. Die Routine rechnet die Korrektur selbst nach, aber
+  `quality_check.py` nutzt noch die gespeicherten Werte.
+- **148.302 heute inaktive Spieler** mit Partien seit 2020 sind nie gescrapt worden — die
+  Orchestrator-Population (System B) umfasst nur aktive Spieler. **Entscheidung 17.09.2026:
+  werden nicht aufgenommen.** Dazu 15.433 aktive, davon ~12.600 aus der März-2026-Anomalie und
+  433 mit Rating ≥ 1400.
+- **Reaktivierte Spieler fallen durchs Raster:** `players.active` wird beim Monatsimport nie
+  aufgefrischt; 2.293 bei uns inaktive Spieler haben Partien in der Liste 2026-09.
+- `periods_listed_no_data` über 1 % in 2020-01, 2020-05, 2022-01 — Stichproben gegen FIDE stehen aus.
+
 ### 6.5 FIDE Einmalkorrektur März 2024 — Details
 
 - **Beschlossen:** Dezember 2023 | **Wirksam:** 2024-03-01
@@ -710,7 +766,13 @@ bewusst nicht ungeprüft aufgeräumt):
 | Worker-Speicherwachstum wirklich beheben | Mittel | ⬜ Nur eingedämmt (4 GB cgroup-Limit + RAM-Monitoring), Ursache im Python-Code nicht gefunden. Der konkrete Auslöser vom 14.09. (P0-Band mit 1,2 Mio Spielern) ist behoben, der ursprüngliche Spike vom 12.09. bleibt unerklärt |
 | Coverage-Nenner: `players.active` vs. FIDE-Standardliste | Niedrig | ⬜ `store.py:397-414` begründet, warum die Standardliste der sauberere Nenner wäre; `players.active` driftet, weil der Monatsimport es für Bestandsspieler nie auffrischt. Bewusst nicht mitgeändert (sonst Zahlen vor/nach unvergleichbar) |
 | Lücke unterhalb `ELO_FLOOR = 1400` | Niedrig | ⬜ Bänder 1000–1300 zeigen 0 gescrapte Spieler (271 aktive betroffen). Im Coverage-Tab jetzt sichtbar; Entscheidung, ob das Grid nach unten erweitert wird, steht aus |
-| Migration 017 auf Test-/Zweitumgebungen anwenden | Niedrig | ⬜ Auf der Produktiv-DB angewendet. Die DB-gestützten Tests laufen lokal nicht (`permission denied to create database` für den `fide`-User) — betrifft alle 82 DB-Tests, nicht nur die neuen |
+| Migration 017 auf Test-/Zweitumgebungen anwenden | Niedrig | ⬜ Auf der Produktiv-DB angewendet. Die DB-gestützten Tests laufen nicht gegen den VPS (`permission denied to create database` für den `fide`-User) — lokal mit Wegwerf-PG und `ORCH_TEST_DATABASE_URL` laufen sie (2026-09-16: 240 grün, nur `test_retry_on_429` rot, schon vorher) |
+| Liste 2024-06 neu importieren | Hoch | ✅ 17.09.2026 (6.4a). Offen: nach Abschluss der 12 GAP-Gruppen `audit_data.py --since 2024-05 --until 2024-08` wiederholen |
+| `rating_corrections` 2024-03 für gescrapte Spieler neu berechnen | Mittel | ⬜ Formel mit Rating nach den Partien (6.4a); betrifft `quality_check.py`-Ergebnisse für das März-2024-Fenster |
+| Inaktive Spieler seit 2020 in die Population aufnehmen? | Entscheidung | ✅ Nein (17.09.2026) |
+| Reaktivierte Spieler erfassen | Mittel | ⬜ `players.active` beim Monatsimport aus dem Listen-Flag nachziehen (analog `sync_players_std_rating`); sonst werden wieder aktive Spieler nie gescrapt (2.293 Fälle in 2026-09). Ändert die Coverage-Zahlen |
+| März-2026-Anomalie klären | Niedrig | ⬜ 16.538 Spieler nur in der FIDE-Liste 2026-03; Stichprobe auf ratings.fide.com (z. B. 525002783) |
+| Stichproben 2020-01/2020-05/2022-01 (no_data) | Niedrig | ⬜ Periodenweise über der Schwelle, Ursache offen (2024-07 hat sich mit dem Juni-Neuimport erledigt) |
 
 ---
 

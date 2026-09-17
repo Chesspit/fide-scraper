@@ -19,6 +19,7 @@ import random
 import socket
 import time
 from dataclasses import dataclass
+from datetime import date
 from typing import Optional
 
 import psycopg2
@@ -74,6 +75,8 @@ class Group:
     thread_affinity: str | None = None  # None = residential, 'dc_de'/'dc_in'/... = DC-Thread
     update_only: int = 0                # 1 = nur bereits gescrapte Spieler (Update-Batch)
                                          # 2 = nur NIE gescrapte Spieler (P0-Neuzugangs-Batch)
+    only_period: date | None = None     # gesetzt = nur diese Periode, nur Spieler mit
+                                         # Listen-Partien ohne scrape_periods-Eintrag (GAP)
 
 
 class QueueManager:
@@ -179,7 +182,8 @@ class QueueManager:
         candidates = self._execute(
             f"""
             SELECT id, federation, continent, year, elo_min, elo_max,
-                   player_count, priority, device, profile, thread_affinity, update_only
+                   player_count, priority, device, profile, thread_affinity, update_only,
+                   only_period
             FROM scrape_groups
             WHERE status = 'pending' AND priority <= %s
               {affinity_filter} {device_filter}

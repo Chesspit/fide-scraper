@@ -159,7 +159,8 @@ def _read_dc_thread_enabled(dc_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
-                 update_only: bool = False, never_scraped_only: bool = False) -> list[int]:
+                 update_only: bool = False, never_scraped_only: bool = False,
+                 only_period: str | None = None) -> list[int]:
     """Return active player fide_ids matching the federation and ELO range.
 
     update_only=True restricts to players already scraped at least once
@@ -180,8 +181,20 @@ def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
     pools across ALL federations using the tier's population filter instead
     of an exact federation match. P1/P2/P3 groups always imply update_only
     semantics; P0 groups always imply never_scraped_only semantics.
+
+    only_period (GAP-Reparatur, 'YYYY-MM-01') restricts to players with games
+    in that period's official list but no scrape_periods row for it.
     """
-    if never_scraped_only:
+    filter_params: tuple = ()
+    if only_period:
+        scraped_filter = (
+            "AND EXISTS (SELECT 1 FROM rating_history rh "
+            "WHERE rh.fide_id = players.fide_id AND rh.period = %s AND rh.num_games > 0) "
+            "AND NOT EXISTS (SELECT 1 FROM scrape_periods sp "
+            "WHERE sp.fide_id = players.fide_id AND sp.period = %s)"
+        )
+        filter_params = (only_period, only_period)
+    elif never_scraped_only:
         # std_rating=0 (unbewertet, ~1,26 Mio. aktive Spieler) bewusst ausgeschlossen —
         # User-Entscheidung 16.09.2026, macht keinen Sinn zu scrapen. Ohne diesen
         # Filter kann eine elo_min=0-Gruppe (P0-Auffangband) Millionen Spieler statt
@@ -208,7 +221,7 @@ def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
                   {scraped_filter}
                 ORDER BY fide_id
                 """
-            params = (elo_min, elo_max)
+            params = (elo_min, elo_max) + filter_params
         else:
             query = f"""
                 SELECT fide_id FROM players
@@ -218,7 +231,7 @@ def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
                   {scraped_filter}
                 ORDER BY fide_id
                 """
-            params = (federation, elo_min, elo_max)
+            params = (federation, elo_min, elo_max) + filter_params
         cur.execute(query, params)
         return [row[0] for row in cur.fetchall()]
 
@@ -388,15 +401,17 @@ def scrape_group(
     Returns (records_found, pg_conn, mb_group).
     Raises BlockedError if IP gets hard-blocked (caller should abort worker).
     """
+    only_period = group.only_period.isoformat() if group.only_period else None
     fide_ids = get_fide_ids(pg_conn, group.federation, group.elo_min, group.elo_max,
                             update_only=(group.update_only == 1),
-                            never_scraped_only=(group.update_only == 2))
+                            never_scraped_only=(group.update_only == 2),
+                            only_period=only_period)
     if not fide_ids:
         logger.info("Group %s/%d/%d-%d: no active players found — skipping",
                     group.federation, group.year, group.elo_min, group.elo_max)
         return 0, pg_conn, 0.0
 
-    periods = valid_periods_for_year(group.year)
+    periods = [only_period] if only_period else valid_periods_for_year(group.year)
     if not periods:
         return 0, pg_conn, 0.0
 

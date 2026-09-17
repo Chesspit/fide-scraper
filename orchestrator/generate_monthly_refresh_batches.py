@@ -214,13 +214,13 @@ def insert_groups(groups: list[dict], queue_conn) -> tuple[int, int]:
                 """
                 INSERT INTO scrape_groups
                     (federation, continent, year, elo_min, elo_max, player_count,
-                     status, priority, thread_affinity, update_only)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     status, priority, thread_affinity, update_only, only_period)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (federation, year, elo_min) DO NOTHING
                 """,
                 (g["federation"], g["continent"], g["year"], g["elo_min"], g["elo_max"],
                  g["player_count"], g["status"], g["priority"],
-                 g["thread_affinity"], g["update_only"]),
+                 g["thread_affinity"], g["update_only"], g.get("only_period")),
             )
             if cur.rowcount:
                 inserted += 1

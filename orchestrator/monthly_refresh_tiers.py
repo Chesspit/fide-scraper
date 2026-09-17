@@ -24,6 +24,9 @@ TIER_FILTERS: dict[str, str] = {
     # nicht über die Rating-Band, sondern darüber, dass noch nie versucht wurde
     # (never_scraped_only in worker.py::get_fide_ids()).
     "P0": "TRUE",
+    # GAP (Perioden-Reparatur, siehe unten): Abgrenzung über only_period in
+    # worker.py::get_fide_ids(), nicht über ein Rating-Band.
+    "GAP": "TRUE",
 }
 
 # (elo_floor, elo_ceil) je Tier — Sentinels an den Rändern, damit künftiges
@@ -33,6 +36,7 @@ TIER_BOUNDS: dict[str, tuple[int, int]] = {
     "P2": (0, 2299),
     "P3": (0, 2299),
     "P0": (1, 9999),  # std_rating=0 (unbewertet) bewusst ausgeschlossen, siehe generate_new_entrant_batches.py
+    "GAP": (1, 9999),
 }
 
 TIER_CONTINENT = "GLOBAL"
@@ -90,3 +94,14 @@ NEW_ENTRANT_TIERS: tuple[str, ...] = ("P0",)
 # (beobachtet) ≈ 5-10 Std./Batch — passt in ein Tagesfenster.
 NEW_ENTRANT_TARGET_MIN = 200
 NEW_ENTRANT_TARGET_MAX = 300
+
+# ── GAP: Perioden-Reparatur (2026-09-17) ──
+#
+# Holt für EINE Periode (scrape_groups.only_period) genau die Spieler nach, die
+# laut offizieller Liste Partien hatten, aber keinen scrape_periods-Eintrag für
+# diese Periode haben. Anlass: Die Liste 2024-06 war mit einer Juli-Fassung
+# vertauscht, der Pre-Filter in worker.py::scrape_group() hat deshalb 22.830
+# Juni-Kombos ohne Abruf als no_data markiert. Eine Föderations-Gruppe neu
+# aufzurollen hätte das ganze Jahr geprüft (~10× so viele Abrufe).
+# Batches erzeugt orchestrator/generate_period_repair_batches.py.
+GAP_TIER = "GAP"

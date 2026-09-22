@@ -50,3 +50,4 @@ exports/
 
 # Lokale Claude-Code-Settings (nicht projektweit, pro Maschine/User)
 .claude/
+orchestrator/reassign_np_help_state.json

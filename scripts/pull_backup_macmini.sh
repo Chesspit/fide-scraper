@@ -11,7 +11,8 @@
 # ist das primäre Backup, diese Kopie schützt gegen Totalverlust des VPS.
 set -euo pipefail
 
-VPS="pit@187.124.181.116"
+. "$(cd "$(dirname "$0")" && pwd)/vps.env"   # FIDE_VPS, FIDE_VPS_COMPOSE_DIR
+VPS="$FIDE_VPS"
 DEST="$HOME/backups/fide-scraper/vps"
 LOG="$HOME/backups/fide-scraper/pull.log"
 RETENTION_DAYS_PG=5        # ~4,3 GB bei 854-MB-Dumps

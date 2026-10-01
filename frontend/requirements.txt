@@ -1,0 +1,12 @@
+# ELO-Einsichten (frontend/app.py) — Versionen wie in der lokal getesteten .venv (2026-10-01)
+dash==4.4.1
+dash-bootstrap-components==2.0.4
+plotly==7.0.0
+pandas==2.2.3
+numpy==2.5.1
+pyarrow==25.0.1
+psycopg2-binary==2.9.10
+requests==2.32.3
+python-dotenv==1.0.1
+anthropic==1.1.0
+gunicorn==23.0.0

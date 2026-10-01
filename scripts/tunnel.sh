@@ -6,6 +6,7 @@
 # Dashboard im Browser: http://localhost:8051
 # Auto-reconnects if the tunnel drops (wichtig für lange Backfill-Läufe).
 set -uo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/vps.env"   # FIDE_VPS, FIDE_VPS_COMPOSE_DIR
 
 # ── Idempotenz-Lock ──────────────────────────────────────────────────────────
 # Verhindert den "Tunnel-Storm": run_female_chain.sh startet bei jedem Backfill-
@@ -42,7 +43,7 @@ echo "Tunnel starting (auto-reconnect enabled)..."
 echo "  DB:        localhost:5434"
 echo "  Dashboard: http://localhost:8051"
 while true; do
-    ssh "${SSH_OPTS[@]}" pit@187.124.181.116
+    ssh "${SSH_OPTS[@]}" "$FIDE_VPS"
     EXIT=$?
     echo "$(date): Tunnel exited (code $EXIT), reconnecting in 5s..."
     sleep 5

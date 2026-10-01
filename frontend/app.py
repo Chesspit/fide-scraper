@@ -1,4 +1,13 @@
 """ELO-Einsichten — Dash multi-page app."""
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# DATABASE_URL (+ ANTHROPIC_API_KEY) aus dem .env im Repo-Root, bevor die Seiten
+# ihre Datenmodule importieren. Im Container kommen sie aus der Umgebung;
+# load_dotenv überschreibt vorhandene Variablen nicht.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
 import dash
 import dash_bootstrap_components as dbc
 from dash import html, dcc
@@ -10,6 +19,7 @@ app = dash.Dash(
     suppress_callback_exceptions=True,
 )
 app.title = "ELO-Einsichten"
+server = app.server  # WSGI-Einstieg für gunicorn (frontend/Dockerfile)
 
 # Seiten-Gruppen (anhand order-Wert aus register_page)
 # Aktiv: order 1–9  |  Test: order 10+  |  QC: order 20+

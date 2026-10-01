@@ -108,10 +108,23 @@ def _parse_top100(path: str, year: int, month: int) -> pd.DataFrame:
     return df
 
 
+EXPECTED_COLUMNS = {"fide_id", "name", "federation", "rating", "year", "period", "rank"}
+
+
 def load_top100(rebuild: bool = False) -> pd.DataFrame:
-    """Return DataFrame: year, period, rank, fide_id, name, federation, rating."""
+    """Return DataFrame: year, period, rank, fide_id, name, federation, rating.
+
+    Ein Cache aus einer älteren Code-Version kann Spalten vermissen, die die Seiten
+    inzwischen erwarten (so fiel /c aus: der Mai-Cache hatte kein "period", das
+    erst später dazukam — die Seite starb im Callback mit KeyError). Deshalb den
+    Cache verwerfen, statt ihn unbesehen zurückzugeben.
+    """
     if not rebuild and os.path.exists(CACHE_PATH):
-        return pd.read_parquet(CACHE_PATH)
+        cached = pd.read_parquet(CACHE_PATH)
+        missing = EXPECTED_COLUMNS - set(cached.columns)
+        if not missing:
+            return cached
+        print(f"top100_cache.parquet fehlen Spalten {sorted(missing)} — Neuaufbau aus den ZIPs.")
 
     frames = []
     for year, (path, month) in _find_yearly_zips().items():

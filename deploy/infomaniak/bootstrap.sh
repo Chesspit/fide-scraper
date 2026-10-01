@@ -102,7 +102,7 @@ log "fail2ban"
 systemctl enable --now fail2ban
 
 log "Verzeichnisse + Repo"
-install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR" \
+install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR" "/home/${APP_USER}/backups" \
     "/home/${APP_USER}/backups/fide-scraper" "/home/${APP_USER}/logs" "/home/${APP_USER}/scripts"
 if [ ! -d "${APP_DIR}/.git" ]; then
     sudo -u "$APP_USER" git clone "$REPO_URL" "$APP_DIR"

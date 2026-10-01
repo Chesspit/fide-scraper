@@ -28,7 +28,19 @@ ssh elo-infomaniak 'sudo bash /tmp/bootstrap.sh /tmp/keys.pub'
 Updates, Swap 4 GB, Docker, Benutzer `pit`, SSH ohne Passwort/Root, ufw, fail2ban, Repo-Clone.
 Zeitzone bleibt UTC (Cron 03:45 und Dump-Namen wie auf Hostinger).
 
-## Phase 3 — Probe-Umzug (Hostinger läuft weiter)
+## Phase 3 — Probe-Umzug (Hostinger läuft weiter) ✅ 01.10.2026
+
+Ergebnis Probelauf (Dump 01.10. 03:45 UTC): Restore **18,4 Min** + ANALYZE wenige Min; game_results,
+players, scrape_groups, Indizes identisch; Proxy-Abruf über DataImpulse ok; Backup-Skript 6,5 Min, 1,2 GB.
+Dashboard + Frontend laufen (ohne Worker, ohne Traefik — Traefik erst nach dem DNS-Wechsel starten,
+sonst schlagen die Let's-Encrypt-Anfragen fehl).
+
+> **Restore als `postgres`, ohne `--role=fide`.** Mit `--role=fide` scheitern die Zeilen der
+> TimescaleDB-Kataloge (permission denied). fidedb hat zwar keine Hypertables, die Fehler waren also
+> folgenlos (26 Stück: 25 Katalog, 1 Extension-Kommentar) — sauberer ist trotzdem der Superuser.
+> `--no-owner` bleibt: Objekte gehen an `postgres`, deshalb danach
+> `REASSIGN OWNED BY postgres TO fide` NICHT verwenden (träfe Systemobjekte), sondern prüfen:
+> `SELECT count(*) FROM pg_tables WHERE schemaname IN ('public','orchestrator') AND tableowner<>'fide'` = 0.
 
 ```bash
 # Mac Mini: neuesten Dump hochladen

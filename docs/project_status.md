@@ -424,7 +424,7 @@ OK-Fenster tragen `category = NULL`.
 
 ```bash
 # Lokal via Tunnel:
-DATABASE_URL=postgresql://fide:nimzo194.@localhost:5434/fidedb \
+DATABASE_URL=postgresql://fide:<DB_PASSWORD>@localhost:5434/fidedb \
   python3 -m scripts.quality_check [--rebuild] [--from-year YYYY] [--to-year YYYY]
 
 # Jahres-Report ohne Neuberechnung:

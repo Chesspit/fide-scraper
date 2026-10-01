@@ -47,7 +47,7 @@ tail /opt/fide-scraper/backfill_GRUPPENNAME.log
 ```bash
 tail -5 /opt/fide-scraper/backfill_YYYY-MM-DD.log   # via SSH
 # oder via Tunnel:
-psql postgresql://fide:nimzo194.@localhost:5434/fidedb -c \
+psql postgresql://fide:<DB_PASSWORD>@localhost:5434/fidedb -c \
   "SELECT COUNT(*), ROUND(100.0*COUNT(*)/TOTAL,1) AS pct FROM scrape_periods ..."
 ```
 
@@ -62,21 +62,21 @@ die anderen. **--shard ist dabei nicht nötig.**
 ```bash
 # VPS (SSH, tmux) — läuft immer stabil
 docker compose -f /opt/fide-scraper/docker-compose.yml run --no-deps --rm \
-  -e DATABASE_URL=postgresql://fide:nimzo194.@10.0.3.1:5432/fidedb \
+  -e DATABASE_URL=postgresql://fide:<DB_PASSWORD>@10.0.3.1:5432/fidedb \
   scraper python scripts/backfill.py \
   --from 2010-01-01 --to 2026-03-01 \
   --group neue_gruppe_A \
   > /opt/fide-scraper/backfill_vps.log 2>&1
 
 # Mac Mini (Terminal, Tunnel offen)
-DATABASE_URL=postgresql://fide:nimzo194.@localhost:5434/fidedb \
+DATABASE_URL=postgresql://fide:<DB_PASSWORD>@localhost:5434/fidedb \
   python3 scripts/backfill.py \
   --from 2010-01-01 --to 2026-03-01 \
   --group neue_gruppe_B \
   >> /tmp/backfill_mac_mini.log 2>&1 &
 
 # MacBook Pro (Terminal, Tunnel offen, optional NordVPN)
-DATABASE_URL=postgresql://fide:nimzo194.@localhost:5434/fidedb \
+DATABASE_URL=postgresql://fide:<DB_PASSWORD>@localhost:5434/fidedb \
   python3 scripts/backfill.py \
   --from 2010-01-01 --to 2026-03-01 \
   --group neue_gruppe_C \
@@ -105,7 +105,7 @@ eine Maschine allein zu lange brauchen würde:
 
 ```bash
 # Seeden (einmalig pro Gruppe):
-DATABASE_URL=postgresql://fide:nimzo194.@localhost:5434/fidedb \
+DATABASE_URL=postgresql://fide:<DB_PASSWORD>@localhost:5434/fidedb \
   python3 scripts/seed_players.py --group global_03
 
 # Backfill starten (caffeinate + auto-restart + tunnel-check):

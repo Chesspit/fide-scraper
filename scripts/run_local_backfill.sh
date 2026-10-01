@@ -7,11 +7,14 @@
 #   bash scripts/run_local_backfill.sh global_02 2013-01-01 2026-03-01
 
 set -uo pipefail
+# DB-Zugang aus .env (das Passwort steht bewusst nicht im Repo)
+DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
+: "${DATABASE_URL:?DATABASE_URL fehlt — in .env oder Umgebung setzen}"
 
 GROUP=${1:?Gruppenname angeben, z.B.: bash run_local_backfill.sh global_02}
 FROM=${2:-2013-01-01}
 TO=${3:-$(python3 -c "from datetime import date; t=date.today(); m=t.month-1 or 12; y=t.year if t.month>1 else t.year-1; print(date(y,m,1))")}
-DB_URL="postgresql://fide:nimzo194.@localhost:5434/fidedb"
+DB_URL="${DATABASE_URL}"
 LOG="/tmp/backfill_${GROUP}_local.log"
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 

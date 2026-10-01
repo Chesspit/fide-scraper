@@ -7,6 +7,9 @@
 #   bash scripts/setup_raspi.sh
 
 set -euo pipefail
+# DB-Zugang aus .env (das Passwort steht bewusst nicht im Repo)
+DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
+: "${DATABASE_URL:?DATABASE_URL fehlt — in .env oder Umgebung setzen}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 GREEN='\033[0;32m'
@@ -109,7 +112,7 @@ if [ "$SKIP_TUNNEL" = false ]; then
         ok "Tunnel aktiv (Port 5434)"
         if source "$SCRIPT_DIR/.venv/bin/activate" && python3 -c "
 import psycopg2
-conn = psycopg2.connect('postgresql://fide:nimzo194.@localhost:5434/fidedb')
+conn = psycopg2.connect('${DATABASE_URL}')
 conn.close()
 print('DB-Verbindung OK')
 " 2>/dev/null; then

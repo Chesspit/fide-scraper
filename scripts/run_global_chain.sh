@@ -6,6 +6,9 @@
 # Gruppen werden übersprungen falls bereits complete.
 
 set -e
+# DB-Zugang aus .env (das Passwort steht bewusst nicht im Repo)
+DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
+: "${DATABASE_URL:?DATABASE_URL fehlt — in .env oder Umgebung setzen}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
@@ -22,7 +25,7 @@ check_tunnel() {
     python3 -c "
 import psycopg2, sys
 try:
-    conn = psycopg2.connect('postgresql://fide:nimzo194.@localhost:5434/fidedb')
+    conn = psycopg2.connect('${DATABASE_URL}')
     conn.close()
 except Exception as e:
     print(f'Tunnel fehlt: {e}'); sys.exit(1)
@@ -36,7 +39,7 @@ wait_for_completion() {
     while true; do
         MISSING=$(python3 -c "
 import psycopg2
-conn = psycopg2.connect('postgresql://fide:nimzo194.@localhost:5434/fidedb')
+conn = psycopg2.connect('${DATABASE_URL}')
 cur = conn.cursor()
 cur.execute(\"\"\"
     SELECT COUNT(*) FROM players p WHERE p.analysis_group='$GROUP'
@@ -50,7 +53,7 @@ conn.close()
 " 2>/dev/null)
         ERRORS=$(python3 -c "
 import psycopg2
-conn = psycopg2.connect('postgresql://fide:nimzo194.@localhost:5434/fidedb')
+conn = psycopg2.connect('${DATABASE_URL}')
 cur = conn.cursor()
 cur.execute(\"\"\"
     SELECT COUNT(*) FILTER (WHERE status='error')
@@ -74,7 +77,7 @@ mark_complete() {
     local GROUP="$1"
     python3 -c "
 import psycopg2
-conn = psycopg2.connect('postgresql://fide:nimzo194.@localhost:5434/fidedb')
+conn = psycopg2.connect('${DATABASE_URL}')
 cur = conn.cursor()
 cur.execute(\"UPDATE groups SET backfill_status='complete', scraped_from='$FROM_DATE', scraped_to='$TO_DATE' WHERE group_name='$GROUP'\")
 conn.commit()
@@ -87,7 +90,7 @@ conn.close()
 group_status() {
     python3 -c "
 import psycopg2
-conn = psycopg2.connect('postgresql://fide:nimzo194.@localhost:5434/fidedb')
+conn = psycopg2.connect('${DATABASE_URL}')
 cur = conn.cursor()
 cur.execute(\"SELECT backfill_status FROM groups WHERE group_name='$1'\")
 r = cur.fetchone()
@@ -112,7 +115,7 @@ for GROUP in "${GROUPS[@]}"; do
     fi
 
     log "--- $GROUP (ELO $(python3 -c "
-import psycopg2; conn = psycopg2.connect('postgresql://fide:nimzo194.@localhost:5434/fidedb')
+import psycopg2; conn = psycopg2.connect('${DATABASE_URL}')
 cur = conn.cursor(); cur.execute(\"SELECT elo_min, elo_max FROM groups WHERE group_name='$GROUP'\")
 r = cur.fetchone(); print(f'{r[0]}-{r[1]}' if r else '?'); conn.close()
 ")) ---"
@@ -120,7 +123,7 @@ r = cur.fetchone(); print(f'{r[0]}-{r[1]}' if r else '?'); conn.close()
     # Spieler seeden falls noch nicht geschehen
     SPIELER=$(python3 -c "
 import psycopg2
-conn = psycopg2.connect('postgresql://fide:nimzo194.@localhost:5434/fidedb')
+conn = psycopg2.connect('${DATABASE_URL}')
 cur = conn.cursor()
 cur.execute(\"SELECT COUNT(*) FROM players WHERE analysis_group='$GROUP'\")
 print(cur.fetchone()[0])

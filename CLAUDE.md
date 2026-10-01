@@ -51,7 +51,7 @@ fide-scraper/
 | | |
 |---|---|
 | VPS | `pit@187.124.181.116`, `/opt/fide-scraper/` |
-| DB lokal | `postgresql://fide:nimzo194.@localhost:5434/fidedb` |
+| DB lokal | `postgresql://fide:<DB_PASSWORD>@localhost:5434/fidedb` (Passwort nur in `.env`) |
 | Tunnel starten | `bash scripts/tunnel.sh` |
 | Orchestrator-Dashboard | https://scelo.chesspit.net (BasicAuth) — Steuerung, Queue, Tab „Abdeckung" |
 

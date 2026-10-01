@@ -89,7 +89,7 @@ ssh pit@187.124.181.116 "echo 'ssh-ed25519 AAAA... raspi-fide-scraper' >> ~/.ssh
 source .venv/bin/activate
 bash scripts/tunnel.sh &
 sleep 5
-python3 -c "import psycopg2; psycopg2.connect('postgresql://fide:nimzo194.@localhost:5434/fidedb').close(); print('OK')"
+python3 -c "import psycopg2; psycopg2.connect('postgresql://fide:<DB_PASSWORD>@localhost:5434/fidedb').close(); print('OK')"
 ```
 
 ---

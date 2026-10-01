@@ -10,6 +10,9 @@
 #   hist_2010_h1  →  2010-01-01 bis 2010-05-01
 
 set -e
+# DB-Zugang aus .env (das Passwort steht bewusst nicht im Repo)
+DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
+: "${DATABASE_URL:?DATABASE_URL fehlt — in .env oder Umgebung setzen}"
 HIST_GROUP="${1:-}"
 
 if [ -z "$HIST_GROUP" ]; then
@@ -47,7 +50,7 @@ cd "$PROJECT_DIR"
 python3 -c "
 import psycopg2, sys
 try:
-    conn = psycopg2.connect('postgresql://fide:nimzo194.@localhost:5434/fidedb')
+    conn = psycopg2.connect('${DATABASE_URL}')
     conn.close()
     print('Tunnel OK')
 except Exception as e:
@@ -58,7 +61,7 @@ except Exception as e:
 # Alle complete global_XX Gruppen holen
 GROUPS=$(python3 -c "
 import psycopg2
-conn = psycopg2.connect('postgresql://fide:nimzo194.@localhost:5434/fidedb')
+conn = psycopg2.connect('${DATABASE_URL}')
 cur = conn.cursor()
 cur.execute(\"SELECT group_name FROM groups WHERE group_name LIKE 'global_%' AND backfill_status='complete' ORDER BY group_name\")
 for r in cur.fetchall():
@@ -91,7 +94,7 @@ echo "======================================================"
 # Status in groups-Tabelle aktualisieren
 python3 -c "
 import psycopg2
-conn = psycopg2.connect('postgresql://fide:nimzo194.@localhost:5434/fidedb')
+conn = psycopg2.connect('${DATABASE_URL}')
 cur = conn.cursor()
 cur.execute(\"UPDATE groups SET backfill_status='complete' WHERE group_name='$HIST_GROUP'\")
 conn.commit()

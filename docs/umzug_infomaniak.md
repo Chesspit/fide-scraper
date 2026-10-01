@@ -35,12 +35,12 @@ players, scrape_groups, Indizes identisch; Proxy-Abruf über DataImpulse ok; Bac
 Dashboard + Frontend laufen (ohne Worker, ohne Traefik — Traefik erst nach dem DNS-Wechsel starten,
 sonst schlagen die Let's-Encrypt-Anfragen fehl).
 
-> **Restore als `postgres`, ohne `--role=fide`.** Mit `--role=fide` scheitern die Zeilen der
-> TimescaleDB-Kataloge (permission denied). fidedb hat zwar keine Hypertables, die Fehler waren also
-> folgenlos (26 Stück: 25 Katalog, 1 Extension-Kommentar) — sauberer ist trotzdem der Superuser.
-> `--no-owner` bleibt: Objekte gehen an `postgres`, deshalb danach
-> `REASSIGN OWNED BY postgres TO fide` NICHT verwenden (träfe Systemobjekte), sondern prüfen:
-> `SELECT count(*) FROM pg_tables WHERE schemaname IN ('public','orchestrator') AND tableowner<>'fide'` = 0.
+> **Erwartete Meldungen beim Restore:** genau 26 Fehler (25× `permission denied` auf
+> `_timescaledb_catalog`-Tabellen, 1× `must be owner of extension timescaledb`). Grund: `--role=fide` darf die
+> Katalogzeilen der alten Instanz (Owner `tunnelbliq`) nicht schreiben. Folgenlos, weil fidedb **keine
+> Hypertables** hat; die zwei Standard-Jobs legt die frische Extension selbst an. Diesen erprobten Weg beim
+> Umschalten unverändert verwenden. Andere Fehler → abbrechen, Hostinger weiterlaufen lassen.
+> Prüfen: `SELECT count(*) FROM pg_tables WHERE schemaname IN ('public','orchestrator') AND tableowner<>'fide'` = 0.
 
 ```bash
 # Mac Mini: neuesten Dump hochladen

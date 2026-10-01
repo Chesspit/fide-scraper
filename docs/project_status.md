@@ -775,6 +775,43 @@ bewusst nicht ungeprüft aufgeräumt):
 | März-2026-Anomalie klären | Niedrig | ⬜ 16.538 Spieler nur in der FIDE-Liste 2026-03; Stichprobe auf ratings.fide.com (z. B. 525002783) |
 | Stichproben 2020-01/2020-05/2022-01 (no_data) | Niedrig | ⬜ Periodenweise über der Schwelle, Ursache offen (2024-07 hat sich mit dem Juni-Neuimport erledigt) |
 
+**Neu aus Session 2026-10-01 — zukünftiger Job: neue und reaktivierte Spieler zuverlässig erfassen**
+
+Status: ⏸ **P0 pausiert, Fix ausstehend** (nach dem Umzug zu Infomaniak, vor der November-Liste).
+Ersetzt bei Umsetzung auch die Zeile „Reaktivierte Spieler erfassen" oben.
+
+*Befund.* Das P0-Tier (eingeführt 01.09.2026, Commit `7bd302d`, monatlich automatisiert mit `7e96819`)
+war als einmalige Aufräumaktion für ~26.000 nie gescrapte aktive Spieler gedacht. Im Dauerbetrieb
+für echte Neuzugänge geht es schief:
+
+- **Falsche Perioden:** Partien vor dem ersten Rating stehen in der Periode des ersten Ratings
+  (= aktueller Monat). Der Worker fragt wegen des Vormonat-Cutoffs nur bis zum Vormonat ab
+  → alle Abrufe `no_data`.
+- **Danach unsichtbar:** P0 nimmt nur Spieler *ohne jede* `scrape_periods`-Zeile, P1–P3 nur Spieler
+  *mit* mindestens einem `ok`. Wer nur `no_data` hat, fällt aus beiden heraus und wird nie wieder gescrapt.
+- **Jahresserien schließen sich gegenseitig aus:** P0-Gruppen 2025 und 2026 stehen mit gemischten
+  Prioritäten in der Queue, der Filter „nie gescrapt" gilt aber global. Erwischt zuerst eine
+  2025er-Gruppe den Spieler, überspringt ihn die 2026er.
+
+*Zahlen 01.10.2026.* 4.494 aktive, bewertete Spieler haben laut Liste 2026-09 Partien, aber nur
+`no_data`-Zeilen und 2026-09 nie abgefragt (2.326 davon nur für 2025 abgefragt, 396 für Jan–Aug 2026
+alles leer). Von 3.582 im September erstmals Bewerteten haben 2.824 nur `no_data`. Im Oktober kamen
+3.067 neu Bewertete hinzu (≈ 30.000 leere Abrufe, deshalb pausiert).
+Die Annahme „Partien erscheinen erst in der Periode des ersten Ratings" stammt aus der Listenstatistik
+und ist noch an einer FIDE-Seite zu verifizieren.
+
+*Pause.* Alle 146 P0-Gruppen `status='skipped'`, `notes='P0-Pause 2026-10-01: …'`.
+`reset_new_entrant_refresh.py` setzt nur `done` zurück, die Pause übersteht also den Monatslauf.
+Rückgängig: `UPDATE orchestrator.scrape_groups SET status='pending', notes=NULL WHERE notes LIKE 'P0-Pause 2026-10-01%'`.
+
+*Lösungsidee.* Auswahl nach der offiziellen Liste statt nach „schon einmal gescrapt": Der Monatslauf
+erzeugt für die neue Periode GAP-Gruppen (`generate_period_repair_batches.py --period`), also jede
+Kombination mit `rating_history.num_games > 0` ohne `scrape_periods`-Zeile — derselbe Maßstab wie
+Ebene 1 von `audit_data.py`. Das deckt Neuzugänge, reaktivierte Spieler (unabhängig von `players.active`)
+und die 4.494 Altfälle ab; P0 wird überflüssig. Offen: Vormonat-Cutoff lockern, sobald die Liste der
+aktuellen Periode importiert ist; Altfälle per GAP für 2026-01…2026-10 nachholen; ob Partien vor dem
+ersten Rating auch rückwirkend (ältere Perioden) gebraucht werden.
+
 ---
 
 ## 8. Bekannte Limitationen

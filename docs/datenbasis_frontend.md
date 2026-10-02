@@ -6,7 +6,7 @@ Stand: 2026-05-18
 
 ## Überblick
 
-Die Datenbank läuft als **TimescaleDB** (PostgreSQL 16) auf einem Hostinger VPS.
+Die Datenbank läuft als **TimescaleDB** (PostgreSQL 16) auf dem Infomaniak-VPS (seit 02.10.2026, vorher Hostinger).
 Verbindung über SSH-Tunnel: `scripts/tunnel.sh` → `localhost:5434`
 
 | Kennzahl | Wert |

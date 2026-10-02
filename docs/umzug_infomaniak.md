@@ -122,6 +122,22 @@ Backup-Probelauf: `FIDE_DB_CONTAINER=fide-db bash /opt/fide-scraper/scripts/back
 **Rückfallweg** (bis Schritt 6): DNS zurück auf `187.124.181.116`, auf Hostinger `docker compose start worker`.
 Die Hostinger-DB bleibt unverändert, solange dort kein Worker läuft.
 
+### Durchgeführt am 02.10.2026
+
+Worker Hostinger gestoppt 10:24 CEST, neuer Stack mit Worker 13:03 CEST (Pause ≈ 40 Min reine Arbeit).
+`final.dump` 252 s / 1,2 GB, Transfer über den Mac (`scp -3`) 24 s, Restore 19 Min. Zahlen identisch:
+16.968.555 Partien, 19.635.622 `scrape_periods`, 60.472.049 `rating_history`, 1.837.645 Spieler,
+24.872 Gruppen, 10.358 Läufe. Der Worker setzte die 8 unterbrochenen `running`-Gruppen selbst zurück.
+
+Erkenntnisse:
+- pg_restore meldet „errors ignored: 51“ — das sind dieselben 26 Katalog-Befehle wie im Probelauf (harmlos).
+- DNS-TTL bei manitu war **3600 s**, nicht 30 s. Beim Ändern legt manitu einen *zusätzlichen* A-Eintrag an —
+  den alten danach löschen, sonst Round-Robin zwischen alt und neu.
+- Rechner, die `scelo` noch alt auflösen, sehen „no available server“ (Hostinger-Traefik ohne Dashboard).
+  Der Mac Mini hatte einen festen Eintrag in `/etc/hosts`.
+- Hostinger-Dashboard ebenfalls gestoppt, damit niemand über einen alten DNS-Eintrag Queue-Änderungen ins
+  Leere macht. Hostinger-Cron (Backup der eingefrorenen DB) läuft als Rückfallebene weiter.
+
 ## Phase 5 — Nachbereitung
 
 - 24–48 h beobachten: 0 failed, `~/logs/memory_watch.log`, Backup am Folgetag auf dem Mac.

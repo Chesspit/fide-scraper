@@ -30,11 +30,12 @@ aufgenommen.
 
 | Komponente | Beschreibung |
 |---|---|
-| VPS | Hostinger, IP `187.124.181.116`, `/opt/fide-scraper/` |
-| Datenbank | TimescaleDB (PostgreSQL 16), läuft als Docker-Container auf dem VPS |
+| VPS | Infomaniak VPS Lite „ELO“, IP `179.237.106.106` (2 CPU / 4 GB / 60 GB), `/opt/fide-scraper/` — seit 02.10.2026, vorher Hostinger `187.124.181.116` (Umzug: `docs/umzug_infomaniak.md`) |
+| Datenbank | TimescaleDB (PostgreSQL 16), Container `fide-db` im Compose-Stack `deploy/infomaniak/` |
 | Scraper / Orchestrator | Python 3.13; Worker + Dashboard als Docker-Container auf VPS (restart: unless-stopped) |
 | Verbindung lokal | SSH-Tunnel `localhost:5434 → VPS:5432` via `scripts/tunnel.sh` |
-| Dashboard | `https://scelo.chesspit.net` (Traefik via Coolify, BasicAuth) — Routing-Labels in `orchestrator/docker-compose.yml` |
+| Dashboard | `https://scelo.chesspit.net` (eigenes Traefik im Stack, BasicAuth) — Routing-Labels in `deploy/infomaniak/docker-compose.yml` |
+| Frontend | `https://elo.chesspit.net` (ELO-Einsichten + ARPAD, gleiche BasicAuth) |
 | Repository | `https://github.com/Chesspit/fide-scraper` |
 
 ### 2.2 Datenfluss
@@ -85,7 +86,8 @@ Bei HTTP 403: sofortiger Stopp mit Fehlermeldung.
 
 ### 2.4 Lokales Scraping vom Mac Mini
 
-Ab 2026-04-29 wird **ausschliesslich lokal** gescrapt. Die VPS-IP (187.124.181.116)
+*(Historisch, Stand Mai 2026 — heute scrapt der Worker auf dem VPS über DC-Proxys.)*
+Ab 2026-04-29 wird **ausschliesslich lokal** gescrapt. Die damalige Hostinger-IP (187.124.181.116)
 ist von FIDE dauerhaft gesperrt (bestätigt 2026-05-09: Timeout auf allen Requests).
 Das Script `scripts/run_local_backfill.sh` übernimmt:
 

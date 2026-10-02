@@ -11,7 +11,8 @@
 # ist das primäre Backup, diese Kopie schützt gegen Totalverlust des VPS.
 set -euo pipefail
 
-VPS="pit@187.124.181.116"
+. "$(cd "$(dirname "$0")" && pwd)/vps.env"   # FIDE_VPS, FIDE_VPS_COMPOSE_DIR
+VPS="$FIDE_VPS"
 DEST="$HOME/backups/fide-scraper/vps"
 LOG="$HOME/backups/fide-scraper/pull.log"
 RETENTION_DAYS_PG=5        # ~4,3 GB bei 854-MB-Dumps
@@ -45,6 +46,12 @@ if rsync -az --timeout=300 "${VPS}:/home/pit/backups/fide-scraper/" "$DEST/"; th
     prune_keep_min 'fidedb_*.dump'  "$RETENTION_DAYS_PG"
     prune_keep_min 'scraperdb_*.db' "$RETENTION_DAYS_SQLITE"
     N_PG=$(find "$DEST" -name 'fidedb_*.dump' | wc -l | tr -d ' ')
+    # Ein erfolgreiches rsync heißt nicht, dass der VPS noch sichert (Juli–Sept. 2026
+    # kam zwei Monate lang derselbe alte Dump) → Alter des neuesten Dumps prüfen.
+    if [ -z "$(find "$DEST" -name 'fidedb_*.dump' -mtime -2)" ]; then
+        log "WARNUNG: neuester fidedb-Dump älter als 2 Tage — Backup auf dem VPS prüfen (backup.log)"
+        exit 1
+    fi
     log "Pull OK: ${N_PG} fidedb-Dumps lokal, $(du -sh "$DEST" | cut -f1) gesamt"
 else
     log "FEHLER: rsync vom VPS fehlgeschlagen (Exit $?)"

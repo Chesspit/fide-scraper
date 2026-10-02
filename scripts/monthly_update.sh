@@ -27,9 +27,13 @@
 #   FIDE_LOOKBACK_MONTHS=6 bash scripts/monthly_update.sh
 
 set -uo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/vps.env"   # FIDE_VPS, FIDE_VPS_COMPOSE_DIR
+# DB-Zugang aus .env (das Passwort steht bewusst nicht im Repo)
+DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
+: "${DATABASE_URL:?DATABASE_URL fehlt — in .env oder Umgebung setzen}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-DB_URL="${DATABASE_URL:-postgresql://fide:nimzo194.@localhost:5434/fidedb}"
+DB_URL="$DATABASE_URL"
 
 # launchd erbt KEIN interaktives Shell-Environment — ein blankes "python3" wäre
 # dort entweder das System-Python (ohne psycopg2) oder gar nicht auffindbar.
@@ -68,14 +72,14 @@ run_vps_resets() {
     local ok=0
     echo ""
     echo "$(date): === Schritt 3/4: VPS-Orchestrator — P1/P2/P3-Monatsrefresh requeuen ==="
-    ssh pit@187.124.181.116 \
-        "cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_monthly_refresh.py" \
+    ssh "$FIDE_VPS" \
+        "cd $FIDE_VPS_COMPOSE_DIR && docker compose exec -T dashboard python3 orchestrator/reset_monthly_refresh.py" \
         || { echo "$(date): WARNUNG: reset_monthly_refresh.py fehlgeschlagen."; ok=1; }
 
     echo ""
     echo "$(date): === Schritt 4/4: VPS-Orchestrator — P0-Neuzugänge requeuen ==="
-    ssh pit@187.124.181.116 \
-        "cd /opt/fide-scraper/orchestrator && docker compose exec -T dashboard python3 orchestrator/reset_new_entrant_refresh.py" \
+    ssh "$FIDE_VPS" \
+        "cd $FIDE_VPS_COMPOSE_DIR && docker compose exec -T dashboard python3 orchestrator/reset_new_entrant_refresh.py" \
         || { echo "$(date): WARNUNG: reset_new_entrant_refresh.py fehlgeschlagen."; ok=1; }
 
     return $ok

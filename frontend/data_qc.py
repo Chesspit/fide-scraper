@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import psycopg2
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://fide:nimzo194.@localhost:5434/fidedb")
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 # Ursachen-Taxonomie — muss mit scripts/quality_check.py::CATEGORIES übereinstimmen.
 # Reihenfolge = Klassifikations-Präzedenz; Label für Dropdowns/Spalten.

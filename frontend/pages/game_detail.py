@@ -44,7 +44,7 @@ CARD = {
 # ---------------------------------------------------------------------------
 def _db():
     return psycopg2.connect(
-        os.getenv("DATABASE_URL", "postgresql://fide:nimzo194.@localhost:5434/fidedb")
+        os.environ["DATABASE_URL"]
     )
 
 

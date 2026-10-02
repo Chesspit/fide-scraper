@@ -71,7 +71,7 @@ CLR_LABELS = ["Weiß", "Schwarz"]
 # DB
 # ---------------------------------------------------------------------------
 def _db():
-    return psycopg2.connect(os.getenv("DATABASE_URL", "postgresql://fide:nimzo194.@localhost:5434/fidedb"))
+    return psycopg2.connect(os.environ["DATABASE_URL"])
 
 
 def _default_player_option() -> list[dict]:

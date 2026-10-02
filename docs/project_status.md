@@ -30,11 +30,12 @@ aufgenommen.
 
 | Komponente | Beschreibung |
 |---|---|
-| VPS | Hostinger, IP `187.124.181.116`, `/opt/fide-scraper/` |
-| Datenbank | TimescaleDB (PostgreSQL 16), läuft als Docker-Container auf dem VPS |
+| VPS | Infomaniak VPS Lite „ELO“, IP `179.237.106.106` (2 CPU / 4 GB / 60 GB), `/opt/fide-scraper/` — seit 02.10.2026, vorher Hostinger `187.124.181.116` (Umzug: `docs/umzug_infomaniak.md`) |
+| Datenbank | TimescaleDB (PostgreSQL 16), Container `fide-db` im Compose-Stack `deploy/infomaniak/` |
 | Scraper / Orchestrator | Python 3.13; Worker + Dashboard als Docker-Container auf VPS (restart: unless-stopped) |
 | Verbindung lokal | SSH-Tunnel `localhost:5434 → VPS:5432` via `scripts/tunnel.sh` |
-| Dashboard | `https://scelo.chesspit.net` (Traefik via Coolify, BasicAuth) — Routing-Labels in `orchestrator/docker-compose.yml` |
+| Dashboard | `https://scelo.chesspit.net` (eigenes Traefik im Stack, BasicAuth) — Routing-Labels in `deploy/infomaniak/docker-compose.yml` |
+| Frontend | `https://elo.chesspit.net` (ELO-Einsichten + ARPAD, gleiche BasicAuth) |
 | Repository | `https://github.com/Chesspit/fide-scraper` |
 
 ### 2.2 Datenfluss
@@ -85,7 +86,8 @@ Bei HTTP 403: sofortiger Stopp mit Fehlermeldung.
 
 ### 2.4 Lokales Scraping vom Mac Mini
 
-Ab 2026-04-29 wird **ausschliesslich lokal** gescrapt. Die VPS-IP (187.124.181.116)
+*(Historisch, Stand Mai 2026 — heute scrapt der Worker auf dem VPS über DC-Proxys.)*
+Ab 2026-04-29 wird **ausschliesslich lokal** gescrapt. Die damalige Hostinger-IP (187.124.181.116)
 ist von FIDE dauerhaft gesperrt (bestätigt 2026-05-09: Timeout auf allen Requests).
 Das Script `scripts/run_local_backfill.sh` übernimmt:
 
@@ -424,7 +426,7 @@ OK-Fenster tragen `category = NULL`.
 
 ```bash
 # Lokal via Tunnel:
-DATABASE_URL=postgresql://fide:nimzo194.@localhost:5434/fidedb \
+DATABASE_URL=postgresql://fide:<DB_PASSWORD>@localhost:5434/fidedb \
   python3 -m scripts.quality_check [--rebuild] [--from-year YYYY] [--to-year YYYY]
 
 # Jahres-Report ohne Neuberechnung:
@@ -763,16 +765,54 @@ bewusst nicht ungeprüft aufgeräumt):
 |---|---|---|
 | Notebooks 10/11/13/14 regenerieren **und ausführen** | Mittel | ⬜ Generatoren geändert (gemeinsamer `elo_band`-Helper, NULL-Gruppe benannt), die committeten `.ipynb` haben aber noch die alten Zellen. Achtung: Regenerieren allein löscht die gespeicherten Ergebnisse |
 | `quality_check.py --rebuild` — Folgen bedenken | Mittel | ⬜ Danach enthält `qc_rating_check` statt 2.150 die ~243.541 gescrapten Spieler. QC-Seiten haben jetzt einen Grundgesamtheit-Filter (Default „kuratiert"), Notebooks 10/11 zählen die NULL-Gruppe — beides vorbereitet, aber noch nie gegen die große Population gelaufen |
-| Worker-Speicherwachstum wirklich beheben | Mittel | ⬜ Nur eingedämmt (4 GB cgroup-Limit + RAM-Monitoring), Ursache im Python-Code nicht gefunden. Der konkrete Auslöser vom 14.09. (P0-Band mit 1,2 Mio Spielern) ist behoben, der ursprüngliche Spike vom 12.09. bleibt unerklärt |
+| Worker-Speicherwachstum beobachten | Niedrig | 👀 Seit dem P0-Fix (16.09.) stabil: Worker 70 → 84 MB in 7 Tagen ohne Neustart (`~/logs/memory_watch.log` auf dem VPS), Host 3,4 GB frei. Kein Leck erkennbar; der Spike vom 12.09. bleibt unerklärt, 4-GB-Limit + Monitoring bleiben. Folgeschaden vom 14.09. behoben: DC-Threads prüfen die DB-Verbindung jetzt vor jeder Gruppe (`run_dc_slot`), nicht erst nach der ersten Exception |
+| Gruppen ohne Thread | Niedrig | ✅ 24.09.: 17 NON-Gruppen (1 Spieler) hatten keinen Thread, weil `set_backfill_targets.py` für den Kontinent „Other" keine Kandidaten kannte → 2021–2026 an `dc_newplayers_1`, 2009–2019 per Jahresziel skipped (2020 lag schon bei `dc_dach`); „Other" im Skript ergänzt |
 | Coverage-Nenner: `players.active` vs. FIDE-Standardliste | Niedrig | ⬜ `store.py:397-414` begründet, warum die Standardliste der sauberere Nenner wäre; `players.active` driftet, weil der Monatsimport es für Bestandsspieler nie auffrischt. Bewusst nicht mitgeändert (sonst Zahlen vor/nach unvergleichbar) |
 | Lücke unterhalb `ELO_FLOOR = 1400` | Niedrig | ⬜ Bänder 1000–1300 zeigen 0 gescrapte Spieler (271 aktive betroffen). Im Coverage-Tab jetzt sichtbar; Entscheidung, ob das Grid nach unten erweitert wird, steht aus |
 | Migration 017 auf Test-/Zweitumgebungen anwenden | Niedrig | ⬜ Auf der Produktiv-DB angewendet. Die DB-gestützten Tests laufen nicht gegen den VPS (`permission denied to create database` für den `fide`-User) — lokal mit Wegwerf-PG und `ORCH_TEST_DATABASE_URL` laufen sie (2026-09-16: 240 grün, nur `test_retry_on_429` rot, schon vorher) |
-| Liste 2024-06 neu importieren | Hoch | ✅ 17.09.2026 (6.4a). Offen: nach Abschluss der 12 GAP-Gruppen `audit_data.py --since 2024-05 --until 2024-08` wiederholen |
+| Liste 2024-06 neu importieren | Hoch | ✅ 17.09.2026 (6.4a). GAP-Gruppen fertig 19.09., Audit 2024-05…08 am 24.09. wiederholt: Juni 82,6 % gescrapt (besser als Mai–Aug), 2024-07 unauffällig (weniger Partien 3,6 → 0,8 %, Kette unerklärt 2,0 → 0,4 %) |
 | `rating_corrections` 2024-03 für gescrapte Spieler neu berechnen | Mittel | ⬜ Formel mit Rating nach den Partien (6.4a); betrifft `quality_check.py`-Ergebnisse für das März-2024-Fenster |
 | Inaktive Spieler seit 2020 in die Population aufnehmen? | Entscheidung | ✅ Nein (17.09.2026) |
 | Reaktivierte Spieler erfassen | Mittel | ⬜ `players.active` beim Monatsimport aus dem Listen-Flag nachziehen (analog `sync_players_std_rating`); sonst werden wieder aktive Spieler nie gescrapt (2.293 Fälle in 2026-09). Ändert die Coverage-Zahlen |
 | März-2026-Anomalie klären | Niedrig | ⬜ 16.538 Spieler nur in der FIDE-Liste 2026-03; Stichprobe auf ratings.fide.com (z. B. 525002783) |
 | Stichproben 2020-01/2020-05/2022-01 (no_data) | Niedrig | ⬜ Periodenweise über der Schwelle, Ursache offen (2024-07 hat sich mit dem Juni-Neuimport erledigt) |
+
+**Neu aus Session 2026-10-01 — zukünftiger Job: neue und reaktivierte Spieler zuverlässig erfassen**
+
+Status: ⏸ **P0 pausiert, Fix ausstehend** (nach dem Umzug zu Infomaniak, vor der November-Liste).
+Ersetzt bei Umsetzung auch die Zeile „Reaktivierte Spieler erfassen" oben.
+
+*Befund.* Das P0-Tier (eingeführt 01.09.2026, Commit `7bd302d`, monatlich automatisiert mit `7e96819`)
+war als einmalige Aufräumaktion für ~26.000 nie gescrapte aktive Spieler gedacht. Im Dauerbetrieb
+für echte Neuzugänge geht es schief:
+
+- **Falsche Perioden:** Partien vor dem ersten Rating stehen in der Periode des ersten Ratings
+  (= aktueller Monat). Der Worker fragt wegen des Vormonat-Cutoffs nur bis zum Vormonat ab
+  → alle Abrufe `no_data`.
+- **Danach unsichtbar:** P0 nimmt nur Spieler *ohne jede* `scrape_periods`-Zeile, P1–P3 nur Spieler
+  *mit* mindestens einem `ok`. Wer nur `no_data` hat, fällt aus beiden heraus und wird nie wieder gescrapt.
+- **Jahresserien schließen sich gegenseitig aus:** P0-Gruppen 2025 und 2026 stehen mit gemischten
+  Prioritäten in der Queue, der Filter „nie gescrapt" gilt aber global. Erwischt zuerst eine
+  2025er-Gruppe den Spieler, überspringt ihn die 2026er.
+
+*Zahlen 01.10.2026.* 4.494 aktive, bewertete Spieler haben laut Liste 2026-09 Partien, aber nur
+`no_data`-Zeilen und 2026-09 nie abgefragt (2.326 davon nur für 2025 abgefragt, 396 für Jan–Aug 2026
+alles leer). Von 3.582 im September erstmals Bewerteten haben 2.824 nur `no_data`. Im Oktober kamen
+3.067 neu Bewertete hinzu (≈ 30.000 leere Abrufe, deshalb pausiert).
+Die Annahme „Partien erscheinen erst in der Periode des ersten Ratings" stammt aus der Listenstatistik
+und ist noch an einer FIDE-Seite zu verifizieren.
+
+*Pause.* Alle 146 P0-Gruppen `status='skipped'`, `notes='P0-Pause 2026-10-01: …'`.
+`reset_new_entrant_refresh.py` setzt nur `done` zurück, die Pause übersteht also den Monatslauf.
+Rückgängig: `UPDATE orchestrator.scrape_groups SET status='pending', notes=NULL WHERE notes LIKE 'P0-Pause 2026-10-01%'`.
+
+*Lösungsidee.* Auswahl nach der offiziellen Liste statt nach „schon einmal gescrapt": Der Monatslauf
+erzeugt für die neue Periode GAP-Gruppen (`generate_period_repair_batches.py --period`), also jede
+Kombination mit `rating_history.num_games > 0` ohne `scrape_periods`-Zeile — derselbe Maßstab wie
+Ebene 1 von `audit_data.py`. Das deckt Neuzugänge, reaktivierte Spieler (unabhängig von `players.active`)
+und die 4.494 Altfälle ab; P0 wird überflüssig. Offen: Vormonat-Cutoff lockern, sobald die Liste der
+aktuellen Periode importiert ist; Altfälle per GAP für 2026-01…2026-10 nachholen; ob Partien vor dem
+ersten Rating auch rückwirkend (ältere Perioden) gebraucht werden.
 
 ---
 

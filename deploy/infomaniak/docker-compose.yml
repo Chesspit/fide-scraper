@@ -1,0 +1,203 @@
+## fide-scraper — Produktion auf dem Infomaniak-VPS „ELO" (179.237.106.106)
+## ─────────────────────────────────────────────────────────────────────────────
+## Ein Stack für alles: TimescaleDB, Traefik (TLS + BasicAuth), Orchestrator-
+## Dashboard + Worker, Frontend „ELO-Einsichten". Ersetzt auf dem neuen Server
+## orchestrator/docker-compose.yml (das bleibt bis zum Rückbau für Hostinger).
+##
+## .env liegt im Repo-Root (/opt/fide-scraper/.env); hier ein Symlink darauf:
+##   ln -s ../../.env deploy/infomaniak/.env
+##
+## Aufrufe immer aus diesem Ordner:
+##   cd /opt/fide-scraper/deploy/infomaniak
+##   docker compose up -d db traefik dashboard frontend   # Parallelbetrieb, OHNE worker
+##   docker compose up -d                                 # nach dem Umschalten
+##
+## Nie zwei Worker gleichzeitig (Hostinger + hier) — siehe docs/umzug_infomaniak.md.
+## ─────────────────────────────────────────────────────────────────────────────
+
+x-proxy-env: &proxy-env
+  # DataImpulse Residential Rotating, Country-Targeting über den Login-Namen
+  # (LOGIN__cr.de) — Details in orchestrator/docker-compose.yml / .env.example.
+  PROXY_USERNAME: ${PROXY_USERNAME}
+  PROXY_PASSWORD: ${PROXY_PASSWORD}
+  PROXY_POOL_FILE: ${PROXY_POOL_FILE:-orchestrator/dataimpulse_gateway.txt}
+  PROXY_DI_PASSWORD: ${PROXY_DI_PASSWORD:-}
+  PROXY_DI_USERNAME_DE: ${PROXY_DI_USERNAME_DE:-}
+  PROXY_DI_USERNAME_IN: ${PROXY_DI_USERNAME_IN:-}
+  PROXY_DI_USERNAME_GB: ${PROXY_DI_USERNAME_GB:-}
+  PROXY_DI_USERNAME_US: ${PROXY_DI_USERNAME_US:-}
+  PROXY_DI_USERNAME_HK: ${PROXY_DI_USERNAME_HK:-}
+  PROXY_DI_USERNAME_ES: ${PROXY_DI_USERNAME_ES:-}
+  PROXY_DI_USERNAME_MX: ${PROXY_DI_USERNAME_MX:-}
+  PROXY_DI_USERNAME_AE: ${PROXY_DI_USERNAME_AE:-}
+  PROXY_DI_USERNAME_CH: ${PROXY_DI_USERNAME_CH:-}
+  PROXY_DI_USERNAME_CL: ${PROXY_DI_USERNAME_CL:-}
+  PROXY_DI_USERNAME_VN: ${PROXY_DI_USERNAME_VN:-}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "10"
+
+services:
+
+  db:
+    # Gleiche Version wie auf Hostinger (fide-tunnelbliq-shared-db) — Dumps
+    # lassen sich so ohne Extension-Update einspielen.
+    image: timescale/timescaledb:2.26.2-pg16
+    container_name: fide-db   # fest: scripts/backup_fide_vps.sh (FIDE_DB_CONTAINER)
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt in .env}
+      FIDE_DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD fehlt in .env}
+      # Tuning kommt aus "command" unten, nicht aus timescaledb-tune
+      NO_TS_TUNE: "true"
+    # Für 4 GB RAM (Hostinger hatte 8 GB und shared_buffers=2 GB).
+    command: >
+      postgres
+      -c shared_buffers=1GB
+      -c effective_cache_size=2560MB
+      -c work_mem=8MB
+      -c maintenance_work_mem=256MB
+      -c max_connections=60
+      -c max_worker_processes=16
+      -c timescaledb.max_background_workers=8
+      -c log_connections=on
+    volumes:
+      - fide_pgdata:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    # Nur lokal: Mac-Tunnel (-L 5434:localhost:5432) und Backup-Skript.
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    shm_size: 256m
+    mem_limit: 2560m
+    restart: unless-stopped
+    logging: *logging
+
+  traefik:
+    image: traefik:v3.6
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=fide
+      - --entrypoints.http.address=:80
+      - --entrypoints.http.http.redirections.entrypoint.to=https
+      - --entrypoints.http.http.redirections.entrypoint.scheme=https
+      - --entrypoints.https.address=:443
+      - --entrypoints.https.http3=true
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=http
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    mem_limit: 256m
+    restart: unless-stopped
+    logging: *logging
+
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: orchestrator/Dockerfile
+    command: python -m orchestrator.app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *proxy-env
+      DATABASE_URL: postgresql://fide:${DB_PASSWORD}@db:5432/fidedb
+      ORCHESTRATOR_DATA_DIR: /data
+      ORCHESTRATOR_PROFILES: /app/orchestrator/profiles.yaml
+    volumes:
+      - orchestrator_data:/data
+      - ../../config.yaml:/app/config.yaml:ro
+      - ../../orchestrator/dataimpulse_gateway.txt:/app/orchestrator/dataimpulse_gateway.txt:ro
+    ports:
+      - "127.0.0.1:8050:8050"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.orchestrator.rule=Host(`${DASHBOARD_HOST:-scelo.chesspit.net}`)"
+      - "traefik.http.routers.orchestrator.entrypoints=https"
+      - "traefik.http.routers.orchestrator.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.orchestrator.middlewares=fide-auth"
+      - "traefik.http.middlewares.fide-auth.basicauth.users=${BASICAUTH_USERS:?BASICAUTH_USERS fehlt in .env}"
+      - "traefik.http.services.orchestrator.loadbalancer.server.port=8050"
+    mem_limit: 768m
+    restart: unless-stopped
+    logging: *logging
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: orchestrator/Dockerfile
+    command: python -m orchestrator.worker
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *proxy-env
+      DATABASE_URL: postgresql://fide:${DB_PASSWORD}@db:5432/fidedb
+      ORCHESTRATOR_DATA_DIR: /data
+      ORCHESTRATOR_PROFILES: /app/orchestrator/profiles.yaml
+      # Nach 429/Cooldown nie direkt (ohne Proxy) fetchen
+      DIRECT_FALLBACK_ON_429: "false"
+      WORKER_DEVICE: ${WORKER_DEVICE:-}
+      # Gleiche claimed_by-Identität wie auf Hostinger: so setzt reset_stale_running()
+      # die beim Umschalten unterbrochenen Gruppen zurück.
+      WORKER_DEVICE_ID: ${WORKER_DEVICE_ID:-vps}
+    volumes:
+      - orchestrator_data:/data
+      - ../../config.yaml:/app/config.yaml:ro
+      - ../../data:/app/data:ro
+      - ../../orchestrator/dataimpulse_gateway.txt:/app/orchestrator/dataimpulse_gateway.txt:ro
+    # Läuft real mit ~85 MB; das Limit begrenzt einen Leck-Vorfall wie am 12.–14.09.
+    # auf den Worker selbst, statt die DB per Host-OOM mitzureißen.
+    mem_limit: 1g
+    restart: unless-stopped
+    logging: *logging
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://fide:${DB_PASSWORD}@db:5432/fidedb
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      # Code + Parquet-Caches aus dem Checkout (siehe frontend/Dockerfile)
+      - ../../frontend:/app/frontend
+      - ../../data:/app/data:ro
+    ports:
+      - "127.0.0.1:8055:8055"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`${FRONTEND_HOST:-elo.chesspit.net}`)"
+      - "traefik.http.routers.frontend.entrypoints=https"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.frontend.middlewares=fide-auth"
+      - "traefik.http.services.frontend.loadbalancer.server.port=8055"
+    mem_limit: 1536m
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  fide_pgdata:
+  orchestrator_data:
+  letsencrypt:
+
+networks:
+  default:
+    name: fide

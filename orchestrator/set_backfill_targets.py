@@ -57,6 +57,9 @@ CONTINENT_THREADS = {
     "Asia":     ["dc_in", "dc_hk", "dc_ae"],
     "Africa":   ["dc_uk", "dc_es", "dc_ae"],
     "Oceania":  ["dc_hk"],
+    # Föderationen ohne Kontinent-Mapping (z. B. NON = ohne Verband) — ohne
+    # Eintrag blieben ihre Gruppen ohne Thread liegen (17 NON-Gruppen, 2026-09-24).
+    "Other":    ["dc_uk", "dc_es", "dc_ae"],
 }
 
 

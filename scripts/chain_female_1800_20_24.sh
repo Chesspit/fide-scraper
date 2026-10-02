@@ -4,12 +4,15 @@
 # Jede Gruppe startet automatisch nach Abschluss der vorherigen.
 
 set -uo pipefail
+# DB-Zugang aus .env (das Passwort steht bewusst nicht im Repo)
+DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
+: "${DATABASE_URL:?DATABASE_URL fehlt — in .env oder Umgebung setzen}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 FROM="2010-01-01"
 TO="2026-04-01"
 PSQL="/opt/homebrew/Cellar/libpq/18.3/bin/psql"
-DB_URL="postgresql://fide:nimzo194.@localhost:5434/fidedb"
+DB_URL="${DATABASE_URL}"
 
 SCRAPE_GROUPS=(female_1800_20 female_1800_21 female_1800_22 female_1800_23 female_1800_24)
 

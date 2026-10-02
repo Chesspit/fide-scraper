@@ -1,6 +1,6 @@
 # FIDE Calculations Scraper
 
-Scraper für FIDE-Calculations-Partien → PostgreSQL/TimescaleDB (VPS Hostinger).
+Scraper für FIDE-Calculations-Partien → PostgreSQL/TimescaleDB (VPS Infomaniak, seit 02.10.2026).
 
 **Ziel:** vollständige Partien-Datenbasis **aller bei der FIDE aktiven Spieler ab ca. 2020**.
 Stand 16.09.2026: 243.555 aktive Spieler mit Rating > 0, davon 243.541 mindestens einmal
@@ -29,6 +29,7 @@ fide-scraper/
 │   ├── parser.py              ← BeautifulSoup HTML-Parser
 │   ├── db.py                  ← PostgreSQL UPSERT; ensure_connection(); is_valid_fide_period()
 │   └── config.py              ← config.yaml + .env kombiniert
+├── deploy/infomaniak/         ← Produktions-Stack (Compose, bootstrap.sh, memory_watch.sh); Runbook docs/umzug_infomaniak.md
 ├── migrations/                ← 001_initial.sql … 019_scrape_groups_only_period.sql
 ├── notebooks/                 ← 01–17 Analysen + notebooks/_generate_*.py (Generatoren)
 ├── scripts/
@@ -50,15 +51,20 @@ fide-scraper/
 
 | | |
 |---|---|
-| VPS | `pit@187.124.181.116`, `/opt/fide-scraper/` |
-| DB lokal | `postgresql://fide:nimzo194.@localhost:5434/fidedb` |
+| VPS | Infomaniak „ELO“ `pit@179.237.106.106`, `/opt/fide-scraper/` (Host steht nur in `scripts/vps.env`) |
+| Stack | `deploy/infomaniak/docker-compose.yml`: `fide-db`, `traefik`, `dashboard`, `worker`, `frontend` |
+| DB lokal | `postgresql://fide:<DB_PASSWORD>@localhost:5434/fidedb` (Passwort nur in `.env`, Server-Wert in `/opt/fide-scraper/.env`) |
 | Tunnel starten | `bash scripts/tunnel.sh` |
 | Orchestrator-Dashboard | https://scelo.chesspit.net (BasicAuth) — Steuerung, Queue, Tab „Abdeckung" |
+| Analyse-Frontend | https://elo.chesspit.net (gleiche BasicAuth) — ELO-Einsichten, Top 100, ARPAD |
 
-**Achtung bei DB-Diagnosen:** Die produktiv genutzte DB läuft im Container
-`fide-tunnelbliq-shared-db` (Port 5432, mit einem anderen Projekt geteilt), **nicht** in
-`fide-scraper-db-1` (Port 5433). Der Tunnel auf lokal 5434 zeigt auf VPS-Port 5432, die
-Angabe oben stimmt also — nur beim `docker logs` den richtigen Container erwischen.
+DB-Container heißt `fide-db` (Port 5432 nur auf `127.0.0.1`), Diagnosen also
+`docker compose -f /opt/fide-scraper/deploy/infomaniak/docker-compose.yml logs …` bzw. `docker exec fide-db psql -U fide -d fidedb`.
+
+**Hostinger (`187.124.181.116`) ist nur noch Rückfallebene:** Worker + Dashboard gestoppt,
+`fide-tunnelbliq-shared-db` mit Stand 02.10.2026 eingefroren. **Nie** den Worker dort wieder starten,
+solange der neue läuft (gleiche Queue-Identität `vps`). n8n und coolify-proxy auf Hostinger gehören
+nicht zum Projekt und bleiben. Umzug + Rückbau: `docs/umzug_infomaniak.md`.
 
 ---
 
@@ -232,7 +238,9 @@ gescrapten Rating-/Partiedaten über 4 feste, sichere Query-Tools (kein Text-to-
 - Tool-Definitionen + Query-Logik: `frontend/data_chat_queries.py` (reine DB-Layer) +
   `frontend/data_arpad.py` (Anthropic-Client, System-Prompt, `answer_question()`).
 - Braucht `ANTHROPIC_API_KEY` in `.env` (lädt selbst via `python-dotenv`, siehe
-  `scraper/config.py`-Pattern — frontend lädt sonst kein `.env`).
+  `scraper/config.py`-Pattern — frontend lädt sonst kein `.env`). Auf dem Server setzt
+  `ssh -t pit@179.237.106.106 ./set_anthropic_key.sh` ihn nach Prüfung gegen die API. Der Key braucht
+  Workspace-Scope „Default“ — Organisations-Keys liefern HTTP 400 (fehlender `anthropic-workspace-id`).
 - Kennt nur den gescrapten Kern-Datensatz (~14.000+ Analysegruppen-/Top-ELO-/Swiss-2026-
   Spieler mit `game_results`) — keine Scraping-Status-/Fortschritts-Fragen (out of scope).
 
@@ -250,6 +258,7 @@ gescrapten Rating-/Partiedaten über 4 feste, sichere Query-Tools (kein Text-to-
 | `std_rating = 0` heißt „unbewertet", nicht „schwach" | Betrifft 1,26 von 1,5 Mio aktiven Spielern. In Filtern immer `std_rating > 0` statt `IS NOT NULL` — sonst Phantom-Band 0 bzw. Millionen Phantom-Soll-Perioden |
 | DB-Tests: `permission denied to create database` | Der `fide`-User darf `fide_orch_test` nicht anlegen. Lokale Wegwerf-PG nutzen und `ORCH_TEST_DATABASE_URL` setzen (z. B. `pip install pgserver` in einem Python-3.12-venv) |
 | Fehlerhafte Liste → stiller Datenverlust | Der Pre-Filter in `worker.py::scrape_group()` markiert Kombos mit `num_games = 0` **ohne Abruf** als `no_data`. Nach einem Listen-Neuimport die falschen Zeilen löschen und mit `orchestrator/generate_period_repair_batches.py --period YYYY-MM-01` GAP-Gruppen (nur diese Periode) anlegen — Vorfall 2024-06, `docs/project_status.md` 6.4a |
+| Dashboard zeigt „no available server“ | Das ist der alte Hostinger-Traefik — der Rechner löst `scelo` noch auf die alte IP auf. `/etc/hosts` prüfen (Mac Mini hatte dort einen festen Eintrag), sonst DNS-Cache leeren |
 | `COALESCE(...) AS x` + `SELECT DISTINCT` | Dann muss `ORDER BY` den **Alias** nutzen, nicht die Ursprungsspalte („ORDER BY expressions must appear in select list") |
 
 ---

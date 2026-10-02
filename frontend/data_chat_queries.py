@@ -9,7 +9,7 @@ import os
 import psycopg2
 import psycopg2.extras
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://fide:nimzo194.@localhost:5434/fidedb")
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 # Kurz — Chat-Tool-Queries laufen synchron im Request-Zyklus eines Dash-Callbacks.
 # Kontrast: scraper/db.py nutzt 15 min als Runaway-Query-Netz für Batch-Jobs.

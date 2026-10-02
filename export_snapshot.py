@@ -5,9 +5,12 @@ import os
 from pathlib import Path
 
 import pandas as pd
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
-DB_URL = "postgresql+psycopg2://fide:nimzo194.@localhost:5434/fidedb"
+load_dotenv(Path(__file__).parent / ".env")
+# Passwort nur in .env, nicht im Repo
+DB_URL = os.environ["DATABASE_URL"].replace("postgresql://", "postgresql+psycopg2://", 1)
 OUTPUT_DIR = Path(__file__).parent / "frontend_data"
 OUTPUT_DIR.mkdir(exist_ok=True)
 

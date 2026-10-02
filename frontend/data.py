@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import psycopg2
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://fide:nimzo194.@localhost:5434/fidedb")
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 DEFAULT_PLAYER_IDS = [
     2805677,   # Gelfand, Boris (1968)

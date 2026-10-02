@@ -978,6 +978,12 @@ def run_dc_slot(
                 stop_event.wait(timeout=min(secs, _DC_SLEEP_CHECK_INTERVAL))
                 continue
 
+            # Verbindung vor jeder Gruppe prüfen, nicht erst nach der ersten Exception:
+            # Ist die DB während eines Timezone-Sleeps kurz abgestürzt (Vorfall 14.09.2026,
+            # OOM-Kill), scheitert sonst die erste Query nach dem Aufwachen und die Gruppe
+            # landet ohne Retry auf failed.
+            pg_conn = ensure_connection(pg_conn)
+
             profile = pm_local.pick_fuzzy(override=profile_name)
             group   = qm_local.get_next_group(dc_affinity=affinity)
 

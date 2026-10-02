@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fide-scraper — tägliches Backup auf dem VPS (Cron, siehe docs/project_status.md).
 #
-# Sichert fidedb (PostgreSQL/TimescaleDB, Coolify-Container) via pg_dump -Fc.
+# Sichert fidedb (PostgreSQL/TimescaleDB, Container fide-db) via pg_dump -Fc.
 # Seit Review #5 enthält der Dump auch die Orchestrator-Queue (Schema
 # "orchestrator": scrape_groups/scrape_runs) — die frühere separate
 # SQLite-Sicherung von scraper.db entfällt.
@@ -31,9 +31,12 @@ TIMESTAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
 log() { echo "$(date -u '+%Y-%m-%d %H:%M:%S UTC') $*" >> "$LOG"; }
 
 # ── PostgreSQL: fidedb (inkl. Schema "orchestrator") ─────────────────────
-PG_CONTAINER=$(docker ps --format '{{.Names}}' | grep '^timescaledb-' | head -1)
-if [ -z "$PG_CONTAINER" ]; then
-    log "FEHLER: kein timescaledb-Container gefunden"
+# Fester Name statt Muster-Suche: Die alte Suche nach '^timescaledb-' fand seit der
+# Wiederherstellung am 22.07.2026 nichts mehr, und `grep` ohne Treffer beendete das
+# Skript wegen pipefail, BEVOR es loggen konnte → zwei Monate lang kein Backup, ohne Meldung.
+PG_CONTAINER="${FIDE_DB_CONTAINER:-fide-db}"   # Hostinger bis 02.10.2026: fide-tunnelbliq-shared-db
+if ! docker ps --format '{{.Names}}' | grep -qx "$PG_CONTAINER"; then
+    log "FEHLER: DB-Container '$PG_CONTAINER' läuft nicht"
     exit 1
 fi
 

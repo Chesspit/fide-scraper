@@ -40,7 +40,7 @@ from orchestrator.state_io import (
 )
 from orchestrator.monthly_refresh_tiers import TIER_FILTERS
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
-from orchestrator.proxy_manager import ProxyManager
+from orchestrator.proxy_manager import ProxyManager, is_proxy_auth_failure
 from orchestrator.queue_manager import AUTO_RETRY_MAX, Group, QueueManager, get_device_id
 from scraper.db import (
     ensure_connection,
@@ -311,8 +311,12 @@ def _fetch(
     timeout = profile.get("timeout_seconds", 20)
     use_proxy = profile.get("use_proxy", True) and proxy_manager is not None
 
-    for attempt in range(1, max_retries + 1):
+    switched_plan = False
+    attempt = 0
+    while attempt < max_retries:
+        attempt += 1
         proxies = proxy_manager.get_proxy() if use_proxy else None
+        on_fallback = use_proxy and proxy_manager.using_fallback()
         if use_proxy and proxies is None and not _direct_fallback_on_429():
             # Pool im Cooldown (get_proxy → None): NICHT stillschweigend direkt
             # fetchen — auf Maschinen mit FIDE-geblockter IP (VPS) wäre das ein
@@ -368,6 +372,20 @@ def _fetch(
             raise
 
         except requests.RequestException as exc:
+            if use_proxy and is_proxy_auth_failure(exc):
+                # Gateway lehnt den Zugang ab (z. B. Plan aufgebraucht): einmalig auf den
+                # Fallback-Plan wechseln und sofort wiederholen, ohne einen Versuch zu
+                # verbrauchen. Lehnt auch der Fallback ab, ist Weiterprobieren zwecklos.
+                if not on_fallback and not switched_plan and \
+                        proxy_manager.switch_to_fallback(str(exc)):
+                    switched_plan = True
+                    attempt -= 1
+                    continue
+                logger.error("Proxy-Zugang abgelehnt für fide_id=%s period=%s (%s) — "
+                             "Plan aufgebraucht oder Zugangsdaten falsch?",
+                             fide_id, period_str,
+                             "Fallback-Plan" if on_fallback else "kein Fallback konfiguriert")
+                return None, 0
             if attempt == max_retries:
                 logger.error("Giving up on fide_id=%s period=%s after %d attempts (last proxy=%s): %s",
                              fide_id, period_str, max_retries, _proxy_label(proxies), exc)
@@ -471,6 +489,7 @@ def scrape_group(
         _bytes_session = 0.0   # thread-local: fresh per group, aggregated by caller
         _bytes_group_start = 0.0
     _consecutive_failures = 0
+    _failed_combos = 0
 
     for _combo_idx, (fide_id, period) in enumerate(pending, start=1):
         # Pause/stop check inside the loop
@@ -516,6 +535,12 @@ def scrape_group(
                         f"Circuit breaker: {_consecutive_failures} aufeinanderfolgende "
                         f"Timeouts (Proxy + direkt) — FIDE blockt diese IP, Gruppe abgebrochen"
                     )
+                # Fehlgeschlagener Abruf ist KEIN no_data: Kombo offen lassen, damit
+                # der Auto-Retry der Gruppe sie erneut holt (sonst stiller Datenverlust,
+                # z. B. wenn der Proxy-Plan aufgebraucht ist).
+                _failed_combos += 1
+                time.sleep(qm.get_wait_time(profile))
+                continue
             else:
                 _consecutive_failures = 0
         else:
@@ -549,6 +574,12 @@ def scrape_group(
                     mb_downloaded=_bytes_session / 1024 / 1024)
     else:
         _update_thread_slot(slot, combos_done=_combo_idx if pending else 0)
+
+    if _failed_combos:
+        raise RuntimeError(
+            f"{_failed_combos} von {len(pending)} Abrufen fehlgeschlagen — bleiben offen, "
+            f"Auto-Retry holt sie nach ({records_found} Partien dieses Laufs sind gespeichert)"
+        )
 
     return records_found, pg_conn, mb_group
 
@@ -764,20 +795,6 @@ def run(
         t_copy["active_hours"] = t.get("active_hours", dc_active_hours)
         dc_thread_cfgs.append(t_copy)
 
-    # Backward-Kompatibilität: altes datacenter-Block (single DC)
-    if not dc_thread_cfgs and cfg.get("datacenter", {}).get("enabled", False):
-        logger.warning("Altes datacenter-Format erkannt — bitte auf datacenter_threads migrieren")
-        old = cfg["datacenter"]
-        dc_thread_cfgs = [{
-            "id": "dc_de", "enabled": True, "label": "DC", "slot": 99,
-            "host": None, "port": 1010,
-            "username_env": "PROXY_DC_USERNAME",
-            "password_env": "PROXY_PASSWORD",
-            "timezone": "Europe/Berlin", "active_hours": [7, 23],
-            "profile": old.get("profile", "semi_conservative"),
-            "federations": [],
-        }]
-
     if active_slots or dc_thread_cfgs:
         _run_parallel_loop(active_slots, dc_thread_cfgs, profile_name, max_groups, max_hours)
     else:
@@ -815,11 +832,18 @@ def _run_parallel_loop(
             password_env=dc_cfg.get("password_env", "PROXY_PASSWORD"),
             host_override=dc_cfg.get("host") or None,
             pool_file=dc_cfg.get("pool_file") or None,
+            fallback_login_env=dc_cfg.get("fallback_login_env", "PROXY_DI_FALLBACK_LOGIN"),
+            fallback_password_env=dc_cfg.get("fallback_password_env", "PROXY_DI_FALLBACK_PASSWORD"),
         )
         if not dc_proxy._user:
             logger.warning("DC-Thread %s: %s fehlt — übersprungen",
                            dc_cfg["label"], dc_cfg["username_env"])
             continue
+        if dc_proxy.using_fallback():
+            logger.warning("DC-Thread %s: nutzt Fallback-Zugangsdaten (Planwechsel aktiv)",
+                           dc_cfg["label"])
+        elif not dc_proxy.has_fallback:
+            logger.info("DC-Thread %s: kein Fallback-Plan konfiguriert", dc_cfg["label"])
         active_dc.append((dc_cfg, dc_proxy))
 
     total_threads = max_w + len(active_dc)

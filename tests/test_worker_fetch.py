@@ -93,3 +93,59 @@ class TestFetchCooldownBehaviour:
 
         assert html == _Resp.text
         assert seen[0] is not None
+
+
+# ---------------------------------------------------------------------------
+# Plan-Wechsel bei abgelehntem Proxy-Zugang
+# ---------------------------------------------------------------------------
+
+from orchestrator import proxy_manager as pm_mod
+
+
+@pytest.fixture
+def di_pm(monkeypatch, tmp_path) -> ProxyManager:
+    monkeypatch.setattr(pm_mod, "FALLBACK_MARKER", tmp_path / "proxy_fallback_active")
+    monkeypatch.setattr(pm_mod, "_fallback_active", None)
+    monkeypatch.setenv("DI_USER", "plan1__cr.de")
+    monkeypatch.setenv("DI_PW", "pw1")
+    monkeypatch.setenv("DI_FB_LOGIN", "plan2")
+    monkeypatch.setenv("DI_FB_PW", "pw2")
+    pool = tmp_path / "gw.txt"
+    pool.write_text("gw.example.com:823\n")
+    return ProxyManager(username_env="DI_USER", password_env="DI_PW", pool_file=pool,
+                        fallback_login_env="DI_FB_LOGIN", fallback_password_env="DI_FB_PW")
+
+
+def _gateway(monkeypatch, accepted_login: str | None) -> list:
+    """requests.get stubben: der Gateway akzeptiert nur accepted_login."""
+    seen = []
+
+    def fake_get(url, headers=None, timeout=None, proxies=None):
+        seen.append(proxies["https"])
+        if accepted_login is None or f"//{accepted_login}__" not in proxies["https"]:
+            raise worker.requests.exceptions.ProxyError(
+                "Unable to connect to proxy: Tunnel connection failed: 407 NO_USER")
+        return _Resp()
+
+    monkeypatch.setattr(worker.requests, "get", fake_get)
+    monkeypatch.setattr(worker.time, "sleep", lambda s: None)
+    return seen
+
+
+class TestPlanSwitch:
+    def test_switches_to_plan2_without_losing_the_request(self, monkeypatch, di_pm):
+        seen = _gateway(monkeypatch, accepted_login="plan2")
+
+        html, _ = worker._fetch(123, "2026-06-01", _PROFILE, di_pm)  # max_retries=1
+
+        assert html == _Resp.text
+        assert "plan1__cr.de" in seen[0] and "plan2__cr.de" in seen[1]
+        assert di_pm.using_fallback()
+
+    def test_gives_up_when_plan2_rejected_too(self, monkeypatch, di_pm):
+        seen = _gateway(monkeypatch, accepted_login=None)
+
+        html, _ = worker._fetch(123, "2026-06-01", {**_PROFILE, "max_retries": 3}, di_pm)
+
+        assert html is None
+        assert len(seen) == 2, "nach abgelehntem Fallback nicht weiter probieren"

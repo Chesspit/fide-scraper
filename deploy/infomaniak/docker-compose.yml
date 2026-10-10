@@ -33,6 +33,10 @@ x-proxy-env: &proxy-env
   PROXY_DI_USERNAME_CH: ${PROXY_DI_USERNAME_CH:-}
   PROXY_DI_USERNAME_CL: ${PROXY_DI_USERNAME_CL:-}
   PROXY_DI_USERNAME_VN: ${PROXY_DI_USERNAME_VN:-}
+  # Plan 2: übernimmt automatisch, wenn der Gateway Plan 1 ablehnt (407 NO_USER),
+  # siehe orchestrator/proxy_manager.py — leer = kein Planwechsel.
+  PROXY_DI_FALLBACK_LOGIN: ${PROXY_DI_FALLBACK_LOGIN:-}
+  PROXY_DI_FALLBACK_PASSWORD: ${PROXY_DI_FALLBACK_PASSWORD:-}
 
 x-logging: &logging
   driver: json-file

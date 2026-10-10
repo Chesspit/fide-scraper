@@ -154,7 +154,7 @@ Erstelle eine Dash-App `app.py` mit einer einzigen Hauptseite:
 
 ---
 
-## Aufgabe 5 — Proxy-Integration (providerneutral, aktuell Webshare)
+## Aufgabe 5 — Proxy-Integration (providerneutral, aktuell DataImpulse)
 
 **Historie:** Ursprünglich **ProxyJet** (proxyjet.io) als Rotating-Residential-Proxy-Dienst — Domain am 2026-07-03 nicht mehr erreichbar (vermutlich Domain-Beschlagnahmung), kompletter Ausfall aller DC-Threads. Seitdem auf **Webshare** umgestellt, und `proxy_manager.py` providerneutral umgebaut, damit ein künftiger Wechsel nur noch Config/Credentials betrifft, keinen Code mehr.
 
@@ -180,9 +180,12 @@ Verifiziert gegen Webshares offizielles Python-Beispiel (`requests.get(url, prox
 PROXY_USERNAME=dein_username
 PROXY_PASSWORD=dein_password
 PROXY_POOL_FILE=orchestrator/webshare_proxies.txt
-PROXY_DC_USERNAME=dein_username
-PROXY_DC_PASSWORD=dein_password
 ```
+
+*Historisch (Webshare-Zeit).* Seit 2026-07-16 läuft DataImpulse, Einrichtung siehe
+„Migration auf DataImpulse" unten und `.env.example`. Die früheren `PROXY_DC_USERNAME`/
+`PROXY_DC_PASSWORD` sind entfallen — jeder DC-Thread nennt in `profiles.yaml` seine eigene
+`username_env` (`PROXY_DI_USERNAME_<LAND>`).
 
 ### Modul `proxy_manager.py`
 
@@ -312,6 +315,27 @@ Zuordnung folgt der **konfigurierten `timezone` je Thread** (nicht den `federati
 - `scripts/check_proxy_pool.py` ist als Pool-Health-Check obsolet (nichts Statisches mehr zu testen), bleibt aber als Smoke-Test gegen das Gateway nutzbar.
 - `DIRECT_FALLBACK_ON_429=false` bleibt auf dem VPS (dessen IP ist weiterhin FIDE-geblockt).
 - Sticky Sessions (Ports 10000–20000) werden bewusst nicht genutzt — Rotation pro Request passt exakt zur bestehenden „frischer Proxy pro Retry"-Logik im Worker.
+
+---
+
+### Planwechsel: zweiter DataImpulse-Plan als Fallback (2026-10-10)
+
+Jeder DataImpulse-Plan hat eigene Zugangsdaten; ist Plan 1 aufgebraucht, lehnt der Gateway
+den CONNECT mit `Tunnel connection failed: 407 NO_USER` ab. Mit
+`PROXY_DI_FALLBACK_LOGIN` / `PROXY_DI_FALLBACK_PASSWORD` in `.env` wechselt der Worker dann
+selbständig: der erste abgelehnte Abruf schaltet alle DC-Threads auf Plan 2 um (Länder-Suffix
+`__cr.xx` bleibt) und wird sofort wiederholt. Der Wechsel steht als Marker in
+`/data/proxy_fallback_active` und gilt auch nach Neustarts; im Log als `PROXY-PLANWECHSEL`.
+
+- Plan 1 wird bis zum Schluss genutzt, Plan 2 erst ab der ersten Ablehnung.
+- Lehnt auch Plan 2 ab: Abruf gilt als fehlgeschlagen, kein weiteres Probieren.
+- Später Plan 2 → Plan 3: Plan-2-Daten in `PROXY_DI_USERNAME_*`/`PROXY_DI_PASSWORD`
+  übernehmen, Plan 3 als Fallback eintragen, Marker löschen, Worker neu erzeugen.
+
+Seit demselben Tag gilt außerdem: **ein fehlgeschlagener Abruf wird nie als `no_data`
+gespeichert.** Die Kombo bleibt offen, die Gruppe endet als `failed` und der Auto-Retry
+(2 h Abstand, max. 3×) holt nur die offenen Kombos nach. Vorher hätte ein Proxy-Ausfall bis
+zum Circuit-Breaker (15 Fehlschläge) still falsche `no_data` erzeugt.
 
 ---
 

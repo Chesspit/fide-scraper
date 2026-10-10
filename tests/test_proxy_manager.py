@@ -183,3 +183,65 @@ class TestPoolHotReload:
         pool_file.write_text("5.6.7.8:2000\n")
         self._bump_mtime(pool_file)
         assert "1.2.3.4:1000" in manager.get_proxy()["http"]
+
+
+# ---------------------------------------------------------------------------
+# Plan-Wechsel (Fallback-Zugangsdaten)
+# ---------------------------------------------------------------------------
+
+from orchestrator import proxy_manager as pm_mod
+
+_REJECTED = OSError("Unable to connect to proxy: Tunnel connection failed: 407 NO_USER")
+
+
+@pytest.fixture
+def fresh_fallback(monkeypatch, tmp_path):
+    """Prozessweiten Fallback-Zustand isolieren (Marker im tmp-Verzeichnis)."""
+    marker = tmp_path / "proxy_fallback_active"
+    monkeypatch.setattr(pm_mod, "FALLBACK_MARKER", marker)
+    monkeypatch.setattr(pm_mod, "_fallback_active", None)
+    return marker
+
+
+@pytest.fixture
+def di_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("DI_USER", "plan1__cr.de")
+    monkeypatch.setenv("DI_PW", "pw1")
+    monkeypatch.setenv("DI_FB_LOGIN", "plan2")
+    monkeypatch.setenv("DI_FB_PW", "pw2")
+    pool = tmp_path / "gw.txt"
+    pool.write_text("gw.example.com:823\n")
+    return pool
+
+
+def _di_manager(pool, with_fallback=True):
+    kwargs = {"fallback_login_env": "DI_FB_LOGIN", "fallback_password_env": "DI_FB_PW"} \
+        if with_fallback else {}
+    return ProxyManager(username_env="DI_USER", password_env="DI_PW", pool_file=pool, **kwargs)
+
+
+class TestPlanFallback:
+    def test_detects_gateway_rejection(self):
+        assert pm_mod.is_proxy_auth_failure(_REJECTED)
+        assert not pm_mod.is_proxy_auth_failure(OSError("Read timed out"))
+        assert not pm_mod.is_proxy_auth_failure(OSError("Tunnel connection failed: 502 Bad Gateway"))
+
+    def test_uses_primary_until_switch(self, fresh_fallback, di_env):
+        m = _di_manager(di_env)
+        assert m.get_proxy()["https"] == "http://plan1__cr.de:pw1@gw.example.com:823"
+
+    def test_switch_keeps_country_suffix_and_affects_all_managers(self, fresh_fallback, di_env):
+        m1, m2 = _di_manager(di_env), _di_manager(di_env)
+        assert m1.switch_to_fallback("407 NO_USER") is True
+        assert m2.get_proxy()["https"] == "http://plan2__cr.de:pw2@gw.example.com:823"
+        assert fresh_fallback.exists()
+
+    def test_marker_survives_restart(self, fresh_fallback, di_env, monkeypatch):
+        fresh_fallback.write_text("2026-10-10 test\n")
+        assert _di_manager(di_env).using_fallback()
+
+    def test_no_switch_without_fallback_config(self, fresh_fallback, di_env):
+        m = _di_manager(di_env, with_fallback=False)
+        assert m.switch_to_fallback("407") is False
+        assert not fresh_fallback.exists()
+        assert "plan1__cr.de:pw1" in m.get_proxy()["https"]

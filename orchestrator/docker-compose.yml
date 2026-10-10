@@ -54,6 +54,8 @@ services:
       PROXY_DI_USERNAME_CH: ${PROXY_DI_USERNAME_CH:-}
       PROXY_DI_USERNAME_CL: ${PROXY_DI_USERNAME_CL:-}
       PROXY_DI_USERNAME_VN: ${PROXY_DI_USERNAME_VN:-}
+      PROXY_DI_FALLBACK_LOGIN: ${PROXY_DI_FALLBACK_LOGIN:-}
+      PROXY_DI_FALLBACK_PASSWORD: ${PROXY_DI_FALLBACK_PASSWORD:-}
     volumes:
       - orchestrator_data:/data
       - ../config.yaml:/app/config.yaml:ro
@@ -109,6 +111,8 @@ services:
       PROXY_DI_USERNAME_CH: ${PROXY_DI_USERNAME_CH:-}
       PROXY_DI_USERNAME_CL: ${PROXY_DI_USERNAME_CL:-}
       PROXY_DI_USERNAME_VN: ${PROXY_DI_USERNAME_VN:-}
+      PROXY_DI_FALLBACK_LOGIN: ${PROXY_DI_FALLBACK_LOGIN:-}
+      PROXY_DI_FALLBACK_PASSWORD: ${PROXY_DI_FALLBACK_PASSWORD:-}
       # VPS-IP ist von FIDE geblockt: nach 429/Cooldown nie direkt (ohne Proxy)
       # fetchen, sondern erneut über den Pool (siehe worker.py::_direct_fallback_on_429)
       DIRECT_FALLBACK_ON_429: "false"

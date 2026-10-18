@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fide-scraper"
+version = "0.1.0"
+requires-python = ">=3.12"
+# Abhängigkeiten bleiben in scraper/, orchestrator/ und frontend/requirements.txt (Docker-Builds lesen dort)
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["scraper*", "orchestrator*", "scripts*"]

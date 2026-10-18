@@ -15,6 +15,7 @@ unten und `docs/project_status.md` 6.7/6.8).
 
 → **Projektdokumentation:** [docs/project_status.md](docs/project_status.md)
 → **Scraping-Status:** [docs/scraping_status.md](docs/scraping_status.md)
+→ **Umbau in vier Blöcke (Plan + Phasenstand):** [docs/architektur_vier_bloecke.md](docs/architektur_vier_bloecke.md)
 
 ---
 
@@ -219,7 +220,7 @@ Repo klonen bzw. `git pull` reicht nicht — vier Dinge liegen bewusst nicht im 
 |---|---|
 | `.env` | aus `.env.example` erzeugen (DB_PASSWORD, DATABASE_URL, Proxy-Credentials) |
 | `.env.notebook` | eine Zeile: `DATABASE_URL=postgresql://fide:…@localhost:5434/fidedb` (nur für Notebooks) |
-| `.venv` | neu anlegen: `python3 -m venv .venv && .venv/bin/pip install -r scraper/requirements.txt` |
+| `.venv` | neu anlegen: `python3 -m venv .venv && .venv/bin/pip install -r scraper/requirements.txt && .venv/bin/pip install -e . --no-deps` |
 | SSH-Key für den VPS | sonst scheitern Tunnel und die VPS-Schritte in `monthly_update.sh` |
 
 Danach `bash scripts/tunnel.sh` — ohne den Tunnel geht weder Notebook noch Import.

@@ -546,6 +546,8 @@ Nachscrapen für Lücken) ist noch offen — bewusst zurückgestellt, siehe
 
 ## G — Architektur: vier Blöcke in einem Repo *(Konsens 2026-10-18)*
 
+→ Ausführlicher Plan (Zuordnungs-Matrix, Schnittstellen, Roadmap mit Status): [architektur_vier_bloecke.md](architektur_vier_bloecke.md)
+
 Das Projekt besteht aus vier logisch eigenständigen Blöcken auf einer gemeinsamen DB:
 
 | Block | Aufgabe | Ort |
@@ -573,7 +575,7 @@ der SQL-Funktionen (`fn_elo_band`, `fn_fide_expected`), `migrations/`.
 
 **Umsetzung** in Phasen (Packaging → `core/` → `qc/` → Block-1-Altlasten → Frontend → Analysen → Import-Test);
 Phasen mit Worker-/Dashboard-Rebuild erst nach Ende des Welt-Backfills.
-Status: 🔄 Phase 0 erledigt (18.10.2026), ab Phase 1 geplant.
+Status: 🔄 Phase 0 und 1 (lokal) erledigt (18.10.2026), ab Phase 2 geplant.
 
 **Phase 0 — Altlast-Befund (18.10.2026).** Auf dem Infomaniak-VPS laufen alle fünf Container
 (`fide-db`, `traefik`, `dashboard`, `worker`, `frontend`) ausschließlich über

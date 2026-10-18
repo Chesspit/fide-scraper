@@ -8,6 +8,8 @@ __pycache__/
 .DS_Store
 *.log
 .pytest_cache/
+*.egg-info/
+build/
 
 # Large data files (FIDE player lists ~200MB uncompressed / ~30-50MB zipped)
 data/*.txt

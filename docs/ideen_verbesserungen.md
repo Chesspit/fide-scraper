@@ -565,6 +565,12 @@ der SQL-Funktionen (`fn_elo_band`, `fn_fide_expected`), `migrations/`.
 - QC findet, Block 1 repariert: QC schreibt nur `qc_*`-Tabellen und Berichte; Reparaturen laufen als Aufträge an den Orchestrator (GAP-Gruppen).
 - `rating_corrections` sind FIDE-Referenzdaten (Block 1), keine QC-Ergebnisse.
 
+**Entscheidungen 18.10.2026**
+- ARPAD gehört zu Block 2 (Seite + Query-Layer im Frontend).
+- Getrennte DB-Rollen werden umgesetzt: `fide_ingest` (Rohdaten schreiben), `fide_qc` (lesen + `qc_*` schreiben), `fide_reader` (Frontend, Notebooks: nur lesen).
+- Repo-Name `fide-scraper` bleibt.
+- Der P0-Fix (neue/reaktivierte Spieler, `project_status.md` Abschnitt 9) ist kein Teil dieses Umbaus: Er gehört zu Block 1, mit Prüfanteil in Block 4, und wird separat besprochen.
+
 **Umsetzung** in Phasen (Packaging → `core/` → `qc/` → Block-1-Altlasten → Frontend → Analysen → Import-Test);
 Phasen mit Worker-/Dashboard-Rebuild erst nach Ende des Welt-Backfills.
 Status: 🔄 Phase 0 erledigt (18.10.2026), ab Phase 1 geplant.

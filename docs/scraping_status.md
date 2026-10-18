@@ -1,10 +1,46 @@
 # Scraping-Status
 
-Stand: 2026-09-16 (Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
+Stand: 2026-10-18 (Zwischenstand, Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
 Raspberry Pi: **vom User abgeschaltet (seit 2026-07-22)** — Restbestand (794 pending Gruppen) am 29.07. auf die DC-Threads umverteilt, kein Thema mehr, siehe Abschnitt unten.
-⚠️ **Backup-Cron seit 21./22.07. gebrochen (Root Cause: Container-Konsolidierung, fidedb + Kunden-DB tunnelbliq teilen sich seither einen Container) — am 25.08. entdeckt, Datenlücke per manuellem fidedb-Dump geschlossen, Cron-Fix selbst noch offen (Stand 25.08., nicht erneut geprüft in dieser Session). Details: Abschnitt „Backup-Status".**
+⚠️ **Backup-Cron seit 21./22.07. gebrochen** — Stand 25.08., in dieser Session nicht erneut geprüft. Details: Abschnitt „Backup-Status" weiter unten.
 
 ---
+
+## Gesamtstand DB (Live 2026-10-18)
+
+| Kennzahl | Wert |
+|----------|------|
+| Perioden-Abdeckung ab 2020 (`coverage_totals`) | **92,6 %** (war 16.09. noch 76 %) — Sprung durch den fast abgeschlossenen Welt-Backfill |
+| Aktive Spieler mit Rating > 0 | **246.871** (war 243.555) |
+| Partien gesamt (`game_results`) | **17.701.035** (war 16.160.371) |
+| Spieler gesamt / aktiv | **1.837.645** / **1.506.143** |
+| Orchestrator-Queue (Welt-Backfill + Refresh-Threads) | **10.761 done, 77 pending, 4 running, 14.030 skipped, 0 failed** |
+
+### Fortschritt pro Thread (Live 2026-10-18)
+
+| Thread | Rolle | Done | Pending/Running | Skipped | Fertig | Ø/Tag (7d) | Restzeit |
+|---|---|---:|---:|---:|---:|---:|---|
+| `dc_ae` | Welt-Backfill (SRB/CRO/BIH/MKD/MNE/SLO/KOS/ALB/GRE/TUR) | 1.126 | 0 | 946 | **100 %** | 4,7 | ✅ fertig |
+| `dc_dach` | Welt-Backfill (DACH/FRA) | 1.114 | 0 | 154 | **100 %** | 5,7 | ✅ fertig |
+| `dc_de` | Welt-Backfill | 910 | 0 | 1.251 | **100 %** | 4,9 | ✅ fertig |
+| `dc_hk` | Welt-Backfill | 790 | 0 | 294 | **100 %** | 3,6 | ✅ fertig |
+| `dc_in` | Welt-Backfill (ehem. Flaschenhals) | 842 | 0 | 1.518 | **100 %** | 4,6 | ✅ fertig |
+| `dc_mx` | Welt-Backfill (FRA/BEL/NED/LUX) | 808 | 0 | 1.884 | **100 %** | 2,4 | ✅ fertig |
+| `dc_uk` | Welt-Backfill | 1.011 | 0 | 880 | **100 %** | 5,0 | ✅ fertig |
+| `dc_newplayers_1` | P0 Neuzugänge | 129 | 0 | 58 | **100 %** | 2,4 | ✅ fertig |
+| `dc_update` (alt) | — | 77 | 0 | 0 | **100 %** | — | ✅ fertig |
+| `dc_es` | Welt-Backfill | 998 | 5 + 1 laufend | 1.798 | 99,4 % | 5,4 | ~1 Tag |
+| `dc_newplayers_2` | P0 Neuzugänge | 156 | 11 + 1 laufend | 58 | 92,9 % | 3,6 | ~3 Tage |
+| `dc_update_1` | P1/P2/P3-Monatsrefresh | 540 | 27 + 1 laufend | 231 | 95,1 % | 4,7 | ~6 Tage |
+| `dc_us` | Welt-Backfill | 1.048 | 34 + 1 laufend | 363 | 96,8 % | 4,1 | ~8–9 Tage |
+
+**9 von 13 Threads komplett durch (0 pending).** Nur noch 4 Threads mit Restarbeit, zusammen 77 pending Gruppen. Der langsamste (`dc_us`) braucht bei aktuellem Tempo noch ~8–9 Tage. Damit dürfte der komplette Welt-Backfill + P0/P1-P3-Refresh **Ende Oktober/Anfang November** durch sein — deutlich früher als die 16.09.-Hochrechnung (Anfang Januar 2027) unten vermuten ließ. Alle Threads liefen innerhalb der letzten 2 Tage, nichts hängt.
+
+---
+
+## Historie — Stand 2026-09-16
+
+*(Abschnitt aus der Session vom 16.09., durch den 18.10.-Stand oben überholt, als Verlauf erhalten.)*
 
 ## Gesamtstand DB (Live 2026-09-16)
 

@@ -544,6 +544,45 @@ Nachscrapen für Lücken) ist noch offen — bewusst zurückgestellt, siehe
 
 ---
 
+## G — Architektur: vier Blöcke in einem Repo *(Konsens 2026-10-18)*
+
+Das Projekt besteht aus vier logisch eigenständigen Blöcken auf einer gemeinsamen DB:
+
+| Block | Aufgabe | Ort |
+|---|---|---|
+| 1 Scraper & Orchestrator | FIDE-Daten beschaffen, Queue steuern (scelo.chesspit.net) | `scraper/`, `orchestrator/` |
+| 2 ELO-Einsichten | Web-Analyse für Anwender inkl. ARPAD (elo.chesspit.net) | `frontend/` |
+| 3 Analysen | methodische Auswertungen, Exporte | `notebooks/`, `scripts/analysis/` |
+| 4 Qualitätskontrolle | Vollständigkeit, Elo-Plausibilität, QC gegen TXT-Listen | `qc/` (neu) |
+
+Gemeinsames Fundament `core/`: Config/DB-Verbindung, FIDE-Periodenkalender, Python-Zwillinge
+der SQL-Funktionen (`fn_elo_band`, `fn_fide_expected`), `migrations/`.
+
+**Regeln**
+- Ein Repo, keine Aufspaltung in vier Repos (eine DB, ein Schema, ein Compose-Stack).
+- Import-Richtung: Blöcke → `core`; Frontend/Analysen/Orchestrator-Dashboard → `qc`. `core` kennt keinen Block, niemand importiert `frontend`.
+- QC ist Bibliothek + CLI ohne eigene UI. QC-Seiten im Frontend und der Abdeckungs-Tab im Orchestrator rufen `qc/` auf und enthalten kein eigenes QC-SQL.
+- QC findet, Block 1 repariert: QC schreibt nur `qc_*`-Tabellen und Berichte; Reparaturen laufen als Aufträge an den Orchestrator (GAP-Gruppen).
+- `rating_corrections` sind FIDE-Referenzdaten (Block 1), keine QC-Ergebnisse.
+
+**Umsetzung** in Phasen (Packaging → `core/` → `qc/` → Block-1-Altlasten → Frontend → Analysen → Import-Test);
+Phasen mit Worker-/Dashboard-Rebuild erst nach Ende des Welt-Backfills.
+Status: 🔄 Phase 0 erledigt (18.10.2026), ab Phase 1 geplant.
+
+**Phase 0 — Altlast-Befund (18.10.2026).** Auf dem Infomaniak-VPS laufen alle fünf Container
+(`fide-db`, `traefik`, `dashboard`, `worker`, `frontend`) ausschließlich über
+`deploy/infomaniak/docker-compose.yml`.
+
+| Datei | Befund | Umgang |
+|---|---|---|
+| `docker-compose.yml` (Root) | Ur-Setup April 2026 (db + scraper), seit 17.04. unverändert, nirgends referenziert | Altlast → löschen |
+| `docker-compose.vps.yml` (Root) | Erster VPS-Versuch April 2026, seit 17.04. unverändert | Altlast → löschen |
+| `scraper/Dockerfile` | Nur von den beiden Root-Compose-Dateien benutzt; der Worker baut über `orchestrator/Dockerfile` | Altlast → mit ihnen löschen |
+| `orchestrator/docker-compose.yml` | Hostinger-Stack (Rückfallebene, s. `docs/umzug_infomaniak.md`) | bleibt bis zum Hostinger-Rückbau |
+| `orchestrator/profiles_pi.yaml` | Raspberry-Pi-Profil, auf Infomaniak nicht gemountet; Pi seit 22.07. aus | bleibt für eine mögliche Pi-Reaktivierung |
+
+---
+
 ## Zusammenfassung nach Impact
 
 ### Analytische Verbesserungen & Datenbasis (A–C)

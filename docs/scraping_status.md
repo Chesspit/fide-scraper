@@ -38,6 +38,46 @@ Raspberry Pi: **vom User abgeschaltet (seit 2026-07-22)** — Restbestand (794 p
 
 ---
 
+## Abdeckung gegen die offizielle Liste — warum nur ~80 % (Stand 2026-10-19)
+
+Maßstab wie in `scripts/audit_data.py` Ebene 1: Soll = (Spieler, Periode) mit
+`rating_history.num_games > 0`, Ist = `scrape_periods.status IN ('ok','no_data')`.
+(Die 92,6 % oben messen etwas anderes: alle Perioden der *heute aktiven* Spieler.)
+
+| Jahr | Soll-Kombos | gescrapt | Abdeckung | davon fehlend: heute inaktiv |
+|---|---:|---:|---:|---:|
+| 2020 | 261.828 | 161.949 | 61,9 % | 96.713 von 99.879 (97 %) |
+| 2021 | 205.743 | 140.463 | 68,3 % | 64.053 von 65.280 (98 %) |
+| 2022 | 473.084 | 339.370 | 71,7 % | 127.998 von 133.714 (96 %) |
+| 2023 | 573.101 | 442.266 | 77,2 % | 125.997 von 130.835 (96 %) |
+| 2024 | 623.320 | 521.515 | 83,7 % | 94.766 von 101.805 (93 %) |
+| 2025 | 711.305 | 679.484 | 95,5 % | 25.451 von 31.821 (80 %) |
+| 2026 | 628.249 | 539.279 | 85,8 % | 13.421 von 88.970 (15 %) |
+
+**Ursache 2020–2025:** `worker.py::get_fide_ids` (und `generate_period_repair_batches.py`)
+filtern `active = TRUE` + `std_rating > 0` — wer damals spielte und heute inaktiv ist, wird nie
+abgefragt. Aktive, bewertete Spieler sind praktisch vollständig (0,5–2 Tsd. fehlende Kombos/Jahr).
+GAP-Gruppen helfen in der jetzigen Form **nicht**: der Filter sitzt an beiden Stellen.
+
+**Ursache 2026:** Periode 2026-10 komplett offen (45.725 Kombos), Mai–Sep je 3–4 Tsd. aktive.
+Grund für Oktober: `worker.py::valid_periods_for_year` kappt beim **Vormonat** (seit
+`4c18a65`, 10.05.) — Periode P wird erst im Monat P+1 gescrapt. FIDE liefert die
+Oktober-Kalkulationen aber schon (Stichprobe 2020009 / 2026-10: 10 Partiezeilen). Ein
+`reset_monthly_refresh.py` jetzt bewirkt daher nichts.
+
+**Offene Entscheidungen:**
+1. Kappung auf „jüngste importierte Liste in `rating_history`“ umstellen (Worker-Rebuild),
+   dann Oktober-Refresh anstoßen — oder bis 01.11. warten bzw. ins Deploy-Fenster legen.
+2. Inaktive Spieler nachladen? ~548k Kombos seit 2020; gemessen ~4,4 KB pro ok-Abruf
+   (2.259 MB / 522.930 ok seit 01.09.) → ~2,3 GB ≈ **$2,40** DataImpulse. Engpass ist die
+   Laufzeit (~3–4 Wochen mit freien Backfill-Threads). Braucht `--include-inactive` in Generator
+   **und** Worker, Banding über `published_rating`, Generierung über einen Zeitraum.
+
+Durchsatz-Einbruch ab ~10.10. (26.574 ok am 03.10. → <1.000/Tag am 17./18.10.) ist erwartet:
+historischer Backfill fast fertig.
+
+---
+
 ## Historie — Stand 2026-09-16
 
 *(Abschnitt aus der Session vom 16.09., durch den 18.10.-Stand oben überholt, als Verlauf erhalten.)*

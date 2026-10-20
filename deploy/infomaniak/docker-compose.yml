@@ -2,7 +2,7 @@
 ## ─────────────────────────────────────────────────────────────────────────────
 ## Ein Stack für alles: TimescaleDB, Traefik (TLS + BasicAuth), Orchestrator-
 ## Dashboard + Worker, Frontend „ELO-Einsichten". Ersetzt auf dem neuen Server
-## orchestrator/docker-compose.yml (das bleibt bis zum Rückbau für Hostinger).
+## orchestrator/docker-compose.yml (Hostinger-Stack, am 20.10.2026 abgebaut und gelöscht).
 ##
 ## .env liegt im Repo-Root (/opt/fide-scraper/.env); hier ein Symlink darauf:
 ##   ln -s ../../.env deploy/infomaniak/.env
@@ -17,7 +17,7 @@
 
 x-proxy-env: &proxy-env
   # DataImpulse Residential Rotating, Country-Targeting über den Login-Namen
-  # (LOGIN__cr.de) — Details in orchestrator/docker-compose.yml / .env.example.
+  # (LOGIN__cr.de) — Details in .env.example.
   PROXY_USERNAME: ${PROXY_USERNAME}
   PROXY_PASSWORD: ${PROXY_PASSWORD}
   PROXY_POOL_FILE: ${PROXY_POOL_FILE:-orchestrator/dataimpulse_gateway.txt}

@@ -586,7 +586,7 @@ Status: 🔄 Phase 0 und 1 (lokal) erledigt (18.10.2026), ab Phase 2 geplant.
 | `docker-compose.yml` (Root) | Ur-Setup April 2026 (db + scraper), seit 17.04. unverändert, nirgends referenziert | Altlast → löschen |
 | `docker-compose.vps.yml` (Root) | Erster VPS-Versuch April 2026, seit 17.04. unverändert | Altlast → löschen |
 | `scraper/Dockerfile` | Nur von den beiden Root-Compose-Dateien benutzt; der Worker baut über `orchestrator/Dockerfile` | Altlast → mit ihnen löschen |
-| `orchestrator/docker-compose.yml` | Hostinger-Stack (Rückfallebene, s. `docs/umzug_infomaniak.md`) | bleibt bis zum Hostinger-Rückbau |
+| `orchestrator/docker-compose.yml` | Hostinger-Stack (Rückfallebene, s. `docs/umzug_infomaniak.md`) | ✅ gelöscht 20.10. nach dem Hostinger-Rückbau |
 | `orchestrator/profiles_pi.yaml` | Raspberry-Pi-Profil, auf Infomaniak nicht gemountet; Pi seit 22.07. aus | bleibt für eine mögliche Pi-Reaktivierung |
 
 ---

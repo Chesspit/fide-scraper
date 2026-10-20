@@ -62,10 +62,9 @@ fide-scraper/
 DB-Container heißt `fide-db` (Port 5432 nur auf `127.0.0.1`), Diagnosen also
 `docker compose -f /opt/fide-scraper/deploy/infomaniak/docker-compose.yml logs …` bzw. `docker exec fide-db psql -U fide -d fidedb`.
 
-**Hostinger (`187.124.181.116`) ist nur noch Rückfallebene:** Worker + Dashboard gestoppt,
-`fide-tunnelbliq-shared-db` mit Stand 02.10.2026 eingefroren. **Nie** den Worker dort wieder starten,
-solange der neue läuft (gleiche Queue-Identität `vps`). n8n und coolify-proxy auf Hostinger gehören
-nicht zum Projekt und bleiben. Umzug + Rückbau: `docs/umzug_infomaniak.md`.
+**Hostinger (`187.124.181.116`) gehört nicht mehr zum Projekt:** Am 20.10.2026 wurden alle ELO- und
+tunnelbliq-Reste entfernt (Container, DB-Volumes, `/opt/fide-scraper`, Cron, Dumps). Dort laufen nur noch
+Coolify, coolify-proxy, n8n und andere Projekte — nichts davon anfassen. Umzug + Rückbau: `docs/umzug_infomaniak.md`.
 
 ---
 

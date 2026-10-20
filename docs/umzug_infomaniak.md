@@ -144,4 +144,10 @@ Erkenntnisse:
 - IPv6 von außen prüfen, dann optional AAAA.
 - Passwort der alten Hostinger-Rolle `fide` ändern.
 - `CLAUDE.md` (Verbindung, Container `fide-db`), `docs/project_status.md` aktualisieren.
-- Nach ~1 Woche Hostinger aufräumen (ELO-Container, shared-db, Volumes, ~25 GB). **coolify-proxy und n8n bleiben.**
+- ✅ 20.10.2026 Hostinger aufgeräumt: Container `orchestrator-worker-1`/`-dashboard-1`, `fide-scraper-db-1`,
+  `fide-tunnelbliq-shared-db` + Redis; 11 Volumes (inkl. `fide_recovery_copy_20260722`, 18 GB, und verwaiste
+  Coolify-tunnelbliq-Volumes); `/opt/fide-scraper`; Cron für beide Backups + `memory_watch`; alte Dumps; Images.
+  Platte von 58 auf 11 GB belegt. Letzter tunnelbliq-Dump vorher auf den Mac: `~/backups/tunnelbliq/tunnelbliq_final_2026-10-20.dump`
+  (820 MB, Prüfsumme verglichen). Alte Crontab gesichert in `~/crontab_vor_aufraeumen_2026-10-20.txt` auf Hostinger.
+  Bleiben: Coolify, coolify-proxy, n8n (+ n8n-sandbox), cruise-tracker. Offen: Coolify-Ressource „tunnelbliqmain“ in der UI löschen.
+  Damit ist auch der Punkt „Passwort der alten Hostinger-Rolle `fide`“ hinfällig (DB existiert nicht mehr).

@@ -86,7 +86,7 @@ Spieler) ist kein Teil dieses Umbaus und wird separat besprochen.
 
 | Phase | Inhalt | Betriebsrisiko | Status |
 |---|---|---|---|
-| **0 Konsens + Altlast** | Abschnitt G in `ideen_verbesserungen.md`; tote Deploy-Dateien geprüft und entfernt (Root-`docker-compose.yml`, `docker-compose.vps.yml`, `scraper/Dockerfile`). Bleiben: `orchestrator/docker-compose.yml` (Hostinger-Rückfall), `profiles_pi.yaml` (Pi) | keins | ✅ 18.10. |
+| **0 Konsens + Altlast** | Abschnitt G in `ideen_verbesserungen.md`; tote Deploy-Dateien geprüft und entfernt (Root-`docker-compose.yml`, `docker-compose.vps.yml`, `scraper/Dockerfile`). Bleibt: `profiles_pi.yaml` (Pi). `orchestrator/docker-compose.yml` nach dem Hostinger-Rückbau am 20.10. gelöscht | keins | ✅ 18.10. |
 | **1 Packaging** | `pyproject.toml`, `pip install -e . --no-deps` in der lokalen `.venv`; Abhängigkeiten bleiben in den `requirements.txt`. Docker-Teil (`pip install -e .` in den Images) kommt mit Phase 2 | keins | ✅ 18.10. (lokal) |
 | **2 `core/`** | `core/config.py`, `core/db.py`, `core/periods.py`, `core/elo.py`; Importe in einem Commit umstellen; Dockerfiles: `COPY core/` + `pyproject.toml`, `pip install -e .`; `test_elo_bands` gegen `core.elo` | mittel: Worker-Rebuild, danach Worker-Log und Saves prüfen | ⬜ |
 | **2a DB-Rollen** | `fide_ingest` / `fide_qc` / `fide_reader` anlegen, Rechte vergeben, `.env` lokal + VPS, Dienste nacheinander umstellen | mittel: Rechte auf der Produktiv-DB | ⬜ |

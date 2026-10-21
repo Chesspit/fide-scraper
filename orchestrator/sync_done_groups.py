@@ -41,7 +41,10 @@ def main():
 
     # 1. Load all pending groups from the queue
     cur.execute(
-        "SELECT id, federation, year, elo_min, elo_max FROM scrape_groups WHERE status = 'pending'"
+        # Listen-Gruppen (update_only=3) auswählen keine aktiven Spieler nach Band,
+        # der Abgleich unten würde sie falsch als fertig/leer einstufen.
+        "SELECT id, federation, year, elo_min, elo_max FROM scrape_groups "
+        "WHERE status = 'pending' AND COALESCE(update_only, 0) <> 3"
     )
     rows = cur.fetchall()
     print(f"Pending groups in queue: {len(rows)}")

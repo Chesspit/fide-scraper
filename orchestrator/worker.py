@@ -38,6 +38,12 @@ from orchestrator.state_io import (
     read_worker_state,
     write_state,
 )
+from orchestrator.list_population import (
+    UPDATE_ONLY_LIST,
+    latest_list_period,
+    population_sql,
+    soll_combos,
+)
 from orchestrator.monthly_refresh_tiers import TIER_FILTERS
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.proxy_manager import ProxyManager, is_proxy_auth_failure
@@ -160,7 +166,9 @@ def _read_dc_thread_enabled(dc_id: str) -> bool:
 
 def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
                  update_only: bool = False, never_scraped_only: bool = False,
-                 only_period: str | None = None) -> list[int]:
+                 only_period: str | None = None, list_based: bool = False,
+                 period_from: str | None = None,
+                 period_to: str | None = None) -> list[int]:
     """Return active player fide_ids matching the federation and ELO range.
 
     update_only=True restricts to players already scraped at least once
@@ -184,7 +192,22 @@ def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
 
     only_period (GAP-Reparatur, 'YYYY-MM-01') restricts to players with games
     in that period's official list but no scrape_periods row for it.
+
+    list_based=True (update_only=3, siehe orchestrator/list_population.py):
+    Spieler mit offenen Soll-Kombos in [period_from, period_to] — ohne
+    active-/std_rating-Filter, Band über das published_rating im Zeitraum.
     """
+    if list_based:
+        if federation in TIER_FILTERS:
+            fed_filter, fed_params = "TRUE", ()
+        else:
+            fed_filter, fed_params = "p.federation = %s", (federation,)
+        with pg_conn.cursor() as cur:
+            latest = latest_list_period(cur)
+            cur.execute(population_sql(fed_filter) + " ORDER BY 1",
+                        fed_params + (period_from, period_to, latest))
+            return [fid for fid, band, *_ in cur.fetchall() if elo_min <= band <= elo_max]
+
     filter_params: tuple = ()
     if only_period:
         scraped_filter = (
@@ -420,10 +443,19 @@ def scrape_group(
     Raises BlockedError if IP gets hard-blocked (caller should abort worker).
     """
     only_period = group.only_period.isoformat() if group.only_period else None
-    fide_ids = get_fide_ids(pg_conn, group.federation, group.elo_min, group.elo_max,
-                            update_only=(group.update_only == 1),
-                            never_scraped_only=(group.update_only == 2),
-                            only_period=only_period)
+    list_based = group.update_only == UPDATE_ONLY_LIST
+    if list_based:
+        list_periods = [only_period] if only_period else valid_periods_for_year(group.year)
+        if not list_periods:
+            return 0, pg_conn, 0.0
+        fide_ids = get_fide_ids(pg_conn, group.federation, group.elo_min, group.elo_max,
+                                list_based=True, period_from=list_periods[0],
+                                period_to=list_periods[-1])
+    else:
+        fide_ids = get_fide_ids(pg_conn, group.federation, group.elo_min, group.elo_max,
+                                update_only=(group.update_only == 1),
+                                never_scraped_only=(group.update_only == 2),
+                                only_period=only_period)
     if not fide_ids:
         logger.info("Group %s/%d/%d-%d: no active players found — skipping",
                     group.federation, group.year, group.elo_min, group.elo_max)
@@ -440,6 +472,16 @@ def scrape_group(
         logger.info("Group %s/%d: all %d player-periods already scraped",
                     group.federation, group.year, len(fide_ids) * len(periods))
         return 0, pg_conn, 0.0
+
+    if list_based:
+        # Nur Soll-Kombos abfragen: Monate ohne Listen-Partien (oder ohne
+        # Listeneintrag) bleiben unberührt, statt als no_data markiert zu werden.
+        with pg_conn.cursor() as cur:
+            soll = soll_combos(cur, list({fid for fid, _ in pending}), periods)
+        pending = [(fid, p) for fid, p in pending
+                   if (fid, p.isoformat() if hasattr(p, "isoformat") else p) in soll]
+        if not pending:
+            return 0, pg_conn, 0.0
 
     # Pre-filter: skip periods where num_games=0 in rating_history (no games played).
     # NULL means no TXT snapshot → must scrape. Only skip confirmed-zero months.

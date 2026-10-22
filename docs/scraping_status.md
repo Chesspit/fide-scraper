@@ -1,8 +1,22 @@
 # Scraping-Status
 
-Stand: 2026-10-18 (Zwischenstand, Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
+Stand: 2026-10-20 (Zwischenstand, Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
 Raspberry Pi: **vom User abgeschaltet (seit 2026-07-22)** — Restbestand (794 pending Gruppen) am 29.07. auf die DC-Threads umverteilt, kein Thema mehr, siehe Abschnitt unten.
-⚠️ **Backup-Cron seit 21./22.07. gebrochen** — Stand 25.08., in dieser Session nicht erneut geprüft. Details: Abschnitt „Backup-Status" weiter unten.
+✅ **Backup:** läuft seit dem Umzug auf Infomaniak wieder (VPS-Cron 03:45, Mac-Pull hat den Dump vom 20.10.). Hostinger am 20.10. komplett abgebaut.
+
+---
+
+## Queue-Stand (Live 2026-10-20, 15:00 UTC)
+
+**10.794 done, 45 pending, 3 running, 0 failed, 14.030 skipped** (18.10.: 77 pending + 4 running).
+24 h: 14 Läufe, alle `success`. 10 von 13 Threads leer; `dc_es` heute 09:30 fertig geworden.
+
+| Thread | Rolle | pending + laufend | done 7 d | fertig ca. |
+|---|---|---:|---:|---|
+| `dc_us` | Welt-Backfill (aktuell VEN 2020) | 25 + 1 | 30 | ~26.10. |
+| `dc_update_1` | P1/P2/P3-Monatsrefresh (aktuell RSA 2020) | 15 + 1 | 37 | ~23.10. |
+| `dc_newplayers_2` | P0 Neuzugänge (aktuell PHI 2020) | 5 + 1 | 24 | ~22.10. |
+| alle übrigen | – | 0 | – | ✅ |
 
 ---
 

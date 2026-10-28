@@ -69,9 +69,10 @@ Maßstab wie in `scripts/audit_data.py` Ebene 1: Soll = (Spieler, Periode) mit
 | 2026 | 628.249 | 539.279 | 85,8 % | 13.421 von 88.970 (15 %) |
 
 **Ursache 2020–2025:** `worker.py::get_fide_ids` (und `generate_period_repair_batches.py`)
-filtern `active = TRUE` + `std_rating > 0` — wer damals spielte und heute inaktiv ist, wird nie
+filtern `active = TRUE` + `std_rating > 0` — wer damals spielte und heute inaktiv ist, wurde nie
 abgefragt. Aktive, bewertete Spieler sind praktisch vollständig (0,5–2 Tsd. fehlende Kombos/Jahr).
-GAP-Gruppen helfen in der jetzigen Form **nicht**: der Filter sitzt an beiden Stellen.
+GAP-Gruppen helfen **nicht** (Filter an beiden Stellen) — dafür gibt es jetzt die Listen-Gruppen
+(`update_only=3`, s. Entscheidung 2 unten).
 
 **Ursache 2026:** Periode 2026-10 komplett offen (45.725 Kombos), Mai–Sep je 3–4 Tsd. aktive.
 Grund für Oktober: `worker.py::valid_periods_for_year` kappt beim **Vormonat** (seit
@@ -82,10 +83,13 @@ Oktober-Kalkulationen aber schon (Stichprobe 2020009 / 2026-10: 10 Partiezeilen)
 **Offene Entscheidungen:**
 1. Kappung auf „jüngste importierte Liste in `rating_history`“ umstellen (Worker-Rebuild),
    dann Oktober-Refresh anstoßen — oder bis 01.11. warten bzw. ins Deploy-Fenster legen.
-2. Inaktive Spieler nachladen? ~548k Kombos seit 2020; gemessen ~4,4 KB pro ok-Abruf
-   (2.259 MB / 522.930 ok seit 01.09.) → ~2,3 GB ≈ **$2,40** DataImpulse. Engpass ist die
-   Laufzeit (~3–4 Wochen mit freien Backfill-Threads). Braucht `--include-inactive` in Generator
-   **und** Worker, Banding über `published_rating`, Generierung über einen Zeitraum.
+2. ~~Inaktive Spieler nachladen?~~ **Entschieden: ja** — umgesetzt als Listen-Gruppen
+   (`update_only=3`, Commit `38f9334`). Auswahl nach offizieller Liste
+   (`rating_history.num_games > 0`) statt `players.active`/`std_rating`: erfasst Inaktive,
+   Reaktivierte, Neuzugänge und Band-/Föderationswechsler (`orchestrator/list_population.py`).
+   Erzeugen mit `orchestrator/generate_list_batches.py --years …` (Föderation × Jahr) bzw.
+   `--period YYYY-MM-01`. Schätzung damals: ~548k Kombos seit 2020, ~2,3 GB ≈ **$2,40**
+   DataImpulse, Laufzeit ~3–4 Wochen.
 
 Durchsatz-Einbruch ab ~10.10. (26.574 ok am 03.10. → <1.000/Tag am 17./18.10.) ist erwartet:
 historischer Backfill fast fertig.
@@ -609,7 +613,13 @@ Stand 2026-07-07, alle Threads aktiv:
 
 ---
 
-## ⚠️ Backup-Status — Cron gebrochen seit 21./22.07., manuelle Lücke am 25.08. geschlossen
+## ✅ Backup-Status (historisch: Hostinger) — Cron gebrochen seit 21./22.07., manuelle Lücke am 25.08. geschlossen
+
+> **Erledigt, nur noch Historie.** Seit dem Umzug auf Infomaniak (02.10.2026) läuft das Backup
+> wieder: VPS-Cron 03:45, Mac-Pull hat den Dump vom 20.10. (s. Kopf dieser Datei). Hostinger
+> wurde am 20.10.2026 komplett abgebaut — Container `fide-tunnelbliq-shared-db` /
+> `fide-scraper-db-1`, die Skripte und der Cron unten existieren dort nicht mehr. Der Rest
+> dieses Abschnitts beschreibt den Stand vom 25.08.
 
 **Beide täglichen Cron-Backups auf dem VPS liefen seit 35 Tagen nicht mehr, ohne jede Fehlermeldung im Log.** Entdeckt bei einer Routine-Prüfung, nicht durch einen Vorfall. Am 25.08. manuell ein aktueller fidedb-Dump nachgezogen (siehe unten) — der Cron-Bug selbst ist **bewusst noch nicht gefixt** (User-Entscheidung: erstmal nur die Datenlücke schließen).
 
@@ -677,7 +687,7 @@ Vier Stufen umgesetzt (Commits `14e7520`, `e4eb6a1`, `3e41af1`, `d4e940f`, `027e
 |-----|---------|
 | **VPS kurzzeitig unerreichbar** | User konnte Dashboard nicht erreichen; Diagnose zeigte VPS/SSH/DB/HTTPS allesamt tot, aber DNS + generelles Internet ok, Traceroute erreichte sauber Hostingers Netz und starb dann — sah wie VPS-Totalausfall aus. Ursache war ein **eingeschaltetes VPN auf dem Mac Mini**; nach Ausschalten sofort wieder alles erreichbar (Ping, SSH, Tunnel, Dashboard). Kein VPS-seitiges Problem. |
 | **Orchestrator-Gesundheitscheck** | 0 failed-Gruppen, 462/462 `scrape_runs` der letzten 7 Tage `success`, alle 9 DC-Threads innerhalb 24h aktiv, Worker-Log zeigt nur selbstheilende Proxy-Retries (kein echter Fehler), Disk 52 % belegt. Bestätigt: **Monatsrefresh P1/P2/P3 tatsächlich am 16.08. ~14:56 Uhr fertig geworden**, wie am 12.08. projiziert. |
-| **Backup-Lücke entdeckt (⚠️ ungelöst)** | Beide VPS-Cron-Backups (fidedb + tunnelbliq) seit 21.07. tot durch einen Container-Namens-Match-Bug, der das Skript beim Start silent abbrechen lässt; die Mac-Mini-Offsite-Kopie lief noch nie automatisch (launchd-Plist nie installiert). Details siehe eigener Abschnitt „Backup-Status" oben. Noch nicht gefixt — Rückfrage beim User, wie vorgegangen werden soll. |
+| **Backup-Lücke entdeckt (✅ erledigt seit Infomaniak-Umzug, s. Backup-Status)** | Beide VPS-Cron-Backups (fidedb + tunnelbliq) seit 21.07. tot durch einen Container-Namens-Match-Bug, der das Skript beim Start silent abbrechen lässt; die Mac-Mini-Offsite-Kopie lief noch nie automatisch (launchd-Plist nie installiert). Details siehe eigener Abschnitt „Backup-Status" oben. Noch nicht gefixt — Rückfrage beim User, wie vorgegangen werden soll. |
 | **Hochrechnung Restlaufzeit aktualisiert** | `dc_de` bleibt/verschärft sich als Flaschenhals (3,6 statt 5,0 Gruppen/Tag), Gesamtende jetzt auf **Ende Dezember 2026** revidiert (ggü. ~19.11. am 29.07.) — Ursache weiterhin nicht diagnostiziert. |
 
 ---

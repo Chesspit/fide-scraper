@@ -10,7 +10,7 @@ seinerzeit ad hoc erzeugt) — hier als wiederverwendbares Skript, parametrisier
 über --top-n.
 
 Nutzung:
-    .venv/bin/python scripts/export_female_roster.py --top-n 20 \
+    .venv/bin/python scripts/analysis/export_female_roster.py --top-n 20 \
         --out notebooks/top20_female_roster_2016-2025.csv
 
 Mit --include-inactive liefert der Export zusätzlich Spielerinnen, die zu
@@ -23,14 +23,12 @@ Die CSV bekommt dann eine zusätzliche Spalte `active` (0/1, aktueller Status).
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "notebooks"))
-from _setup import get_conn  # noqa: E402
+from core.db import connect_analysis as get_conn
+
 
 YEARS = list(range(2016, 2026))
 PERIODS = [f"{y}-12-01" for y in YEARS]

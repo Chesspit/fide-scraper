@@ -1,20 +1,20 @@
-"""Generate die aggregierte "Stärke-Bucket-Auswertung" als eigenständige HTML-Seite —
-Pendant zu scripts/generate_player_strength_cards.py, aber eine Gesamt-Tabelle statt
-einer Karte pro Spielerin.
+"""Generate die aggregierte "Ergebnis nach Gegner-Geschlecht"-Seite (ohne
+Stärke-Bucket-Split) als eigenständige HTML-Seite — Pendant zu
+scripts/analysis/generate_strength_aggregate_export.py, aber ohne die schwächer/gleich/
+stärker-Aufteilung: jede Partie zählt unabhängig von der relativen
+Gegnerstärke, nur noch nach Gegner-Geschlecht aufgeschlüsselt (Gesamt/F/M).
 
 Liest die von Notebook 16 (Top-40) bzw. Notebook 17 (Top-20) exportierte
-`*_strength_summary_overall_aggregate.csv` und rendert daraus exakt die Tabelle,
-die zuvor für die Top-40-Auswertung von Hand gebaut wurde (exports/
-top40_frauen_staerke_auswertung.html) — hier parametrisiert für beliebige Kohorten.
+`*_overall_by_sex.csv` (Abschnitt "4b" der Notebooks).
 
 Nutzung:
-    .venv/bin/python scripts/generate_strength_aggregate_export.py \
-        --agg-csv notebooks/top20_2400_strength_summary_overall_aggregate.csv \
-        --per-player-csv notebooks/top20_2400_strength_summary_overall_per_player.csv \
-        --cohort-size 20 \
-        --notebook 17_top20_2400_strength_breakdown.ipynb \
-        --data-stand 2026-08-11 \
-        --out exports/top20_frauen_staerke_auswertung.html
+    .venv/bin/python scripts/analysis/generate_sex_only_aggregate_export.py \
+        --csv notebooks/top40_2400_overall_by_sex.csv \
+        --per-player-csv notebooks/top40_2400_strength_summary_overall_per_player.csv \
+        --cohort-size 40 \
+        --notebook 16_top40_2400_strength_breakdown.ipynb \
+        --data-stand 2026-08-13 \
+        --out exports/top40_frauen_ergebnis_nach_geschlecht.html
 """
 
 from __future__ import annotations
@@ -24,12 +24,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from generate_strength_methodology import APPENDIX_STYLE, build_methodology_fragment
+ROOT = Path(__file__).resolve().parents[2]
 
-ROOT = Path(__file__).resolve().parent.parent
-
-BUCKET_ORDER = ["schwächer", "gleich", "stärker", "Gesamt"]
-BUCKET_ARROW = {"schwächer": "▽", "gleich": "=", "stärker": "△", "Gesamt": "Σ"}
 SEX_ORDER = ["Gesamt", "F", "M"]
 SEX_LABEL = {"Gesamt": "Gesamt", "F": "Frauen", "M": "Männer"}
 SEX_CLASS = {"Gesamt": "gesamt", "F": "frauen", "M": "maenner"}
@@ -48,40 +44,30 @@ def fmt_delta(x: float) -> str:
 
 
 def render_rows(agg: pd.DataFrame) -> str:
-    sub = agg.set_index(["strength_bucket", "sex_group"])
+    sub = agg.set_index("sex_group")
     rows = []
-    for bucket in BUCKET_ORDER:
-        is_total_bucket = bucket == "Gesamt"
-        for i, sex in enumerate(SEX_ORDER):
-            row = sub.loc[(bucket, sex)]
-            row_classes = " ".join(
-                c for c in ["group-first" if i == 0 else "", "group-total" if is_total_bucket else ""] if c
-            )
-            bucket_cell = (
-                f'<span class="bucket-tag"><span class="bucket-arrow">{BUCKET_ARROW[bucket]}</span>{bucket}</span>'
-                if i == 0 else ""
-            )
-            sex_chip = f'<span class="sex-chip {SEX_CLASS[sex]}">{SEX_LABEL[sex]}</span>'
-            n = int(row["n_partien"])
-            win_pct = row["siege"] / n * 100
-            draw_pct = row["remis"] / n * 100
-            loss_pct = row["niederlagen"] / n * 100
-            pq = row["punktequote"]
-            delta = row["mean_delta"]
-            delta_cls = "delta-pos" if delta >= 0 else "delta-neg"
-            rows.append(
-                f'<tr class="{row_classes}"><td class="bucket-cell">{bucket_cell}</td>'
-                f'<td class="sex-cell">{sex_chip}</td>'
-                f'<td>{fmt_int(n)}</td>'
-                f'<td><div class="wdl-bar"><span class="wdl-win" style="width:{win_pct:.2f}%"></span>'
-                f'<span class="wdl-draw" style="width:{draw_pct:.2f}%"></span>'
-                f'<span class="wdl-loss" style="width:{loss_pct:.2f}%"></span></div>'
-                f'<div class="wdl-nums">{fmt_int(int(row["siege"]))} / {fmt_int(int(row["remis"]))} / {fmt_int(int(row["niederlagen"]))}</div></td>'
-                f'<td class="pq-cell"><div class="pq-num">{fmt_ratio(pq)}</div>'
-                f'<div class="pq-track"><span class="pq-mid"></span><div class="pq-fill" style="width:{pq*100:.1f}%"></div></div></td>'
-                f'<td>{fmt_int(round(row["avg_opponent_rating"]))}</td>'
-                f'<td class="{delta_cls}">{fmt_delta(delta)}</td></tr>'
-            )
+    for sex in SEX_ORDER:
+        row = sub.loc[sex]
+        sex_chip = f'<span class="sex-chip {SEX_CLASS[sex]}">{SEX_LABEL[sex]}</span>'
+        n = int(row["n_partien"])
+        win_pct = row["siege"] / n * 100
+        draw_pct = row["remis"] / n * 100
+        loss_pct = row["niederlagen"] / n * 100
+        pq = row["punktequote"]
+        delta = row["mean_delta"]
+        delta_cls = "delta-pos" if delta >= 0 else "delta-neg"
+        rows.append(
+            f'<tr><td class="sex-cell">{sex_chip}</td>'
+            f'<td>{fmt_int(n)}</td>'
+            f'<td><div class="wdl-bar"><span class="wdl-win" style="width:{win_pct:.2f}%"></span>'
+            f'<span class="wdl-draw" style="width:{draw_pct:.2f}%"></span>'
+            f'<span class="wdl-loss" style="width:{loss_pct:.2f}%"></span></div>'
+            f'<div class="wdl-nums">{fmt_int(int(row["siege"]))} / {fmt_int(int(row["remis"]))} / {fmt_int(int(row["niederlagen"]))}</div></td>'
+            f'<td class="pq-cell"><div class="pq-num">{fmt_ratio(pq)}</div>'
+            f'<div class="pq-track"><span class="pq-mid"></span><div class="pq-fill" style="width:{pq*100:.1f}%"></div></div></td>'
+            f'<td>{fmt_int(round(row["avg_opponent_rating"]))}</td>'
+            f'<td class="{delta_cls}">{fmt_delta(delta)}</td></tr>'
+        )
     return "\n".join(rows)
 
 
@@ -127,32 +113,27 @@ STYLE = """
   .legend-item { display: flex; align-items: center; gap: 0.4rem; }
   .dot { width: 0.65rem; height: 0.65rem; border-radius: 50%; flex: none; }
   .table-wrap { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; overflow: visible; }
-  table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 0.76rem; }
-  thead th { text-align: right; padding: 0.6rem 0.6rem; border-bottom: 1px solid var(--rule-strong);
-    color: var(--muted); font-weight: 600; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.04em; }
-  thead th:first-child, thead th:nth-child(2) { text-align: left; }
-  tbody td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--rule); text-align: right;
+  table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 0.82rem; }
+  thead th { text-align: right; padding: 0.65rem 0.7rem; border-bottom: 1px solid var(--rule-strong);
+    color: var(--muted); font-weight: 600; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  thead th:first-child { text-align: left; }
+  tbody td { padding: 0.65rem 0.7rem; border-bottom: 1px solid var(--rule); text-align: right;
     font-variant-numeric: tabular-nums; white-space: nowrap; }
-  tbody tr.group-first td { border-top: 2px solid var(--rule-strong); }
-  tbody tr.group-total td { border-top: 2px solid var(--accent); background: var(--accent-soft); }
   tbody tr:last-child td { border-bottom: none; }
   tbody tr { break-inside: avoid; }
   thead { display: table-header-group; }
-  td.bucket-cell { text-align: left; }
-  .bucket-tag { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 700; font-size: 0.82rem; }
-  .bucket-arrow { font-size: 0.88rem; opacity: 0.75; }
   td.sex-cell { text-align: left; }
-  .sex-chip { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em; }
+  .sex-chip { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.02em; }
   .sex-chip.gesamt { background: var(--rule); color: var(--muted); }
   .sex-chip.frauen { background: var(--women-soft); color: var(--women); }
   .sex-chip.maenner { background: var(--men-soft); color: var(--men); }
-  .wdl-bar { display: flex; width: 7rem; height: 0.5rem; border-radius: 3px; overflow: hidden;
+  .wdl-bar { display: flex; width: 8rem; height: 0.55rem; border-radius: 3px; overflow: hidden;
     margin-left: auto; box-shadow: inset 0 0 0 1px var(--rule-strong); }
   .wdl-bar span { display: block; height: 100%; }
   .wdl-win { background: var(--win); } .wdl-draw { background: var(--draw); } .wdl-loss { background: var(--loss); }
-  .wdl-nums { font-size: 0.68rem; color: var(--muted); margin-top: 0.2rem; text-align: right; }
-  .pq-cell { min-width: 7rem; }
-  .pq-track { position: relative; width: 7rem; height: 0.5rem; background: var(--rule); border-radius: 3px; margin-left: auto; overflow: hidden; }
+  .wdl-nums { font-size: 0.7rem; color: var(--muted); margin-top: 0.2rem; text-align: right; }
+  .pq-cell { min-width: 8rem; }
+  .pq-track { position: relative; width: 8rem; height: 0.55rem; background: var(--rule); border-radius: 3px; margin-left: auto; overflow: hidden; }
   .pq-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; }
   .pq-mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--rule-strong); }
   .pq-num { font-weight: 700; margin-bottom: 0.15rem; }
@@ -162,39 +143,36 @@ STYLE = """
   .note b { color: var(--ink); }
   footer { margin-top: 1.4rem; font-size: 0.72rem; color: var(--faint); line-height: 1.55; }
   footer code { background: var(--accent-soft); color: var(--accent); padding: 0.05rem 0.35rem; border-radius: 4px; font-size: 0.68rem; }
-""" + APPENDIX_STYLE
+"""
 
 
 def build_fragment(agg: pd.DataFrame, cohort_size: int, n_players: int,
-                    notebook_name: str, source_csv: str, data_stand: str,
-                    with_methodology: bool = False) -> str:
+                    notebook_name: str, source_csv: str, data_stand: str) -> str:
     """Content-only fragment: <title> + <style> + markup, no doctype/html/head/body."""
     cohort_label = f"Top-{cohort_size}-Frauen"
-    # Nur die "Gesamt"-Bucket-Zeilen heranziehen (Summe über schwächer/gleich/stärker) —
-    # sonst würden n_total/n_known doppelt gezählt, weil dieselben Partien jetzt sowohl in
-    # ihrem echten Stärke-Bucket als auch im Gesamt-Bucket-Rollup stehen.
-    overall = agg[agg.strength_bucket == "Gesamt"]
-    n_total = int(overall.loc[overall.sex_group == "Gesamt", "n_partien"].iloc[0])
-    n_known = int(overall.loc[overall.sex_group.isin(["F", "M"]), "n_partien"].sum())
+    n_total = int(agg.loc[agg.sex_group == "Gesamt", "n_partien"].iloc[0])
+    n_known = int(agg.loc[agg.sex_group.isin(["F", "M"]), "n_partien"].sum())
     n_unknown = n_total - n_known
     unknown_pct = n_unknown / n_total * 100
 
-    return f"""<title>Stärke-Bucket-Auswertung — {cohort_label} 2400+</title>
+    return f"""<title>Ergebnis nach Gegner-Geschlecht — {cohort_label} 2400+</title>
 <style>{STYLE}</style>
 <div class="page">
   <header class="hero">
     <div class="eyebrow">FIDE Rating · {cohort_label} im 2400+-Fenster</div>
-    <h1>Ergebnis nach Gegnerstärke &amp; Gegner-Geschlecht</h1>
+    <h1>Ergebnis nach Gegner-Geschlecht</h1>
     <p class="lede">
       Alle Partien der {n_players} Top-{cohort_size}-Spielerinnen ab ihrem individuellen
-      <b>Schwellenjahr</b> (erstes Jahr mit Dezember-Elo ≥ 2400) bis 2025, eingeteilt nach
-      Gegnerstärke zum Partie-Zeitpunkt (<code>opponent_rating − own_rating</code>, ±50 Elo)
-      und nach Gegner-Geschlecht. Aggregiert über alle Spielerinnen und den gesamten Zeitraum.
+      <b>Schwellenjahr</b> (erstes Jahr mit Dezember-Elo ≥ 2400) bis 2025 — <b>ohne</b>
+      Aufteilung nach relativer Gegnerstärke, jede Partie zählt unabhängig davon, ob der
+      Gegner/die Gegnerin schwächer, gleich stark oder stärker war. Aggregiert über alle
+      Spielerinnen und den gesamten Zeitraum, nur noch nach Gegner-Geschlecht
+      aufgeschlüsselt.
     </p>
     <div class="stat-row">
       <div class="stat"><div class="n">{fmt_int(n_total)}</div><div class="l">Partien gesamt</div></div>
       <div class="stat"><div class="n">{n_players}</div><div class="l">Spielerinnen</div></div>
-      <div class="stat"><div class="n">4 × 3</div><div class="l">Bucket × Geschlecht</div></div>
+      <div class="stat"><div class="n">3</div><div class="l">Zeilen (Gesamt/F/M)</div></div>
     </div>
   </header>
 
@@ -209,7 +187,7 @@ def build_fragment(agg: pd.DataFrame, cohort_size: int, n_players: int,
     <table>
       <thead>
         <tr>
-          <th>Bucket</th><th>Gegner</th><th>Partien</th>
+          <th>Gegner</th><th>Partien</th>
           <th>Sieg / Remis / Niederlage</th><th>Punktequote</th>
           <th>Ø-Gegner-Elo</th><th>Ø-Elo-Δ</th>
         </tr>
@@ -221,21 +199,19 @@ def build_fragment(agg: pd.DataFrame, cohort_size: int, n_players: int,
   </div>
 
   <div class="note">
-    <b>Lesehinweis:</b> "Gesamt" wird zweifach verwendet — als Gegner-Spalte (Frauen + Männer
-    + unbekanntes Geschlecht, {fmt_int(n_unknown)} Partien bzw. ≈{unknown_pct:.1f}&nbsp;% ohne
-    bekanntes Gegner-Geschlecht, daher summieren sich die Frauen- und Männer-Zeilen nicht exakt
-    zur Gesamt-Spalte) und als vierter <b>Σ&nbsp;Gesamt</b>-Bucket unten (farblich abgesetzt),
-    der schwächer + gleich + stärker zu einer Zeile zusammenfasst. Bucket-Grenzen: <b>gleich</b>
-    schließt ±50&nbsp;Elo beidseitig ein; <b>schwächer</b>/<b>stärker</b> beginnen erst echt
-    darüber/darunter. Ø-Gegner-Elo und Ø-Elo-Δ sind auf ganze bzw. drei Nachkommastellen
+    <b>Lesehinweis:</b> "Gesamt" enthält auch {fmt_int(n_unknown)} Partien
+    (≈{unknown_pct:.1f}&nbsp;%) mit unbekanntem Gegner-Geschlecht — daher summieren sich die
+    Frauen- und Männer-Zeilen nicht exakt zur Gesamt-Zeile. Ø-Gegner-Elo liegt hier
+    <b>ohne</b> Stärke-Split näher am eigenen Rating-Niveau der Kohorte als in der
+    Bucket-Auswertung, da schwächere und stärkere Gegner sich hier gegenseitig
+    ausmitteln. Ø-Gegner-Elo und Ø-Elo-Δ sind auf ganze bzw. drei Nachkommastellen
     gerundet.
   </div>
 
   <footer>
-    Quelle: Notebook <code>{notebook_name}</code> ·
+    Quelle: Notebook <code>{notebook_name}</code>, Abschnitt 4b ·
     Export <code>{source_csv}</code> · Datenstand {data_stand}.
   </footer>
-{build_methodology_fragment(cohort_size, n_players) if with_methodology else ""}
 </div>
 """
 
@@ -256,26 +232,23 @@ def wrap_full_document(fragment: str) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--agg-csv", required=True, help="*_strength_summary_overall_aggregate.csv")
+    ap.add_argument("--csv", required=True, help="*_overall_by_sex.csv")
     ap.add_argument("--per-player-csv", required=True, help="*_strength_summary_overall_per_player.csv (für Spielerinnenzahl)")
     ap.add_argument("--cohort-size", type=int, required=True, help="z.B. 40 oder 20")
-    ap.add_argument("--notebook", required=True, help="Quell-Notebook, z.B. 17_top20_2400_strength_breakdown.ipynb")
-    ap.add_argument("--data-stand", required=True, help="z.B. 2026-08-11")
+    ap.add_argument("--notebook", required=True, help="Quell-Notebook, z.B. 16_top40_2400_strength_breakdown.ipynb")
+    ap.add_argument("--data-stand", required=True, help="z.B. 2026-08-13")
     ap.add_argument("--out", required=True, help="Vollständiges HTML-Dokument (für Chrome headless --print-to-pdf)")
     ap.add_argument("--fragment-out", default=None,
                      help="Content-only Fragment (für den Artifact-Publish); Standard: <out>.fragment.html")
-    ap.add_argument("--with-methodology", action="store_true",
-                     help="Methodik-Seite (siehe generate_strength_methodology.py) anhängen")
     args = ap.parse_args()
 
-    agg = pd.read_csv(args.agg_csv)
+    agg = pd.read_csv(args.csv)
     per_player = pd.read_csv(args.per_player_csv)
     n_players = per_player["name"].nunique()
 
     fragment = build_fragment(
         agg, args.cohort_size, n_players, args.notebook,
-        Path(args.agg_csv).name, args.data_stand,
-        with_methodology=args.with_methodology,
+        Path(args.csv).name, args.data_stand,
     )
 
     out_path = Path(args.out)

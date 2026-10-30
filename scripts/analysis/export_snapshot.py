@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 """Export DB snapshots as compressed Parquet files for frontend use."""
 
-import os
-from pathlib import Path
-
 import pandas as pd
-from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
-load_dotenv(Path(__file__).parent / ".env")
-# Passwort nur in .env, nicht im Repo
-DB_URL = os.environ["DATABASE_URL"].replace("postgresql://", "postgresql+psycopg2://", 1)
-OUTPUT_DIR = Path(__file__).parent / "frontend_data"
+from core.config import PROJECT_ROOT, get_database_url
+
+# Passwort nur in .env, nicht im Repo (core.config lädt sie)
+DB_URL = get_database_url("reader").replace("postgresql://", "postgresql+psycopg2://", 1)
+OUTPUT_DIR = PROJECT_ROOT / "frontend_data"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 engine = create_engine(DB_URL, connect_args={"connect_timeout": 30})

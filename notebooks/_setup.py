@@ -4,8 +4,8 @@ import warnings
 
 import pandas as pd
 
-from core.config import PROJECT_ROOT, get_notebook_database_url  # noqa: F401
-from core.db import connect
+from core.config import PROJECT_ROOT  # noqa: F401
+from core.db import connect_analysis
 from core.elo import ELO_BAND_WIDTH, elo_band, elo_band_floor  # noqa: F401
 
 warnings.filterwarnings(
@@ -16,14 +16,7 @@ warnings.filterwarnings(
 
 
 def get_conn():
-    conn = connect(get_notebook_database_url())
-    # VPS-Container hat ein sehr kleines /dev/shm; parallele Hash-Joins/-Sorts
-    # laufen dort in "could not resize shared memory segment ... No space left
-    # on device" (beobachtet bei größeren Ad-hoc-Joins, z.B. Notebook 15).
-    with conn.cursor() as cur:
-        cur.execute("SET max_parallel_workers_per_gather = 0")
-    conn.commit()
-    return conn
+    return connect_analysis()
 
 
 def load_view(name: str) -> pd.DataFrame:

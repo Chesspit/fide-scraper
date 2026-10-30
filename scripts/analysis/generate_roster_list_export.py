@@ -1,12 +1,12 @@
 """Generate die kumulative Top-N-Frauen-Roster-Liste als eigenständige HTML-Seite.
 
-Liest die von scripts/export_female_roster.py erzeugte Roster-CSV
+Liest die von scripts/analysis/export_female_roster.py erzeugte Roster-CSV
 (fide_id, name, year_added, 2016..2025) und rendert daraus die Tabelle im
 Format des bestehenden Top-40-Exports (exports/top40_frauen_liste.html) —
 hier parametrisiert für beliebige Kohortengröße.
 
 Nutzung:
-    .venv/bin/python scripts/generate_roster_list_export.py \
+    .venv/bin/python scripts/analysis/generate_roster_list_export.py \
         --roster-csv notebooks/top20_female_roster_2016-2025.csv \
         --cohort-size 20 \
         --data-stand 2026-08-11 \

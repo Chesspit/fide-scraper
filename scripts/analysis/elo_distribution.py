@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 from collections import defaultdict
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-OUTPUT = Path(__file__).resolve().parent.parent / "docs" / "elo_distribution_dec2025.md"
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+OUTPUT = Path(__file__).resolve().parents[2] / "docs" / "elo_distribution_dec2025.md"
 
 FEDERATIONS = {
     "Welt": None,   # None = alle

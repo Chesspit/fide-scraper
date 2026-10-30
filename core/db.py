@@ -39,6 +39,21 @@ def connect(dsn: str | None = None, *, role: str | None = None,
     return conn
 
 
+def connect_analysis():
+    """Leseverbindung für Notebooks/Analyse-Skripte (DB über .env.notebook).
+
+    VPS-Container hat ein sehr kleines /dev/shm; parallele Hash-Joins/-Sorts
+    laufen dort in "could not resize shared memory segment ... No space left
+    on device" (beobachtet bei größeren Ad-hoc-Joins, z.B. Notebook 15).
+    """
+    from core.config import get_notebook_database_url
+    conn = connect(get_notebook_database_url())
+    with conn.cursor() as cur:
+        cur.execute("SET max_parallel_workers_per_gather = 0")
+    conn.commit()
+    return conn
+
+
 def fetch_dicts(conn, sql: str, params=None) -> list[dict]:
     """Ergebniszeilen als Dicts (RealDictCursor)."""
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:

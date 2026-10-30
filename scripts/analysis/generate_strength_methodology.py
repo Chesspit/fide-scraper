@@ -1,5 +1,5 @@
 """Methodik-Anhang für die Stärke-Bucket-Auswertung (siehe
-scripts/generate_strength_aggregate_export.py) — erklärt in Prosa, wer zur
+scripts/analysis/generate_strength_aggregate_export.py) — erklärt in Prosa, wer zur
 Kohorte zählt, ab wann Partien einer Spielerin zählen, und mit welchem Rating
 genau die ±50-Elo-Gegnerstärke-Buckets gebildet werden.
 

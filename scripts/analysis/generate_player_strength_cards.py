@@ -9,7 +9,7 @@ Quelle: notebooks/top40_2400_strength_summary_overall_per_player.csv
         und Jahresend-Elo 2016-2025, daraus wird das Schwellenjahr abgeleitet)
 
 Nutzung:
-    .venv/bin/python scripts/generate_player_strength_cards.py \
+    .venv/bin/python scripts/analysis/generate_player_strength_cards.py \
         --players "Hou, Yifan" "Lei, Tingjie" "Ju, Wenjun" \
         --out exports/top40_frauen_staerke_einzelspielerinnen.html
 
@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 NBDIR = ROOT / "notebooks"
 
 BUCKET_ORDER = ["schwächer", "gleich", "stärker"]

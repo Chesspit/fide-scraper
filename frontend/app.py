@@ -1,4 +1,16 @@
-"""ELO-Einsichten — Dash multi-page app."""
+"""ELO-Einsichten — Dash multi-page app in zwei Editionen.
+
+EDITION=public  nur öffentliche Seiten (elo.chesspit.net, ohne Passwort)
+EDITION=intern  alle Seiten (intern-elo.chesspit.net, BasicAuth)
+
+Sicherheitsprinzip (docs/architektur_vier_bloecke.md, Abschnitt 0): Interne
+Seiten werden in der öffentlichen Edition gar nicht importiert. Dash-Callbacks
+sind eigene HTTP-Endpunkte — Verstecken in der Navigation reichte nicht.
+Deshalb pages_folder="" und explizite Importe statt Auto-Discovery.
+Ohne EDITION gilt die öffentliche Edition (sicherer Default).
+"""
+import importlib
+import os
 # DATABASE_URL (+ ANTHROPIC_API_KEY) lädt core.config aus dem .env im Repo-Root,
 # bevor die Seiten ihre Datenmodule importieren. Im Container kommen sie aus der
 # Umgebung; load_dotenv überschreibt vorhandene Variablen nicht.
@@ -8,14 +20,42 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import html, dcc
 
+EDITIONS = ("public", "intern")
+# Seitenmodul → Editionen, in denen es registriert wird (Seitenaufteilung Abschnitt 0).
+PAGES = {
+    "pages.elo_c":           {"public", "intern"},   # /c
+    "pages.elo_dist":        {"public", "intern"},   # /dist
+    "pages.title_evolution": {"public", "intern"},   # /titles
+    "pages.player_profile":  {"public", "intern"},   # /player-profile
+    "pages.game_detail":     {"intern"},             # /games
+    "pages.arpad":           {"intern"},             # /arpad — kostet Anthropic-Guthaben
+}
+
+
+def get_edition() -> str:
+    edition = os.environ.get("EDITION", "public").strip().lower()
+    if edition not in EDITIONS:
+        raise RuntimeError(f"EDITION={edition!r} unbekannt, erlaubt: {EDITIONS}")
+    return edition
+
+
+EDITION = get_edition()
+
 app = dash.Dash(
     __name__,
     use_pages=True,
+    pages_folder="",
     external_stylesheets=[dbc.themes.BOOTSTRAP],
     suppress_callback_exceptions=True,
 )
 app.title = "ELO-Einsichten"
 server = app.server  # WSGI-Einstieg für gunicorn (frontend/Dockerfile)
+
+for _name in (m for m, editions in PAGES.items() if EDITION in editions):
+    _module = importlib.import_module(_name)
+    # Bei Auto-Discovery übernimmt Dash das Modul-Layout selbst; mit
+    # pages_folder="" muss es hier eingetragen werden (sonst NoLayoutException).
+    dash.page_registry[_name]["layout"] = _module.layout
 
 # Seiten-Gruppen (anhand order-Wert aus register_page)
 # Aktiv: order 1–9  |  Test: order 10+
@@ -66,7 +106,9 @@ app.layout = html.Div(
                 [
                     # Brand
                     html.Span(
-                        [html.Span("ELO-Einsichten"), html.Span(" 🇩🇪", style={"fontSize": "1.1rem"})],
+                        [html.Span("ELO-Einsichten"), html.Span(" 🇩🇪", style={"fontSize": "1.1rem"})]
+                        + ([dbc.Badge("intern", color="warning", className="ms-2")]
+                           if EDITION == "intern" else []),
                         className="navbar-brand mb-0 h1",
                         style={"marginRight": "24px"},
                     ),

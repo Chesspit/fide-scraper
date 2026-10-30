@@ -23,28 +23,39 @@ unten und `docs/project_status.md` 6.7/6.8).
 
 ## Dateistruktur
 
+Vier Blöcke auf einer DB plus gemeinsames Fundament (`docs/architektur_vier_bloecke.md`).
+Erlaubte Importe: jeder Block → `core`; Frontend, Analysen, Orchestrator-Dashboard → `qc`;
+`core` importiert keinen Block, niemand importiert `frontend`. `tests/test_import_boundaries.py`
+prüft das bei jedem Testlauf — neue Dateien dort einem Block zuordnen (`BLOCK_RULES`).
+
 ```
 fide-scraper/
+├── core/                      ← Fundament (importiert keinen Block)
+│   ├── config.py              ← .env laden; get_database_url(role) — DATABASE_URL_<ROLLE> → DATABASE_URL
+│   ├── db.py                  ← connect(), connect_analysis() (Notebooks, .env.notebook)
+│   ├── periods.py             ← is_valid_fide_period, valid_periods_for_year, latest_list_period, Regel „neueste Liste"
+│   ├── elo.py                 ← elo_band, fide_expected, diff_cap (Zwillinge der SQL-Funktionen 017/018)
+│   └── fide_list.py           ← FIDE-Spielerliste (TXT/ZIP) parsen
 ├── config.yaml                ← Scraper-Settings (rate limits, retry, Beta-Verteilung)
-├── scraper/
-│   ├── main.py                ← CLI: run / status
-│   ├── fetcher.py             ← HTTP GET + Retry + Rate-Limiting
-│   ├── parser.py              ← BeautifulSoup HTML-Parser
-│   ├── db.py                  ← PostgreSQL UPSERT; ensure_connection(); is_valid_fide_period()
-│   └── config.py              ← config.yaml + .env kombiniert
+├── scraper/                   ← Block 1: fetcher, parser, db (UPSERT, ensure_connection), main (CLI)
+├── orchestrator/              ← Block 1: worker, queue/proxy/profile_manager, generate_*, reset_*
+│   ├── app.py, store.py       ← Orchestrator-Dashboard (scelo), darf qc/ lesen
+│   ├── qc_ui.py, qc_pages/    ← Dashboard-Tab „QC" (Audit-Läufe, Einzelabfrage, Rating-Fenster, Fälle, 2024)
+│   └── check_proxy_pool.py    ← Gateway-Smoke-Test (läuft im Worker-Container)
+├── qc/                        ← Block 4: audit, integrity, coverage, rating_check, reconcile,
+│                                 rating_views, live (Spieler × Periode), audit_store (qc_audit_runs), db
+├── frontend/                  ← Block 2: ELO-Einsichten, EDITION=public|intern (app.py → PAGES)
+├── notebooks/                 ← Block 3: marimo (NN_*.py, Quelle der Wahrheit) + .ipynb-Archiv, _setup.py
 ├── deploy/infomaniak/         ← Produktions-Stack (Compose, bootstrap.sh, memory_watch.sh); Runbook docs/umzug_infomaniak.md
-├── migrations/                ← 001_initial.sql … 019_scrape_groups_only_period.sql
-├── notebooks/                 ← 01–17 Analysen + notebooks/_generate_*.py (Generatoren)
+├── migrations/                ← 001_initial.sql … 022_db_roles.sql (022 vorbereitet, s. docs/db_rollen.md)
 ├── scripts/
-│   ├── seed_players.py        ← ⚠️ System A, eingefroren (s. „Gruppen: zwei Systeme")
-│   ├── monthly_update.sh      ← FIDE-Liste laden + importieren + VPS-Requeue (täglich per launchd)
-│   ├── coverage_report.py     ← Abdeckung je Föderation/Band/Jahr (CLI zum Dashboard-Tab)
-│   ├── audit_data.py          ← Datenprüfung ab Stichtag: vollständig + Elo-plausibel? (s. unten)
-│   ├── backfill.py            ← Historische Perioden nachladen
-│   ├── run_local_backfill.sh  ← caffeinate + Auto-Restart + Tunnel-Check
-│   ├── resolve_opponents.py   ← Gegner-FIDE-IDs per Lookup befüllen
-│   ├── quality_check.py       ← QC gegen TXT-Snapshots → qc_rating_check
-│   └── tunnel.sh              ← SSH-Tunnel localhost:5434 → VPS:5432
+│   ├── monthly_update.sh      ← FIDE-Liste laden + importieren + VPS-Requeue + Audit (täglich per launchd)
+│   ├── import_rating_snapshots.py, backfill.py, resolve_opponents.py   ← Block 1
+│   ├── audit_data.py          ← CLI zu qc/audit.py: Datenprüfung ab Stichtag (--store → Dashboard)
+│   ├── coverage_report.py, quality_check.py, reconcile_ratings.py, verify_scrape_integrity.py ← CLIs zu qc/
+│   ├── tunnel.sh              ← SSH-Tunnel localhost:5434 → VPS:5432
+│   ├── analysis/              ← Block 3: Export-Skripte (Roster, Stärke-Karten, export_snapshot …)
+│   └── legacy/                ← ⚠️ System A, eingefroren (seed_players, extend_male_control, run_*/chain_*)
 └── data/                      ← FIDE-Listen (gitignored); monthly_update.sh lädt hier ab
 ```
 
@@ -58,8 +69,8 @@ fide-scraper/
 | Stack | `deploy/infomaniak/docker-compose.yml`: `fide-db`, `traefik`, `dashboard`, `worker`, `frontend` |
 | DB lokal | `postgresql://fide:<DB_PASSWORD>@localhost:5434/fidedb` (Passwort nur in `.env`, Server-Wert in `/opt/fide-scraper/.env`) |
 | Tunnel starten | `bash scripts/tunnel.sh` |
-| Orchestrator-Dashboard | https://scelo.chesspit.net (BasicAuth) — Steuerung, Queue, Tab „Abdeckung" |
-| Analyse-Frontend | https://elo.chesspit.net (gleiche BasicAuth) — ELO-Einsichten, Top 100, ARPAD |
+| Orchestrator-Dashboard | https://scelo.chesspit.net (BasicAuth) — Steuerung, Queue, Tabs „Abdeckung" und „QC" |
+| Analyse-Frontend | https://elo.chesspit.net (gleiche BasicAuth) — ELO-Einsichten, Top 100, ARPAD. Nach dem Umbau-Deploy: `intern-elo.chesspit.net` (BasicAuth, alle Seiten) und `elo.chesspit.net` öffentlich (`frontend-public`, Compose-Profil `public`, erst nach OK des Users) |
 
 DB-Container heißt `fide-db` (Port 5432 nur auf `127.0.0.1`), Diagnosen also
 `docker compose -f /opt/fide-scraper/deploy/infomaniak/docker-compose.yml logs …` bzw. `docker exec fide-db psql -U fide -d fidedb`.
@@ -118,12 +129,12 @@ Summary-Zeile `<tr bgcolor=#e6e6e6>`: Spalte 1 = **Ro** → `rating_history.std_
 
 **SQL-Funktionen** (Migration 017): `fn_elo_band(rating)` → Untergrenze des 50er-Bands,
 `fn_elo_group(rating, sex)` → `f_2400_2449` / `m_1850_1899` / `x_…` bei unbekanntem Geschlecht.
-Eine Quelle für Coverage, QC-Frontend und Notebooks; der pandas-Zwilling liegt in
-`notebooks/_setup.py::elo_band()`, `tests/test_elo_bands.py` prüft beide gegeneinander.
+Eine Quelle für Coverage, QC und Notebooks; der Python-Zwilling liegt in
+`core/elo.py::elo_band()` (re-exportiert von `notebooks/_setup.py`), `tests/test_elo_bands.py` prüft beide gegeneinander.
 
 Migration 018: `fn_fide_expected(diff)` → FIDE-Erwartungswert (Tabelle, nicht gerundete
 Normalverteilung), `fn_fide_diff_cap(period)` → 400 bzw. NULL (keine Kappung 2022-02 bis
-2024-03, aus den Daten abgeleitet). Python-Zwilling in `orchestrator/audit.py`.
+2024-03, aus den Daten abgeleitet). Python-Zwilling in `core/elo.py`.
 
 Schlüsselentscheide: `game_index` löst Duplikate bei Doppelrunden; `opponent_fide_id` per nachträglichem Lookup (kein ID in AJAX-Response); beide `rating_change`-Felder gespeichert (ungewichtet + K×Δ).
 
@@ -136,7 +147,7 @@ Leicht zu verwechseln — die beiden hängen **nicht** zusammen und wissen nicht
 | | System A (eingefroren) | System B (aktiv) |
 |---|---|---|
 | Wo | `groups`-Tabelle + `players.analysis_group` | `orchestrator.scrape_groups` |
-| Befüllt durch | `scripts/seed_players.py`, **manuell pro Gruppe** | `orchestrator/generate_groups.py`, automatisch |
+| Befüllt durch | `scripts/legacy/seed_players.py`, **manuell pro Gruppe** | `orchestrator/generate_groups.py`, automatisch |
 | Umfang | 175 kuratierte Gruppen, ELO-Stand April 2026 | alle Föderationen × 2009–2026 × ELO-Bänder ab 1400 |
 | Wächst mit neuen Spielern | **nein** | ja (P0-Tier, monatlich via `monthly_update.sh`) |
 
@@ -154,8 +165,8 @@ aber nicht als Analysegrundlage. Wer eine Kohorte braucht, leitet sie dynamisch 
 <summary>Historischer Workflow „neue Gruppe starten" (System A, nur noch Referenz)</summary>
 
 ```bash
-python scripts/seed_players.py --group GRUPPENNAME
-bash scripts/run_local_backfill.sh GRUPPENNAME 2012-08-01 2026-03-01
+python scripts/legacy/seed_players.py --group GRUPPENNAME
+bash scripts/legacy/run_local_backfill.sh GRUPPENNAME 2012-08-01 2026-03-01
 ```
 ```sql
 UPDATE groups SET backfill_status='complete', scraped_from='2012-08-01', scraped_to='2026-03-01'
@@ -169,7 +180,9 @@ WHERE group_name='GRUPPENNAME';
 
 Frage: *Sind ab Stichtag alle Spieler erfasst, und ergibt die Elo-Entwicklung Sinn?* Maßstab ist
 die **offizielle Liste**, nicht die Queue: Soll = jede Kombination (Spieler, Periode) mit
-`rating_history.num_games > 0` — auch heute inaktive Spieler. Logik in `orchestrator/audit.py`.
+`rating_history.num_games > 0` — auch heute inaktive Spieler. Logik in `qc/audit.py`.
+Mit `--store` landet ein Lauf in `qc_audit_runs` (Migration 021) und erscheint im Dashboard-Tab „QC"
+(Trend, Drill-down, Stichproben); der Monatslauf speichert so jeden Lauf.
 Ausnahme: ungescrapte Kombos von Spielern, die in der neuesten Liste nicht mehr mit Rating
 stehen (von FIDE zurückgezogen), zählen nicht zum Soll, sondern als INFO `periods_withdrawn` —
 dieselbe Regel wie bei den Listen-Gruppen (`orchestrator/list_population.py`).
@@ -264,8 +277,10 @@ gescrapten Rating-/Partiedaten über 4 feste, sichere Query-Tools (kein Text-to-
 | Docker auf VPS im Hintergrund | `docker compose run -T` (ohne TTY → sonst SIGTTOU-Absturz) |
 | Tunnel-Drop beim lokalen Backfill | `db.py::ensure_connection()` 10× Retry bis 5 Min |
 | Opponent-Match falsch (diff >200) | Query: `ABS(opponent_rating - std_rating) > 200` |
-| VPS-IP von FIDE geblockt | Primär lokal scrapen via `run_local_backfill.sh` |
-| `_generate_NN.py` ausführen löscht Notebook-Ergebnisse | Der Generator schreibt die `.ipynb` ohne Outputs neu (NB14 verlor so 1952 Zeilen Tabellen/Grafiken). Nur regenerieren, wenn danach auch ausgeführt wird |
+| VPS-IP von FIDE geblockt | Primär lokal scrapen via `scripts/legacy/run_local_backfill.sh` |
+| `_generate_NN.py` ausführen löscht Notebook-Ergebnisse | Der Generator schreibt die `.ipynb` ohne Outputs neu (NB14 verlor so 1952 Zeilen Tabellen/Grafiken). Für 14/15 gilt die marimo-Fassung, die Generatoren brechen dort ohne `--force` ab |
+| `ModuleNotFoundError: core`/`qc` lokal | Neue Top-Level-Pakete: `.venv/bin/pip install -e . --no-deps` erneut ausführen (editable Install kennt nur die Pakete vom Installationszeitpunkt) |
+| Frontend zeigt `/games`, `/arpad` nicht | `EDITION` fehlt → öffentliche Edition. Lokal `EDITION=intern python frontend/app.py` |
 | `std_rating = 0` heißt „unbewertet", nicht „schwach" | Betrifft 1,26 von 1,5 Mio aktiven Spielern. In Filtern immer `std_rating > 0` statt `IS NOT NULL` — sonst Phantom-Band 0 bzw. Millionen Phantom-Soll-Perioden |
 | DB-Tests: `permission denied to create database` | Der `fide`-User darf `fide_orch_test` nicht anlegen. Lokale Wegwerf-PG nutzen und `ORCH_TEST_DATABASE_URL` setzen (z. B. `pip install pgserver` in einem Python-3.12-venv) |
 | Fehlerhafte Liste → stiller Datenverlust | Der Pre-Filter in `worker.py::scrape_group()` markiert Kombos mit `num_games = 0` **ohne Abruf** als `no_data`. Nach einem Listen-Neuimport die falschen Zeilen löschen und mit `orchestrator/generate_period_repair_batches.py --period YYYY-MM-01` GAP-Gruppen (nur diese Periode) anlegen — Vorfall 2024-06, `docs/project_status.md` 6.4a |
@@ -294,13 +309,29 @@ Notebooks 01–04 und 07 basieren auf den Gruppen `female_top`/`male_control`
 verwenden (dynamische Kohorte aus `rating_history.published_rating`, kein Scraping-Backfill
 nötig).
 
-Verbindung: `DATABASE_URL` aus `.env.notebook` → `localhost:5434`.
-Generatoren (Quelle der Wahrheit): `notebooks/_generate_*.py`.
+Verbindung: `DATABASE_URL` aus `.env.notebook` → `localhost:5434` (über `core.db.connect_analysis()`).
+
+**marimo (seit Phase 6):** Notebooks als reine `.py`-Dateien, git-diffbar und reaktiv.
+14 und 15 liegen als `notebooks/14_top40_female_vs_band_men.py` / `15_top40_equal_strength_summary.py`
+vor, die `.ipynb` bleiben als Archiv, bis die marimo-Fassung lokal geprüft ist.
+
+```bash
+.venv/bin/marimo edit notebooks/14_top40_female_vs_band_men.py   # interaktiv
+.venv/bin/marimo run  notebooks/15_top40_equal_strength_summary.py # als App
+.venv/bin/marimo convert notebooks/NN_xyz.ipynb -o notebooks/NN_xyz.py   # weitere überführen
+.venv/bin/marimo check notebooks/NN_xyz.py                       # danach; tests/test_marimo_notebooks.py prüft alle
+```
+Beim Überführen: `sys.path`-Hack und `display()` entfernen (`from _setup import …`, `mo.vstack`),
+gemeinsame Helfer aus `_setup`/`core` statt Inline-Kopien. Übrige Notebooks: Generatoren
+`notebooks/_generate_*.py` bleiben bis zur Überführung Quelle der Wahrheit.
 
 ---
 
 ## Abhängigkeiten
 
-Versionen in `scraper/requirements.txt`.
+Versionen in `scraper/requirements.txt` (lokal: Scraper + Analysen inkl. `marimo`),
+`orchestrator/requirements.txt` (Worker/Dashboard-Image), `frontend/requirements.txt`.
 Kern: `requests`, `beautifulsoup4`, `psycopg2-binary`, `python-dotenv`, `pyyaml`,
-`pandas`, `matplotlib`, `seaborn`, `jupyter`, `pytest`, `responses`.
+`pandas`, `matplotlib`, `seaborn`, `jupyter`, `marimo`, `pytest`, `responses`.
+Paketstruktur (`core`, `qc`, `scraper`, `orchestrator`, `scripts`) über `pyproject.toml`
++ `pip install -e . --no-deps`; keine `sys.path`-Hacks mehr.

@@ -125,9 +125,28 @@ def connect(dsn: str | None = None, retries: int = CONNECT_RETRIES):
             delay = min(delay * 2, CONNECT_BACKOFF_CAP)
 
 
+def _schema_complete(cur) -> bool:
+    """Stehen Tabellen und nachgerüstete Spalten schon? Dann kein DDL.
+
+    Nötig für die Rolle fide_ingest (Phase 2a, migrations/022): Sie darf
+    schreiben, ist aber nicht Eigentümerin — ALTER TABLE … ADD COLUMN IF NOT
+    EXISTS scheitert ohne Eigentum auch dann, wenn die Spalte existiert.
+    """
+    cur.execute(
+        """SELECT count(*) FROM information_schema.columns
+           WHERE table_schema = %s
+             AND ((table_name = 'scrape_groups' AND column_name IN ('claimed_by', 'only_period'))
+               OR (table_name = 'scrape_runs' AND column_name = 'thread_slot'))""",
+        (SCHEMA,),
+    )
+    return cur.fetchone()[0] == 3
+
+
 def ensure_schema(conn) -> None:
     """Idempotentes DDL — Spiegel von migrations/013_orchestrator_queue.sql."""
     with conn.cursor() as cur:
+        if _schema_complete(cur):
+            return
         cur.execute(_SCHEMA_SQL)
 
 

@@ -1,4 +1,9 @@
-"""Tests for scraper.db — uses a real PostgreSQL connection if available, otherwise skips."""
+"""Tests for scraper.db — uses a real PostgreSQL connection if available, otherwise skips.
+
+Nur ORCH_TEST_DATABASE_URL (Wegwerf-PG), nie DATABASE_URL: Die kommt über
+scraper.config aus der .env und zeigt bei offenem Tunnel auf die Produktiv-DB
+(30.10.2026 so passiert — Testspieler angelegt und wieder gelöscht).
+"""
 
 import os
 
@@ -10,17 +15,45 @@ try:
 except ImportError:
     HAS_PSYCOPG2 = False
 
-DB_URL = os.environ.get("DATABASE_URL", "")
+DB_URL = os.environ.get("ORCH_TEST_DATABASE_URL", "")
 requires_db = pytest.mark.skipif(
     not DB_URL or not HAS_PSYCOPG2,
-    reason="DATABASE_URL not set or psycopg2 not installed"
+    reason="ORCH_TEST_DATABASE_URL not set or psycopg2 not installed"
 )
 
 
+SCHEMA_DB = "fide_schema_test"
+
+
+@pytest.fixture(scope="module")
+def schema_dsn():
+    """Eigene, frisch angelegte Datenbank mit allen Migrationen.
+
+    Nicht die Test-DB der Queue-/Audit-Tests: deren conftest-Fixture legt
+    schmale Nachbauten von players/game_results an, auf denen scraper.db
+    mangels Spalten scheitert.
+    """
+    from pathlib import Path
+    admin = psycopg2.connect(DB_URL)
+    admin.autocommit = True
+    with admin.cursor() as cur:
+        cur.execute(f"DROP DATABASE IF EXISTS {SCHEMA_DB}")
+        cur.execute(f"CREATE DATABASE {SCHEMA_DB}")
+    admin.close()
+    dsn = psycopg2.extensions.make_dsn(DB_URL, dbname=SCHEMA_DB)
+    conn = psycopg2.connect(dsn)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        for migration in sorted((Path(__file__).parent.parent / "migrations").glob("*.sql")):
+            cur.execute(migration.read_text())
+    conn.close()
+    return dsn
+
+
 @pytest.fixture
-def db_conn():
+def db_conn(schema_dsn):
     """Provide a DB connection that rolls back after each test."""
-    conn = psycopg2.connect(DB_URL)
+    conn = psycopg2.connect(schema_dsn)
     conn.autocommit = False
     yield conn
     conn.rollback()
@@ -29,13 +62,8 @@ def db_conn():
 
 @pytest.fixture
 def setup_tables(db_conn):
-    """Ensure tables exist and insert a test player."""
+    """Insert a test player."""
     with db_conn.cursor() as cur:
-        # Read and execute migration
-        from pathlib import Path
-        migration = Path(__file__).parent.parent / "migrations" / "001_initial.sql"
-        cur.execute(migration.read_text())
-
         # Insert test player
         cur.execute("""
             INSERT INTO players (fide_id, name, federation, sex, std_rating, analysis_group)

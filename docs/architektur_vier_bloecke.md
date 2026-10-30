@@ -8,6 +8,35 @@ Repo** (eine DB, ein Schema, ein Compose-Stack, ein Entwickler). Die Ordner `scr
 Docker-Build-Kontexte, `/opt/fide-scraper` und CLAUDE.md darauf verweisen. Neu kommen nur
 `core/` und `qc/` hinzu.
 
+→ **Übergabe an eine Cloud-Session:** `docs/cloud_session_umbau.md`
+
+---
+
+## 0. Zielbild — Entscheide 30.10.2026
+
+| Block | Ziel | Oberfläche |
+|---|---|---|
+| **1 Scraper & Orchestrator** | bleibt im Prinzip, wie er ist; nur Aufräumen (Phase 4) | scelo.chesspit.net (BasicAuth) |
+| **2 ELO-Einsichten** | **zwei Editionen aus einem Code**: `EDITION=public` registriert nur die öffentlichen Seiten, `EDITION=intern` alle. Zwei Container, zwei Traefik-Router | öffentlich: **elo.chesspit.net** (ohne Passwort, Rate-Limit) · intern: **intern-elo.chesspit.net** (BasicAuth) |
+| **3 Analysen** | **marimo** statt Jupyter: Notebooks als reine `.py`-Dateien (git-diffbar, reaktiv, als App ausführbar). Ersetzt die `_generate_*.py`-Generatoren. Bestehende `.ipynb` bleiben als Archiv, bis die marimo-Fassung lokal geprüft ist | lokal (`marimo edit`), ausgewählte Analysen später als App im internen Frontend |
+| **4 Qualitätskontrolle** | Bibliothek `qc/` + CLI + **eigener QC-Bereich im Orchestrator-Dashboard** (neben „Abdeckung"). Audit-Ergebnisse werden in der DB gespeichert (`qc_audit_runs` o. ä.), weil ein Audit-Lauf zu lange dauert, um ihn live zu rechnen (2026-01…04: 19 min); Einzelabfragen (Spieler × Periode) live | scelo.chesspit.net |
+
+**Seitenaufteilung Block 2:**
+
+| Seite | Pfad | öffentlich | intern |
+|---|---|:-:|:-:|
+| ELO-Top100 | `/c` | ✓ | ✓ |
+| ELO-Verteilung | `/dist` | ✓ | ✓ |
+| GM/IM Entwicklung | `/titles` | ✓ | ✓ |
+| Spieler-Steckbrief | `/player-profile` | ✓ | ✓ |
+| Partien-Detail | `/games` | – | ✓ |
+| ARPAD (kostet Anthropic-Guthaben je Frage) | `/arpad` | – | ✓ |
+| QC Übersicht / Fälle / FIDE 2024 Korrekturen | `/qc*` | – | → wandern ins Orchestrator-Dashboard |
+
+Sicherheitsprinzip: Die öffentliche Edition **registriert** interne Seiten gar nicht (Dash-Callbacks
+sind eigene HTTP-Endpunkte — Verstecken in der Navigation reicht nicht) und läuft mit der
+Leserolle `fide_reader`. Kein Login-System in der App.
+
 ---
 
 ## 1. Zuordnungs-Matrix (Ist-Stand)
@@ -95,8 +124,9 @@ Hinweis für Phase 3: `orchestrator/audit.py` importiert seit 30.10. `list_popul
 | **2a DB-Rollen** | `fide_ingest` / `fide_qc` / `fide_reader` anlegen, Rechte vergeben, `.env` lokal + VPS, Dienste nacheinander umstellen | mittel: Rechte auf der Produktiv-DB | ⬜ |
 | **3 `qc/`** | `audit.py`, `integrity.py`, `coverage.py` aus `orchestrator/` sowie Logik aus `quality_check.py`/`reconcile_ratings.py` nach `qc/`; Skripte in `scripts/` werden dünne CLIs; Abdeckungs-Tab importiert `qc.coverage`; Pfad in `monthly_update.sh` | mittel: Dashboard-Rebuild, Abdeckungs-Tab + nächster Monatslauf als Test | ⬜ |
 | **4 Block 1 aufräumen** | `generate_groups` von `scripts.seed_players` lösen; Orchestrator-Image ohne `scripts/`; System-A-Skripte nach `scripts/legacy/` | gering | ⬜ |
-| **5 Frontend** | `data_qc.py` auf `qc/`; QC-Seiten als eigene Navbar-Gruppe; Rolle `fide_reader` | gering | ⬜ |
-| **6 Analysen** | `notebooks/_setup.py` nutzt `core`; Export-Skripte nach `scripts/analysis/`; Notebooks 08/10/11 über `qc/`. ⚠️ Generatoren nur neu laufen lassen, wenn danach auch ausgeführt wird | keins (lokal) | ⬜ |
+| **3b QC-Oberfläche** | QC-Bereich im Orchestrator-Dashboard: QC-Seiten aus dem Frontend dorthin, `frontend/data_qc.py` → `qc/`; Tabelle für gespeicherte Audit-Läufe (Migration) + Schreiben aus `audit_data.py`; Ansicht mit Trends, Drill-down Föderation/Periode, Stichproben; Live-Einzelabfrage Spieler × Periode | mittel: Dashboard-Rebuild, Migration | ⬜ |
+| **5 Frontend** | Zwei Editionen per `EDITION=public/intern` (Seitenaufteilung Abschnitt 0); Compose: zwei Frontend-Services, Router `elo` (ohne BasicAuth, Traefik-Rate-Limit) und `intern-elo` (BasicAuth); Rolle `fide_reader`. ⚠️ `elo.chesspit.net` ohne Passwort = Veröffentlichung, Deploy nur mit OK des Users; DNS-Eintrag `intern-elo` legt der User an | gering (Code), Deploy mit OK | ⬜ |
+| **6 Analysen** | marimo einführen: `notebooks/_setup.py` nutzt `core`; Notebooks 14/15 (dann übrige) nach marimo überführen, `.ipynb` als Archiv behalten; Export-Skripte nach `scripts/analysis/`; Notebooks 08/10/11 über `qc/`. ⚠️ Alte Generatoren nicht mehr laufen lassen (löschen Ergebnisse) | keins (lokal) | ⬜ |
 | **7 Grenzen absichern** | pytest, der verbotene Import-Richtungen meldet; CLAUDE.md-Dateistruktur aktualisieren | keins | ⬜ |
 | **8 optional** | getrennte Repos/Images, nur falls ein Block eigene Releases oder Mitarbeiter bekommt | – | – |
 

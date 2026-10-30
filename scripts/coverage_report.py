@@ -13,10 +13,7 @@ Usage:
 import argparse
 import csv
 import logging
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from orchestrator.coverage import (
     DEFAULT_YEAR_FROM,

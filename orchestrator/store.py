@@ -419,7 +419,7 @@ def query_pg_players() -> dict[str, tuple[int, int, int]]:
     if time.time() - _pg_aktiv_cache_ts < _PG_AKTIV_TTL:
         return _pg_aktiv_cache
     try:
-        from scraper.config import get_database_url
+        from core.config import get_database_url
         import psycopg2
         pg  = psycopg2.connect(get_database_url(), connect_timeout=5)
         cur = pg.cursor()
@@ -604,7 +604,7 @@ COVERAGE_DIMENSIONS = {
 
 def _coverage_compute(key: tuple):
     """Rechnet einen Cache-Eintrag ('rows', dim, von, bis) bzw. ('totals', von, bis)."""
-    from scraper.config import get_database_url
+    from core.config import get_database_url
     import psycopg2
     from orchestrator import coverage as cov
     fns = {

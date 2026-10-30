@@ -59,9 +59,14 @@ from orchestrator.integrity import (
     check_ok_without_games,
     check_orphan_games,
 )
-from orchestrator.list_population import latest_list_period
-from orchestrator.sync_done_groups import valid_periods_for_year
-from scraper.db import is_valid_fide_period
+from core.elo import diff_cap, fide_expected  # noqa: F401
+from core.periods import (  # noqa: F401
+    in_latest_list_sql,
+    latest_list_period,
+    parse_period,
+    previous_period,
+    valid_periods_for_year,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,51 +91,10 @@ REF_MIN_RATIO = 0.5                  # Liste gilt als unvollständig unter 50 % 
 STATEMENT_TIMEOUT = "15min"
 
 
-# ── Elo-Formel (Python-Zwilling zu migrations/018) ────────────────────────────
-
-# Obergrenzen |Δ| je Erwartungswert 0.50, 0.51, …, 0.99; darüber 1.00.
-_FIDE_UPPER = (
-    3, 10, 17, 25, 32, 39, 46, 53, 61, 68, 76, 83, 91, 98, 106, 113, 121, 129,
-    137, 145, 153, 162, 170, 179, 188, 197, 206, 215, 225, 235, 245, 256, 267,
-    278, 290, 302, 315, 328, 344, 357, 374, 391, 411, 432, 456, 484, 517, 559,
-    619, 735,
-)
-
-
-def fide_expected(diff: int) -> float:
-    """FIDE-Erwartungswert für diff = Ro − Gegner (ohne Kappung).
-
-    Ganzzahlige Hundertstel statt 0.5 + i/100: letzteres liefert
-    0.5700000000000001 und scheitert an jedem Gleichheitsvergleich.
-    """
-    a = abs(diff)
-    hundredths = 100
-    for i, upper in enumerate(_FIDE_UPPER):
-        if a <= upper:
-            hundredths = 50 + i
-            break
-    if diff < 0:
-        hundredths = 100 - hundredths
-    return hundredths / 100
-
-
-def diff_cap(tournament_start: date) -> int | None:
-    """400-Punkte-Regel nach Turnierbeginn: keine Kappung für Turniere mit
-    Beginn 2022-01 bis 2024-02 (aus Daten abgeleitet, siehe Migration 018)."""
-    if date(2022, 1, 1) <= tournament_start < date(2024, 3, 1):
-        return None
-    return 400
-
+# Elo-Formel (fide_expected, diff_cap) und Periodenhelfer (parse_period,
+# previous_period) liegen in core/ — hier re-exportiert für bestehende Aufrufer.
 
 # ── Perioden ──────────────────────────────────────────────────────────────────
-
-def parse_period(value: str) -> date:
-    """'2020-01' oder '2020-01-01' → date(2020, 1, 1)."""
-    parts = value.strip().split("-")
-    if len(parts) < 2:
-        raise ValueError(f"Periode erwartet als YYYY-MM: {value!r}")
-    return date(int(parts[0]), int(parts[1]), 1)
-
 
 def audit_periods(since: date, until: date | None = None) -> list[date]:
     """Gültige FIDE-Perioden im Zeitraum, gedeckelt auf den Vormonat.
@@ -147,18 +111,6 @@ def audit_periods(since: date, until: date | None = None) -> list[date]:
             if p >= since and (until is None or p <= until):
                 out.append(p)
     return out
-
-
-def previous_period(p: date) -> date:
-    """Vorherige gültige FIDE-Periode (Quartale/Zweimonatsrhythmus vor 2012-08)."""
-    y, m = p.year, p.month
-    for _ in range(24):
-        m -= 1
-        if m == 0:
-            y, m = y - 1, 12
-        if is_valid_fide_period(date(y, m, 1)):
-            return date(y, m, 1)
-    return date(y, m, 1)
 
 
 # ── Ergebnisstruktur ──────────────────────────────────────────────────────────
@@ -215,10 +167,8 @@ def _fed_clause(federations: list[str] | None, alias: str = "p") -> str:
 # Steht der Spieler in der neuesten importierten Liste mit Rating? Sonst gilt
 # eine ungescrapte Kombo als zurückgezogen (Regel aus list_population.py).
 # Ohne importierte Liste (%(latest)s NULL) ist niemand zurückgezogen.
-_IN_LATEST = """(%(latest)s::date IS NULL OR EXISTS (
-               SELECT 1 FROM rating_history lt
-               WHERE lt.fide_id = {alias}.fide_id AND lt.period = %(latest)s
-                 AND lt.published_rating > 0))"""
+_IN_LATEST = ("(%(latest)s::date IS NULL OR "
+              + in_latest_list_sql("{alias}", "%(latest)s") + ")")
 
 
 _REF_SQL = """

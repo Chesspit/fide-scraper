@@ -1,11 +1,12 @@
 """Shared setup for notebooks: DB connection, styling, data loading."""
 
 import warnings
-from pathlib import Path
 
 import pandas as pd
-import psycopg2
-from dotenv import dotenv_values
+
+from core.config import PROJECT_ROOT, get_notebook_database_url  # noqa: F401
+from core.db import connect
+from core.elo import ELO_BAND_WIDTH, elo_band, elo_band_floor  # noqa: F401
 
 warnings.filterwarnings(
     "ignore",
@@ -13,12 +14,9 @@ warnings.filterwarnings(
     category=UserWarning,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
 
 def get_conn():
-    cfg = dotenv_values(PROJECT_ROOT / ".env.notebook")
-    conn = psycopg2.connect(cfg["DATABASE_URL"])
+    conn = connect(get_notebook_database_url())
     # VPS-Container hat ein sehr kleines /dev/shm; parallele Hash-Joins/-Sorts
     # laufen dort in "could not resize shared memory segment ... No space left
     # on device" (beobachtet bei größeren Ad-hoc-Joins, z.B. Notebook 15).
@@ -51,26 +49,6 @@ GROUP_ORDER = ["female_top", "male_control"]
 
 
 # ── ELO-Bänder ───────────────────────────────────────────────────────────────
-# Spiegelbild von fn_elo_band() aus migrations/017_elo_band_function.sql.
-# Vorher lag diese Logik wortgleich dupliziert in _generate_13.py und
-# _generate_14.py; tests/test_elo_bands.py prüft beide Seiten gegeneinander,
-# damit sie nicht auseinanderlaufen.
-ELO_BAND_WIDTH = 50
-
-
-def elo_band_floor(rating):
-    """Untergrenze des 50er-Bands (2449 -> 2400). None bei fehlendem Rating."""
-    if rating is None or pd.isna(rating):
-        return None
-    return int(rating // ELO_BAND_WIDTH) * ELO_BAND_WIDTH
-
-
-def elo_band(rating) -> str:
-    """Bandbezeichner der Notebooks, z.B. '2400-2449', sonst 'unknown'.
-
-    Format bewusst unverändert gegenüber der früheren Inline-Definition — die
-    bereits committeten Notebook-Ausgaben (13/14) verwenden es in Achsen,
-    Pivot-Indizes und Signifikanztabellen.
-    """
-    lo = elo_band_floor(rating)
-    return "unknown" if lo is None else f"{lo}-{lo + ELO_BAND_WIDTH - 1}"
+# elo_band/elo_band_floor liegen seit Phase 2 in core/elo.py (Spiegelbild von
+# fn_elo_band() aus migrations/017) und werden oben re-exportiert, damit die
+# Notebooks unverändert "from _setup import elo_band" schreiben können.

@@ -6,12 +6,12 @@ import logging
 import sys
 from datetime import date, timedelta
 
+from core.periods import is_valid_fide_period
 from scraper.config import config
 from scraper.db import (
     ensure_connection,
     get_connection,
     get_pending_periods,
-    is_valid_fide_period,
     save_period,
     save_period_no_data,
 )

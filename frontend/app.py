@@ -1,12 +1,8 @@
 """ELO-Einsichten — Dash multi-page app."""
-from pathlib import Path
-
-from dotenv import load_dotenv
-
-# DATABASE_URL (+ ANTHROPIC_API_KEY) aus dem .env im Repo-Root, bevor die Seiten
-# ihre Datenmodule importieren. Im Container kommen sie aus der Umgebung;
-# load_dotenv überschreibt vorhandene Variablen nicht.
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+# DATABASE_URL (+ ANTHROPIC_API_KEY) lädt core.config aus dem .env im Repo-Root,
+# bevor die Seiten ihre Datenmodule importieren. Im Container kommen sie aus der
+# Umgebung; load_dotenv überschreibt vorhandene Variablen nicht.
+import core.config  # noqa: F401
 
 import dash
 import dash_bootstrap_components as dbc

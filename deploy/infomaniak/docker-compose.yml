@@ -183,6 +183,7 @@ services:
     volumes:
       # Code + Parquet-Caches aus dem Checkout (siehe frontend/Dockerfile)
       - ../../frontend:/app/frontend
+      - ../../core:/app/core:ro
       - ../../data:/app/data:ro
     ports:
       - "127.0.0.1:8055:8055"

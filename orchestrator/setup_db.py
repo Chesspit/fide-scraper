@@ -89,7 +89,7 @@ _schema_ready: set[str] = set()
 
 
 def get_dsn() -> str:
-    from scraper.config import get_database_url
+    from core.config import get_database_url
     return get_database_url()
 
 

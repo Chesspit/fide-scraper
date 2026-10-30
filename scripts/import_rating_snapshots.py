@@ -32,9 +32,8 @@ from pathlib import Path
 import psycopg2
 import psycopg2.extras
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scraper.config import get_database_url
+from core.config import get_database_url
 from scripts.seed_players import (
     detect_columns_from_header,
     open_player_list,

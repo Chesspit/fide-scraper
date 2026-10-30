@@ -9,7 +9,7 @@ from orchestrator.coverage import (
     coverage_totals,
 )
 from orchestrator.setup_db import connect
-from orchestrator.sync_done_groups import valid_periods_for_year
+from core.periods import valid_periods_for_year
 
 
 @pytest.fixture

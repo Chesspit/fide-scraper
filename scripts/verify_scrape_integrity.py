@@ -19,9 +19,7 @@ import argparse
 import csv
 import logging
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from orchestrator.integrity import CHECK_IDS, CHECKS, has_hard_findings, run_checks
 from orchestrator.setup_db import connect

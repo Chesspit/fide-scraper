@@ -9,13 +9,9 @@ Then open http://localhost:8050
 """
 
 import os
-import sys
 import time
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import dash
 import dash_bootstrap_components as dbc
@@ -1733,7 +1729,6 @@ def toggle_dc_thread(values, ids):
                 _save_dc_thread_enabled(dc_id, bool(val))
                 break
     return values
-
 
 
 @app.callback(

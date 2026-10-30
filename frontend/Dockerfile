@@ -8,6 +8,10 @@ WORKDIR /app/frontend
 COPY frontend/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
+# Gemeinsame Pakete (core/ seit Phase 2) aus /app importierbar. Der Code kommt
+# wie frontend/ per Bind-Mount (docker-compose.yml), das Image kennt nur den Pfad.
+ENV PYTHONPATH=/app
+
 # Die Seiten importieren ihre Datenmodule relativ (import data_qc …), deshalb
 # läuft gunicorn im Ordner frontend/ und lädt app:server.
 EXPOSE 8055

@@ -20,8 +20,8 @@ Kennzahlen pro Zeile:
     periods_ok         nur ok-Perioden
     games              game_results-Zeilen im Jahr
 
-Gültige Perioden je Jahr kommen aus sync_done_groups.valid_periods_for_year
-(kanonisch, basiert auf scraper.db.is_valid_fide_period — Quartale vor 2012-08
+Gültige Perioden je Jahr kommen aus core.periods.valid_periods_for_year
+(kanonisch, basiert auf core.periods.is_valid_fide_period — Quartale vor 2012-08
 werden korrekt berücksichtigt, Zukunftsmonate gedeckelt).
 
 Nenner-Caveat: Als aktiv gilt players.active = TRUE. orchestrator/store.py:397-414
@@ -37,7 +37,7 @@ std_rating, nicht dem historischen. Reine Funktionen (conn → list[dict]) im
 Stil von store.py — testbar gegen die PG-Test-DB (conftest.py::data_db).
 """
 
-from orchestrator.sync_done_groups import valid_periods_for_year
+from core.periods import valid_periods_for_year
 
 DEFAULT_YEAR_FROM = 2008
 DEFAULT_YEAR_TO = 2026

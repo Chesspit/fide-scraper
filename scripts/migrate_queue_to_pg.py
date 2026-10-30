@@ -16,12 +16,10 @@ Verifikation (Zeilenzahlen + Status-Verteilung) läuft automatisch am Ende.
 
 import argparse
 import sqlite3
-import sys
 from pathlib import Path
 
 import psycopg2.extras
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from orchestrator.setup_db import connect
 

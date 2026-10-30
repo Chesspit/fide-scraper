@@ -28,7 +28,7 @@ die PG-Test-DB (tests/conftest.py::data_db).
 from dataclasses import dataclass
 from typing import Callable
 
-from orchestrator.sync_done_groups import valid_periods_for_year
+from core.periods import valid_periods_for_year
 
 # Sentinels der Monatsrefresh-Batches (monthly_refresh_tiers.TIERS) — deren
 # Population ist dynamisch (Tier-Filter statt Federation×Band), ein

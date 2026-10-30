@@ -31,8 +31,6 @@ from typing import Iterator
 import psycopg2
 import psycopg2.extras
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scraper.config import config, get_database_url
 

@@ -20,11 +20,9 @@ Usage:
 import argparse
 import sys
 from datetime import date
-from pathlib import Path
 
 import psycopg2
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from orchestrator.generate_monthly_refresh_batches import (
     _assign_thread_affinity,
@@ -34,7 +32,7 @@ from orchestrator.generate_monthly_refresh_batches import (
 )
 from orchestrator.monthly_refresh_tiers import GAP_TIER, NEW_ENTRANT_POOL, TIER_CONTINENT
 from orchestrator.setup_db import connect
-from scraper.config import get_database_url
+from core.config import get_database_url
 
 # Eine Kombo je Spieler; bei ~260-330 Kombos/h/Thread ≈ 6-8 Std./Batch —
 # passt in ein Tagesfenster (active_hours werden nur beim Claimen geprüft).

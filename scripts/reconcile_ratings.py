@@ -39,15 +39,12 @@ Usage:
 import argparse
 import csv
 import logging
-import sys
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import date
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scraper.db import is_valid_fide_period
+from core.periods import is_valid_fide_period
 
 logger = logging.getLogger(__name__)
 
@@ -484,7 +481,7 @@ def export_csv(all_series: list[PlayerSeries], path: str):
 
 def _connect():
     import psycopg2
-    from scraper.config import get_database_url
+    from core.config import get_database_url
     return psycopg2.connect(get_database_url())
 
 

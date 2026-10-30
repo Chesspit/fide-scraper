@@ -1,9 +1,7 @@
 """QC-Daten — SQL-Queries für die QC-Übersichtsseiten."""
-import os
 import pandas as pd
-import psycopg2
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+from core.db import connect
 
 # Ursachen-Taxonomie — muss mit scripts/quality_check.py::CATEGORIES übereinstimmen.
 # Reihenfolge = Klassifikations-Präzedenz; Label für Dropdowns/Spalten.
@@ -37,7 +35,7 @@ BAND_PREFIX = "band:"
 
 
 def _db():
-    return psycopg2.connect(DATABASE_URL)
+    return connect(role="reader")
 
 
 def _fetch(sql: str, params=None) -> pd.DataFrame:

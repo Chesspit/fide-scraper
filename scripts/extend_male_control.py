@@ -7,12 +7,10 @@ Uses a different random seed (default: 43) to ensure disjoint sampling.
 
 import argparse
 import logging
-import sys
 from pathlib import Path
 
 import psycopg2
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scraper.config import config, get_database_url
 from scripts.seed_players import (

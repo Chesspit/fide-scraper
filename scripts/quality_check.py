@@ -30,15 +30,12 @@ Usage:
 import argparse
 import csv
 import logging
-import sys
-from pathlib import Path
 
 import psycopg2
 import psycopg2.extras
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scraper.config import get_database_url
+from core.config import get_database_url
 
 logger = logging.getLogger(__name__)
 

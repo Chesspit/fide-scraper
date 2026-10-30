@@ -4,12 +4,9 @@ Reine DB-Logik, kein Anthropic-Import hier (Trennung von Query- und LLM-Layer).
 Jede Funktion hier wird 1:1 von einem @beta_tool-Wrapper in data_arpad.py exponiert.
 Nur SELECT-Statements; alle Nutzer-Werte über %(name)s-Platzhalter, nie String-Interpolation.
 """
-import os
-
-import psycopg2
 import psycopg2.extras
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+from core.db import connect
 
 # Kurz — Chat-Tool-Queries laufen synchron im Request-Zyklus eines Dash-Callbacks.
 # Kontrast: scraper/db.py nutzt 15 min als Runaway-Query-Netz für Batch-Jobs.
@@ -17,10 +14,7 @@ _STATEMENT_TIMEOUT_MS = 5_000
 
 
 def _connect():
-    return psycopg2.connect(
-        DATABASE_URL,
-        options=f"-c statement_timeout={_STATEMENT_TIMEOUT_MS}",
-    )
+    return connect(role="reader", statement_timeout_ms=_STATEMENT_TIMEOUT_MS)
 
 
 def _fetch_dicts(sql: str, params: dict | None = None) -> list[dict]:

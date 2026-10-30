@@ -1,11 +1,10 @@
-import os
 from pathlib import Path
 
 import yaml
-from dotenv import load_dotenv
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(PROJECT_ROOT / ".env")
+# .env-Laden und DB-URL liegen seit Phase 2 in core.config; Re-Export für
+# bestehende Aufrufer (scraper.config.get_database_url).
+from core.config import PROJECT_ROOT, get_database_url  # noqa: F401
 
 _DEFAULT_CONFIG = {
     "scraper": {
@@ -60,13 +59,6 @@ def load_config(config_path: Path | None = None) -> dict:
             file_config = yaml.safe_load(f) or {}
 
     return _deep_merge(_DEFAULT_CONFIG, file_config)
-
-
-def get_database_url() -> str:
-    url = os.environ.get("DATABASE_URL")
-    if not url:
-        raise RuntimeError("DATABASE_URL not set. Check .env or environment variables.")
-    return url
 
 
 # Singleton: loaded once on import

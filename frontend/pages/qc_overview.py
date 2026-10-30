@@ -1,8 +1,4 @@
 """QC Übersicht — Jahres- und Monatsdetail für Rating-Deltas."""
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import dash
 import dash_bootstrap_components as dbc

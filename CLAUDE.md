@@ -3,9 +3,11 @@
 Scraper für FIDE-Calculations-Partien → PostgreSQL/TimescaleDB (VPS Infomaniak, seit 02.10.2026).
 
 **Ziel:** vollständige Partien-Datenbasis **aller bei der FIDE aktiven Spieler ab ca. 2020**.
-Stand 16.09.2026: 243.555 aktive Spieler mit Rating > 0, davon 243.541 mindestens einmal
-angefasst; Perioden-Abdeckung seit 2020 **76 %** (Dashboard-Tab „Abdeckung", oder
-`scripts/coverage_report.py`).
+Stand 30.10.2026: **Backfill abgeschlossen** (Orchestrator-Queue leer, 20,6 Mio Partien).
+Abdeckung gegen die offizielle Liste seit 2020 **≥ 99 % je Jahr** (`scripts/audit_data.py`);
+2026 zeigt 97,7 % nur wegen ~12.900 von FIDE zurückgezogener März-Erstratings (ohne sie 99,8 %).
+Neue Perioden kommen über den Monatslauf. Der Dashboard-Tab „Abdeckung" bzw.
+`scripts/coverage_report.py` misst etwas anderes: alle Perioden der *heute aktiven* Spieler.
 
 *Historisch* begann das Projekt als enge Forschungsfrage (Top-Spielerinnen ELO 2400–2600 vs.
 gleichstarke Männer). Die dafür kuratierten Gruppen (`female_top`/`male_control`) sind
@@ -168,6 +170,9 @@ WHERE group_name='GRUPPENNAME';
 Frage: *Sind ab Stichtag alle Spieler erfasst, und ergibt die Elo-Entwicklung Sinn?* Maßstab ist
 die **offizielle Liste**, nicht die Queue: Soll = jede Kombination (Spieler, Periode) mit
 `rating_history.num_games > 0` — auch heute inaktive Spieler. Logik in `orchestrator/audit.py`.
+Ausnahme: ungescrapte Kombos von Spielern, die in der neuesten Liste nicht mehr mit Rating
+stehen (von FIDE zurückgezogen), zählen nicht zum Soll, sondern als INFO `periods_withdrawn` —
+dieselbe Regel wie bei den Listen-Gruppen (`orchestrator/list_population.py`).
 
 ```bash
 python scripts/audit_data.py --since 2020-01 --report audit.md      # alles

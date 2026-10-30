@@ -1,13 +1,10 @@
 """Partien-Detail — alle gescrapten Partien eines Spielers."""
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import dash
 import dash_bootstrap_components as dbc
-import psycopg2
 from dash import Input, Output, State, callback, dash_table, dcc, html
+
+from core.db import connect
 
 dash.register_page(
     __name__,
@@ -43,9 +40,7 @@ CARD = {
 # DB
 # ---------------------------------------------------------------------------
 def _db():
-    return psycopg2.connect(
-        os.environ["DATABASE_URL"]
-    )
+    return connect(role="reader")
 
 
 def _default_player_option() -> list[dict]:

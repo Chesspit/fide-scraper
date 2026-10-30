@@ -1,7 +1,7 @@
 """Tests for scraper.db — uses a real PostgreSQL connection if available, otherwise skips.
 
 Nur ORCH_TEST_DATABASE_URL (Wegwerf-PG), nie DATABASE_URL: Die kommt über
-scraper.config aus der .env und zeigt bei offenem Tunnel auf die Produktiv-DB
+core.config aus der .env und zeigt bei offenem Tunnel auf die Produktiv-DB
 (30.10.2026 so passiert — Testspieler angelegt und wieder gelöscht).
 """
 

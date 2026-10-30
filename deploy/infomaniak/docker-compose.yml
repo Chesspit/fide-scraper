@@ -1,7 +1,7 @@
 ## fide-scraper — Produktion auf dem Infomaniak-VPS „ELO" (179.237.106.106)
 ## ─────────────────────────────────────────────────────────────────────────────
 ## Ein Stack für alles: TimescaleDB, Traefik (TLS + BasicAuth), Orchestrator-
-## Dashboard + Worker, Frontend „ELO-Einsichten". Ersetzt auf dem neuen Server
+## Dashboard + Worker, Frontend „ELO-Einsichten" (intern + öffentlich). Ersetzt auf dem neuen Server
 ## orchestrator/docker-compose.yml (Hostinger-Stack, am 20.10.2026 abgebaut und gelöscht).
 ##
 ## .env liegt im Repo-Root (/opt/fide-scraper/.env); hier ein Symlink darauf:
@@ -11,6 +11,7 @@
 ##   cd /opt/fide-scraper/deploy/infomaniak
 ##   docker compose up -d db traefik dashboard frontend   # Parallelbetrieb, OHNE worker
 ##   docker compose up -d                                 # nach dem Umschalten
+##   docker compose --profile public up -d frontend-public # öffentliche Edition, nur mit OK
 ##
 ## Nie zwei Worker gleichzeitig (Hostinger + hier) — siehe docs/umzug_infomaniak.md.
 ## ─────────────────────────────────────────────────────────────────────────────
@@ -170,6 +171,19 @@ services:
     restart: unless-stopped
     logging: *logging
 
+  # ── Block 2: ELO-Einsichten in zwei Editionen aus einem Code (frontend/app.py) ──
+  # intern: alle Seiten (Partien-Detail, ARPAD), BasicAuth, intern-elo.chesspit.net.
+  # public: nur öffentliche Seiten, OHNE Passwort, mit Rate-Limit, elo.chesspit.net.
+  #
+  # ⚠️ frontend-public = Veröffentlichung. Der Service liegt im Profil "public" und
+  # startet bei "docker compose up -d" NICHT mit; erst nach ausdrücklichem OK:
+  #   docker compose --profile public up -d frontend-public
+  # Bis dahin fängt der interne Router elo.chesspit.net mit ab (mit BasicAuth).
+  # Läuft frontend-public, gewinnt dessen Router per höherer Priorität; fällt er
+  # aus, landet elo.chesspit.net wieder hinter BasicAuth (sichere Richtung).
+  #
+  # DB-Zugang: Leserolle fide_reader (Phase 2a, docs/db_rollen.md). Solange die
+  # Rolle nicht angelegt ist, greifen die Defaults (fide / DB_PASSWORD).
   frontend:
     build:
       context: ../..
@@ -178,22 +192,61 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://fide:${DB_PASSWORD}@db:5432/fidedb
+      EDITION: intern
+      DATABASE_URL: postgresql://${READER_DB_USER:-fide}:${READER_DB_PASSWORD:-${DB_PASSWORD}}@db:5432/fidedb
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       # Code + Parquet-Caches aus dem Checkout (siehe frontend/Dockerfile)
       - ../../frontend:/app/frontend
+      - ../../core:/app/core:ro
+      - ../../qc:/app/qc:ro
       - ../../data:/app/data:ro
     ports:
       - "127.0.0.1:8055:8055"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`${FRONTEND_HOST:-elo.chesspit.net}`)"
+      - "traefik.http.routers.frontend.rule=Host(`${INTERN_FRONTEND_HOST:-intern-elo.chesspit.net}`) || Host(`${FRONTEND_HOST:-elo.chesspit.net}`)"
+      - "traefik.http.routers.frontend.priority=10"
       - "traefik.http.routers.frontend.entrypoints=https"
       - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
       - "traefik.http.routers.frontend.middlewares=fide-auth"
       - "traefik.http.services.frontend.loadbalancer.server.port=8055"
     mem_limit: 1536m
+    restart: unless-stopped
+    logging: *logging
+
+  frontend-public:
+    profiles: ["public"]
+    build:
+      context: ../..
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      EDITION: public
+      DATABASE_URL: postgresql://${READER_DB_USER:-fide}:${READER_DB_PASSWORD:-${DB_PASSWORD}}@db:5432/fidedb
+      # kein ANTHROPIC_API_KEY: ARPAD ist in der öffentlichen Edition nicht registriert
+    volumes:
+      - ../../frontend:/app/frontend
+      - ../../core:/app/core:ro
+      - ../../qc:/app/qc:ro
+      - ../../data:/app/data:ro
+    ports:
+      - "127.0.0.1:8056:8055"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend-public.rule=Host(`${FRONTEND_HOST:-elo.chesspit.net}`)"
+      - "traefik.http.routers.frontend-public.priority=100"
+      - "traefik.http.routers.frontend-public.entrypoints=https"
+      - "traefik.http.routers.frontend-public.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.frontend-public.middlewares=elo-ratelimit"
+      # je Client-IP; eine Dash-Seite feuert beim Laden ~10 Callback-Requests
+      - "traefik.http.middlewares.elo-ratelimit.ratelimit.average=${PUBLIC_RATELIMIT_AVERAGE:-20}"
+      - "traefik.http.middlewares.elo-ratelimit.ratelimit.period=1s"
+      - "traefik.http.middlewares.elo-ratelimit.ratelimit.burst=${PUBLIC_RATELIMIT_BURST:-60}"
+      - "traefik.http.services.frontend-public.loadbalancer.server.port=8055"
+    mem_limit: 1g
     restart: unless-stopped
     logging: *logging
 

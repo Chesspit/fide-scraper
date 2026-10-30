@@ -419,7 +419,7 @@ def query_pg_players() -> dict[str, tuple[int, int, int]]:
     if time.time() - _pg_aktiv_cache_ts < _PG_AKTIV_TTL:
         return _pg_aktiv_cache
     try:
-        from scraper.config import get_database_url
+        from core.config import get_database_url
         import psycopg2
         pg  = psycopg2.connect(get_database_url(), connect_timeout=5)
         cur = pg.cursor()
@@ -579,7 +579,7 @@ def query_laender_data() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Coverage (Ground-Truth-Abdeckung, orchestrator/coverage.py)
+# Coverage (Ground-Truth-Abdeckung, qc/coverage.py)
 # ---------------------------------------------------------------------------
 # Die Aggregate scannen scrape_periods + game_results ueber mehrere Jahre und
 # brauchen gemessen 37-94 s pro Aufruf (VPS, 2026-09-17) — zu lange fuer einen
@@ -604,9 +604,9 @@ COVERAGE_DIMENSIONS = {
 
 def _coverage_compute(key: tuple):
     """Rechnet einen Cache-Eintrag ('rows', dim, von, bis) bzw. ('totals', von, bis)."""
-    from scraper.config import get_database_url
+    from core.config import get_database_url
     import psycopg2
-    from orchestrator import coverage as cov
+    from qc import coverage as cov
     fns = {
         "federation":     cov.coverage_by_federation,
         "band":           cov.coverage_by_band,

@@ -4,17 +4,12 @@ Anthropic-Client, Tool-Definitionen (über @beta_tool-Wrapper um data_chat_queri
 Funktionen), System-Prompt, und der öffentliche Einstiegspunkt answer_question().
 """
 import json
-from pathlib import Path
 
 import anthropic
 from anthropic import beta_tool
-from dotenv import load_dotenv
 
+import core.config  # noqa: F401  lädt .env (ANTHROPIC_API_KEY) wie überall
 import data_chat_queries as q
-
-# frontend/data_arpad.py -> .parent = frontend/ -> .parent = Repo-Root
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(PROJECT_ROOT / ".env")
 
 MODEL = "claude-sonnet-5"
 MAX_TOKENS = 4096

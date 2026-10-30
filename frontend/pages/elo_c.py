@@ -1,7 +1,4 @@
 """Page C: ELO-Progression mit Top-100-Hintergrund + Tabelle."""
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 import dash
 import pandas as pd
 from dash import Input, Output, callback, dash_table, dcc, html

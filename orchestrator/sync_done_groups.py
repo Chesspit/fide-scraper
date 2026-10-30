@@ -10,25 +10,11 @@ Usage:
 """
 
 import argparse
-import sys
 from collections import defaultdict
-from datetime import date
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from core.periods import valid_periods_for_year
 from orchestrator.setup_db import connect
-from scraper.db import is_valid_fide_period
-
-
-def valid_periods_for_year(year: int) -> list[str]:
-    today = date.today()
-    cutoff = date(today.year, today.month - 1, 1) if today.month > 1 else date(today.year - 1, 12, 1)
-    return [
-        date(year, m, 1).isoformat()
-        for m in range(1, 13)
-        if date(year, m, 1) <= cutoff and is_valid_fide_period(date(year, m, 1))
-    ]
 
 
 def main():

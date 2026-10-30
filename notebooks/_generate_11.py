@@ -9,6 +9,15 @@ Per player with 2008 QC warn/error:
 
 Jahresprüfsumme: Okt-07 → Okt-08
 """
+
+import sys
+
+# Quelle der Wahrheit ist jetzt die marimo-Fassung notebooks/11_qc_2008_detail.py.
+# Dieser Generator schreibt die .ipynb OHNE Outputs neu und löscht damit
+# gespeicherte Ergebnisse (NB14 verlor so 1952 Zeilen).
+if __name__ == "__main__" and "--force" not in sys.argv:
+    sys.exit("Ersetzt durch notebooks/11_qc_2008_detail.py (marimo edit). "
+             "Nur mit --force ausführen — überschreibt die .ipynb ohne Ergebnisse.")
 import nbformat as nbf
 
 CELLS = []

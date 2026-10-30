@@ -13,7 +13,7 @@ import psycopg2
 
 
 from scraper.config import config, get_database_url
-from scripts.seed_players import (
+from scripts.legacy.seed_players import (
     age_matched_sample,
     load_players_from_file,
 )

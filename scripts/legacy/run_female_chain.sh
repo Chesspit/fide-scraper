@@ -3,20 +3,20 @@
 # Wartet auf den laufenden Backfill (via PID-Datei), dann seed → backfill → DB-Update.
 #
 # Verwendung:
-#   bash scripts/run_female_chain.sh [STARTGRUPPE]
+#   bash scripts/legacy/run_female_chain.sh [STARTGRUPPE]
 #
 # Ohne Argument: startet bei female_2000_01 (female_2100_06 läuft bereits).
 
 set -uo pipefail
 # DB-Zugang aus .env (das Passwort steht bewusst nicht im Repo)
-DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
+DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/../.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
 : "${DATABASE_URL:?DATABASE_URL fehlt — in .env oder Umgebung setzen}"
 
 START_GROUP="${1:-female_2000_01}"
 FROM="2010-01-01"
 TO=$(python3 -c "from datetime import date; t=date.today(); m=t.month-1 or 12; y=t.year if t.month>1 else t.year-1; print(date(y,m,1))")
 DB_URL="${DATABASE_URL}"
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"   # Repo-Root (Skript liegt in scripts/legacy/)
 CHAIN_LOG="/tmp/female_chain.log"
 
 log() {
@@ -159,7 +159,7 @@ print(row[0] if row else 'unknown')
 
     # Spieler seeden
     log "  Seede $GROUP..."
-    python3 "$SCRIPT_DIR/scripts/seed_players.py" --group "$GROUP" 2>&1 | tee -a "$CHAIN_LOG"
+    python3 "$SCRIPT_DIR/scripts/legacy/seed_players.py" --group "$GROUP" 2>&1 | tee -a "$CHAIN_LOG"
 
     # Backfill SYNCHRON (warten bis fertig, mit Auto-Restart bei Absturz)
     log "  Backfill $GROUP ($FROM → $TO)..."

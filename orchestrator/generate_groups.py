@@ -19,7 +19,7 @@ from pathlib import Path
 
 
 from orchestrator.setup_db import connect
-from scripts.seed_players import load_players_from_file
+from core.fide_list import load_players_from_file
 
 # ---------------------------------------------------------------------------
 # FIDE continent mapping  (federation code → continent)

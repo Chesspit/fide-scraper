@@ -1,6 +1,6 @@
 #!/bin/bash
 # Historischer Backfill für alle global_XX Spieler >= 2300
-# Verwendung: bash scripts/run_hist_backfill.sh HIST_GROUP_NAME
+# Verwendung: bash scripts/legacy/run_hist_backfill.sh HIST_GROUP_NAME
 #
 # Gruppen und ihre Perioden:
 #   hist_2012_h1  →  2012-01-01 bis 2012-05-01
@@ -11,7 +11,7 @@
 
 set -e
 # DB-Zugang aus .env (das Passwort steht bewusst nicht im Repo)
-DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
+DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/../.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
 : "${DATABASE_URL:?DATABASE_URL fehlt — in .env oder Umgebung setzen}"
 HIST_GROUP="${1:-}"
 
@@ -42,7 +42,7 @@ echo "======================================================"
 
 # Alle complete global_XX Gruppen abarbeiten
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"   # Skript liegt in scripts/legacy/
 
 cd "$PROJECT_DIR"
 

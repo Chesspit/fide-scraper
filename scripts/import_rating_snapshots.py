@@ -34,7 +34,7 @@ import psycopg2.extras
 
 
 from core.config import get_database_url
-from scripts.seed_players import (
+from core.fide_list import (
     detect_columns_from_header,
     open_player_list,
     parse_player_line,

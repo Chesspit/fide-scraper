@@ -5,10 +5,10 @@
 
 set -uo pipefail
 # DB-Zugang aus .env (das Passwort steht bewusst nicht im Repo)
-DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
+DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/../.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
 : "${DATABASE_URL:?DATABASE_URL fehlt — in .env oder Umgebung setzen}"
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"   # Repo-Root (Skript liegt in scripts/legacy/)
 FROM="2010-01-01"
 TO="2026-04-01"
 PSQL="/opt/homebrew/Cellar/libpq/18.3/bin/psql"
@@ -22,7 +22,7 @@ for GROUP in "${SCRAPE_GROUPS[@]}"; do
     echo "$(date): Starte $GROUP"
     echo "========================================"
 
-    bash "$SCRIPT_DIR/scripts/run_local_backfill.sh" "$GROUP" "$FROM" "$TO"
+    bash "$SCRIPT_DIR/scripts/legacy/run_local_backfill.sh" "$GROUP" "$FROM" "$TO"
 
     "$PSQL" "$DB_URL" -c "UPDATE groups SET backfill_status='complete', scraped_from='$FROM', scraped_to='$TO' WHERE group_name='$GROUP';" 2>/dev/null \
         && echo "$(date): $GROUP → groups.backfill_status = complete" \

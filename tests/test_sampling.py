@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 
-from scripts.seed_players import age_matched_sample, decade_bucket
+from scripts.legacy.seed_players import age_matched_sample, decade_bucket
 
 
 def _make_player(fide_id, sex, rating, birth_year):

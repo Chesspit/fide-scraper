@@ -4,14 +4,14 @@
 #
 # Verwendung:
 #   cd ~/fide-scraper
-#   bash scripts/setup_raspi.sh
+#   bash scripts/legacy/setup_raspi.sh
 
 set -euo pipefail
 # DB-Zugang aus .env (das Passwort steht bewusst nicht im Repo)
-DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
+DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/../.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
 : "${DATABASE_URL:?DATABASE_URL fehlt — in .env oder Umgebung setzen}"
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"   # Repo-Root (Skript liegt in scripts/legacy/)
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -141,6 +141,6 @@ echo ""
 echo "  2. Scraping starten:"
 echo "     source .venv/bin/activate"
 echo "     bash scripts/tunnel.sh &"
-echo "     bash scripts/run_local_backfill.sh female_1800_01"
+echo "     bash scripts/legacy/run_local_backfill.sh female_1800_01"
 echo ""
 echo "  Anleitung: docs/setup_raspi.md"

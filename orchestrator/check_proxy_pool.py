@@ -8,10 +8,10 @@ rotierende Gateway — als Health-Check obsolet, aber weiter nützlich als
 Smoke-Test: mit --repeat N gehen N Requests durchs Gateway (jede über eine
 andere Residential-IP). Run this on the VPS (network path matters) via:
 
-    docker compose exec -T worker python3 scripts/check_proxy_pool.py --repeat 5
+    docker compose exec -T worker python3 orchestrator/check_proxy_pool.py --repeat 5
 
 Usage:
-    python3 scripts/check_proxy_pool.py [--pool-file PATH] [--timeout SECONDS] [--repeat N]
+    python3 orchestrator/check_proxy_pool.py [--pool-file PATH] [--timeout SECONDS] [--repeat N]
 """
 
 import argparse

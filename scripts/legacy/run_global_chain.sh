@@ -1,16 +1,16 @@
 #!/bin/bash
 # Läuft alle noch ausstehenden global_XX Gruppen sequentiell durch.
 # Caffeinate hält den Mac Mini die ganze Zeit wach.
-# Verwendung: caffeinate -dim bash scripts/run_global_chain.sh
+# Verwendung: caffeinate -dim bash scripts/legacy/run_global_chain.sh
 #
 # Gruppen werden übersprungen falls bereits complete.
 
 set -e
 # DB-Zugang aus .env (das Passwort steht bewusst nicht im Repo)
-DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
+DATABASE_URL="${DATABASE_URL:-$(grep -m1 '^DATABASE_URL=' "$(cd "$(dirname "$0")/../.." && pwd)/.env" 2>/dev/null | cut -d= -f2-)}"
 : "${DATABASE_URL:?DATABASE_URL fehlt — in .env oder Umgebung setzen}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"   # Skript liegt in scripts/legacy/
 cd "$PROJECT_DIR"
 
 FROM_DATE="2012-08-01"
@@ -131,7 +131,7 @@ conn.close()
 ")
     if [ "$SPIELER" = "0" ]; then
         log "Seede $GROUP..."
-        python3 scripts/seed_players.py --group "$GROUP"
+        python3 scripts/legacy/seed_players.py --group "$GROUP"
     else
         log "$GROUP bereits geseeded ($SPIELER Spieler)"
     fi

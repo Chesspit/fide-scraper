@@ -12,7 +12,6 @@ COPY core/        ./core/
 COPY qc/          ./qc/
 COPY orchestrator/ ./orchestrator/
 COPY scraper/     ./scraper/
-COPY scripts/     ./scripts/
 COPY config.yaml  .
 
 # Pakete (core, scraper, orchestrator …) importierbar machen, auch für

@@ -1,4 +1,4 @@
-"""Tests für orchestrator/audit.py — Datenprüfung ab Stichtag.
+"""Tests für qc/audit.py — Datenprüfung ab Stichtag.
 
 Braucht die PG-Test-DB (conftest.py::data_db); ohne erreichbare PG: skip.
 Migration 018 wird aus der Datei eingespielt (wie test_elo_bands.py mit 017),
@@ -12,19 +12,17 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator.audit import (
+from core.elo import diff_cap, fide_expected
+from core.periods import parse_period, previous_period
+from qc.audit import (
     HARD,
     INFO,
     OK,
     SOFT,
     audit_periods,
-    diff_cap,
-    fide_expected,
-    parse_period,
-    previous_period,
     run_audit,
 )
-from orchestrator.integrity import check_ok_without_games, check_orphan_games
+from qc.integrity import check_ok_without_games, check_orphan_games
 from orchestrator.setup_db import connect
 
 MIGRATION = Path(__file__).resolve().parent.parent / "migrations" / "018_fide_expected_score.sql"

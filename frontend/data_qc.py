@@ -82,7 +82,7 @@ def _group_where(group: str) -> tuple[str, dict]:
         # und gar keinen q-Alias haben — eine Referenz auf q wäre dort ein
         # SQL-Fehler. Nur p ist in jeder Query garantiert vorhanden.
         #
-        # Rating-Drift-Caveat (wie in orchestrator/coverage.py): Das Band folgt
+        # Rating-Drift-Caveat (wie in qc/coverage.py): Das Band folgt
         # damit dem HEUTIGEN Rating, nicht dem zum Zeitpunkt des Fensters. Ein
         # Spieler, der 2015 bei 1600 stand und heute 2100 hat, erscheint in
         # f_2100_2149. Soll stattdessen nach published_start gebändert werden,

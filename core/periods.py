@@ -2,7 +2,7 @@
 
 Vorher verteilt auf scraper/db.py (is_valid_fide_period),
 orchestrator/worker.py + sync_done_groups.py (valid_periods_for_year, zweimal),
-orchestrator/audit.py (parse_period, previous_period) und
+qc/audit.py (parse_period, previous_period) und
 orchestrator/list_population.py (latest_list_period).
 """
 

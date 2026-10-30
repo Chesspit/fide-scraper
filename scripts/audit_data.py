@@ -3,15 +3,18 @@
 
 Maßstab ist die offizielle FIDE-Liste: Soll ist jeder Spieler mit mindestens
 einer gewerteten Partie laut Liste im Zeitraum, auch heute inaktive. Details
-zu den vier Prüfebenen: orchestrator/audit.py.
+zu den vier Prüfebenen: qc/audit.py (dieses Skript ist nur die CLI).
+Mit --store landet der Lauf in qc_audit_runs (Migration 021) und erscheint im
+QC-Bereich des Orchestrator-Dashboards.
 
 Usage:
     python scripts/audit_data.py --since 2020-01
     python scripts/audit_data.py --since 2026-01 --federation LIE,AUT --sample 5
     python scripts/audit_data.py --since 2020-01 --layer 0,1 --report audit.md
     python scripts/audit_data.py --since 2012-08 --until 2019-12 --csv findings.csv
+    python scripts/audit_data.py --since 2020-01 --store --source monthly_update
 
-Voraussetzung: Migration 018 (fn_fide_expected) für Ebene 3.
+Voraussetzung: Migration 018 (fn_fide_expected) für Ebene 3, 021 für --store.
 Exit-Code 1, wenn ein Check hart anschlägt (cron-tauglich), 2 bei Abbruch.
 """
 
@@ -21,11 +24,12 @@ import json
 import logging
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 
-from orchestrator.audit import (
+from core.periods import parse_period
+from qc.audit import (
     DEFAULT_CHAIN_THRESHOLD_PCT,
     DEFAULT_CHAIN_TOLERANCE,
     DEFAULT_FORMULA_THRESHOLD_PCT,
@@ -38,10 +42,10 @@ from orchestrator.audit import (
     OK,
     SOFT,
     AuditResult,
-    parse_period,
     run_audit,
 )
-from orchestrator.setup_db import connect
+from qc.audit_store import store_run
+from qc.db import connect
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +292,10 @@ def main() -> int:
                         help="strukturelle Checks aus integrity.py auslassen")
     parser.add_argument("--report", metavar="FILE.md", help="Markdown-Bericht schreiben")
     parser.add_argument("--csv", metavar="FILE", help="Stichproben als CSV exportieren")
+    parser.add_argument("--store", action="store_true",
+                        help="Lauf in qc_audit_runs speichern (QC-Bereich im Dashboard)")
+    parser.add_argument("--source", default="manual",
+                        help="Herkunft für --store, z. B. monthly_update (Default manual)")
     parser.add_argument("--summary-only", action="store_true",
                         help="nur die Einzeilen-Zusammenfassung ausgeben (für Logs)")
     args = parser.parse_args()
@@ -301,6 +309,7 @@ def main() -> int:
         if done == total or done % 6 == 0:
             logger.info("  %d/%d Perioden geprüft (zuletzt %s)", done, total, p.strftime("%Y-%m"))
 
+    started_at = datetime.now(timezone.utc)
     t0 = time.monotonic()
     try:
         res = run_audit(
@@ -331,6 +340,17 @@ def main() -> int:
     if args.csv:
         n = export_csv(res, Path(args.csv).expanduser())
         logger.info("%d Stichprobenzeilen exportiert nach %s", n, args.csv)
+    if args.store:
+        params = {k: getattr(args, k) for k in (
+            "sample", "chain_tolerance", "chain_threshold", "formula_threshold",
+            "no_data_threshold", "fewer_threshold", "jump", "no_integrity")}
+        conn = connect()
+        try:
+            run_id = store_run(conn, res, layers=layers, started_at=started_at,
+                               duration_s=elapsed, params=params, source=args.source)
+        finally:
+            conn.close()
+        logger.info("Lauf gespeichert: qc_audit_runs.id = %d", run_id)
 
     return 1 if res.has_hard() else 0
 

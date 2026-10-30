@@ -21,8 +21,8 @@ import logging
 import sys
 
 
-from orchestrator.integrity import CHECK_IDS, CHECKS, has_hard_findings, run_checks
-from orchestrator.setup_db import connect
+from qc.integrity import CHECK_IDS, CHECKS, has_hard_findings, run_checks
+from qc.db import connect
 
 logger = logging.getLogger(__name__)
 

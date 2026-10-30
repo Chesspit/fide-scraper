@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r orchestrator/requirements.txt
 # Copy project source
 COPY pyproject.toml .
 COPY core/        ./core/
+COPY qc/          ./qc/
 COPY orchestrator/ ./orchestrator/
 COPY scraper/     ./scraper/
 COPY scripts/     ./scripts/

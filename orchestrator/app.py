@@ -1242,7 +1242,7 @@ tab_bericht2 = dbc.Container(fluid=True, children=[
 ], className="py-3")
 
 # ---------------------------------------------------------------------------
-# Tab 9 — Abdeckung (Ground Truth, orchestrator/coverage.py)
+# Tab 9 — Abdeckung (Ground Truth, qc/coverage.py)
 # ---------------------------------------------------------------------------
 # Misst an den Daten selbst (players ⨯ scrape_periods ⨯ game_results), nicht an
 # der Queue: beantwortet "wie vollständig ist der Datenbestand?" statt "wie viele

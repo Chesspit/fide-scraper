@@ -51,7 +51,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Callable
 
-from orchestrator.integrity import (
+from qc.integrity import (
     HARD,
     SOFT,
     check_blocked_error_rows,
@@ -59,11 +59,9 @@ from orchestrator.integrity import (
     check_ok_without_games,
     check_orphan_games,
 )
-from core.elo import diff_cap, fide_expected  # noqa: F401
-from core.periods import (  # noqa: F401
+from core.periods import (
     in_latest_list_sql,
     latest_list_period,
-    parse_period,
     previous_period,
     valid_periods_for_year,
 )
@@ -92,7 +90,7 @@ STATEMENT_TIMEOUT = "15min"
 
 
 # Elo-Formel (fide_expected, diff_cap) und Periodenhelfer (parse_period,
-# previous_period) liegen in core/ — hier re-exportiert für bestehende Aufrufer.
+# previous_period) liegen in core/ (core.elo, core.periods).
 
 # ── Perioden ──────────────────────────────────────────────────────────────────
 

@@ -484,7 +484,13 @@ python scripts/audit_data.py --since 2026-01 --federation LIE    # ~1 min
   `generate_period_repair_batches.py`) holen 25.453 Juni-Kombos über `dc_newplayers_1/2` nach.
   Der Ausreißer `game_count_fewer` 2024-07 kam von der falschen Liste (jetzt 0,8 %).
 - **Liste 2026-03 ist korrekt**, enthält aber FIDE-seitig 16.538 Spieler, die weder im Februar
-  noch im April stehen (fast alle 6 oder 8 Partien, Jahrgänge 2009–2014). Ursache unklar.
+  noch im April stehen (fast alle 6 oder 8 Partien, Jahrgänge 2009–2014). **Geklärt (30.10.2026):**
+  von FIDE zurückgezogene Erstratings — Profil „Not rated", Kalkulation „No records found".
+  Stand 30.10.: 12.935 Soll-Kombos 2026-03 ungescrapt, davon 12.505 mit Erstbewertung im März,
+  nur 4 mit `std_rating > 0`, keiner mit gescrapter April-Periode; Band 1400–1800, alle
+  Föderationen. Listen-Gruppen schließen sie bewusst aus (`orchestrator/list_population.py`:
+  nicht mehr in der neuesten Liste ⇒ „erklärt"). Sie drücken die Abdeckung 2026 von 99,8 % auf
+  97,7 % (März 86,2 %), weil Dashboard und `audit_data.py` sie noch als Soll zählen.
 - **`rating_corrections` für 2024-03 veraltet:** Die `source='formula'`-Zeilen nutzen Ro statt
   des Ratings nach den Partien. Die Routine rechnet die Korrektur selbst nach, aber
   `quality_check.py` nutzt noch die gespeicherten Werte.
@@ -774,7 +780,7 @@ bewusst nicht ungeprüft aufgeräumt):
 | `rating_corrections` 2024-03 für gescrapte Spieler neu berechnen | Mittel | ⬜ Formel mit Rating nach den Partien (6.4a); betrifft `quality_check.py`-Ergebnisse für das März-2024-Fenster |
 | Inaktive Spieler seit 2020 in die Population aufnehmen? | Entscheidung | ✅ Ja (Okt. 2026, revidiert ggü. „Nein“ vom 17.09.): Listen-Gruppen `update_only=3` (Commit `38f9334`) scrapen offene Soll-Kombos nach offizieller Liste ohne `active`-Filter — `orchestrator/generate_list_batches.py`, Details `docs/scraping_status.md` |
 | Reaktivierte Spieler erfassen | Mittel | ⬜ `players.active` beim Monatsimport aus dem Listen-Flag nachziehen (analog `sync_players_std_rating`); sonst werden wieder aktive Spieler nie gescrapt (2.293 Fälle in 2026-09). Ändert die Coverage-Zahlen |
-| März-2026-Anomalie klären | Niedrig | ⬜ 16.538 Spieler nur in der FIDE-Liste 2026-03; Stichprobe auf ratings.fide.com (z. B. 525002783) |
+| März-2026-Anomalie klären | Niedrig | ✅ 30.10.2026: zurückgezogene FIDE-Erstratings, nichts zu scrapen (6.4). Offen nur noch kosmetisch: in Coverage/Audit als „erklärt" statt fehlend ausweisen |
 | Stichproben 2020-01/2020-05/2022-01 (no_data) | Niedrig | ⬜ Periodenweise über der Schwelle, Ursache offen (2024-07 hat sich mit dem Juni-Neuimport erledigt) |
 
 **Neu aus Session 2026-10-01 — zukünftiger Job: neue und reaktivierte Spieler zuverlässig erfassen**

@@ -1,24 +1,55 @@
 # Scraping-Status
 
-Stand: 2026-10-20 (Zwischenstand, Quelle: `groups`-Tabelle DB + Orchestrator-Queue in PG (`orchestrator.*`, seit Review #5), Live-Abfrage)
-Raspberry Pi: **vom User abgeschaltet (seit 2026-07-22)** — Restbestand (794 pending Gruppen) am 29.07. auf die DC-Threads umverteilt, kein Thema mehr, siehe Abschnitt unten.
-✅ **Backup:** läuft seit dem Umzug auf Infomaniak wieder (VPS-Cron 03:45, Mac-Pull hat den Dump vom 20.10.). Hostinger am 20.10. komplett abgebaut.
+Stand: 2026-10-30 (Live-Abfrage Orchestrator-Queue + `rating_history`/`scrape_periods`)
+Raspberry Pi: **vom User abgeschaltet (seit 2026-07-22)** — kein Thema mehr, siehe Abschnitt unten.
+✅ **Backup:** läuft seit dem Umzug auf Infomaniak (VPS-Cron 03:45 + Mac-Pull). Hostinger am 20.10. komplett abgebaut.
 
 ---
 
-## Queue-Stand (Live 2026-10-20, 15:00 UTC)
+## Queue-Stand (Live 2026-10-30) — Backfill abgeschlossen ✅
+
+**12.307 done, 0 pending, 0 running, 0 failed, 14.030 skipped.** Letzter Lauf 29.10. 18:19 UTC;
+seit 20.10. 1.519 Läufe, alle `success` (~150–235/Tag, getragen von den Listen-Gruppen).
+Alle Threads leer, Worker schläft nur noch zyklisch außerhalb der Aktivzeiten.
+
+| Gruppenart (`update_only`) | Anzahl |
+|---|---:|
+| 0 Welt-Backfill | 24.673 |
+| 1 P1/P2/P3-Monatsrefresh | 53 |
+| 2 P0 Neuzugänge | 146 |
+| 3 Listen-Gruppen (seit `38f9334`) | 1.465 |
+
+DB: **20.598.239 Partien** (18.10.: 17,7 Mio), neueste Liste 2026-10-01. VPS: Platte 56 %, alle 5 Container up.
+
+**Nächster Schritt:** November-Liste → `monthly_update.sh` (Mac Mini) importiert und requeued automatisch.
+
+### Abdeckung gegen die offizielle Liste (Live 2026-10-30)
+
+Maßstab wie `audit_data.py` Ebene 1 (Soll = `rating_history.num_games > 0`, Ist = `ok`/`no_data`):
+
+| Jahr | Soll | gescrapt | Abdeckung | 19.10. |
+|---|---:|---:|---:|---:|
+| 2020 | 261.828 | 260.621 | 99,5 % | 61,9 % |
+| 2021 | 205.743 | 204.836 | 99,6 % | 68,3 % |
+| 2022 | 473.084 | 470.841 | 99,5 % | 71,7 % |
+| 2023 | 573.101 | 569.527 | 99,4 % | 77,2 % |
+| 2024 | 623.320 | 617.771 | 99,1 % | 83,7 % |
+| 2025 | 711.305 | 706.573 | 99,3 % | 95,5 % |
+| 2026 | 628.249 | 614.068 | 97,7 % | 85,8 % |
+
+**Warum 2026 am niedrigsten:** fast nur Periode 2026-03 (86,2 %, 12.935 fehlend) — von FIDE
+zurückgezogene März-Erstratings, die die Listen-Gruppen bewusst auslassen (`project_status.md` 6.4).
+Ohne sie: **99,8 %**. Alle übrigen 2026-Perioden 99,5–100 %, Oktober 100 % (die Vormonat-Kappung
+unten hat sich über die `only_period`-Listen-Gruppen erledigt).
+
+---
+
+## Historie — Stand 2026-10-20
+
+### Queue-Stand (Live 2026-10-20, 15:00 UTC)
 
 **10.794 done, 45 pending, 3 running, 0 failed, 14.030 skipped** (18.10.: 77 pending + 4 running).
-24 h: 14 Läufe, alle `success`. 10 von 13 Threads leer; `dc_es` heute 09:30 fertig geworden.
-
-| Thread | Rolle | pending + laufend | done 7 d | fertig ca. |
-|---|---|---:|---:|---|
-| `dc_us` | Welt-Backfill (aktuell VEN 2020) | 25 + 1 | 30 | ~26.10. |
-| `dc_update_1` | P1/P2/P3-Monatsrefresh (aktuell RSA 2020) | 15 + 1 | 37 | ~23.10. |
-| `dc_newplayers_2` | P0 Neuzugänge (aktuell PHI 2020) | 5 + 1 | 24 | ~22.10. |
-| alle übrigen | – | 0 | – | ✅ |
-
----
+Restarbeit damals: `dc_us` (25 + 1), `dc_update_1` (15 + 1), `dc_newplayers_2` (5 + 1).
 
 ## Gesamtstand DB (Live 2026-10-18)
 

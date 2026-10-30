@@ -1,9 +1,14 @@
-"""QC-Daten — SQL-Queries für die QC-Übersichtsseiten."""
+"""QC-Abfragen auf qc_rating_check — für den QC-Bereich im Orchestrator-Dashboard.
+
+Vorher frontend/data_qc.py; die Seiten liegen jetzt in orchestrator/qc_pages/.
+Nur lesend. Die Fenster selbst berechnet qc/rating_check.py.
+"""
 import pandas as pd
 
 from core.db import connect
+from qc.rating_check import CATEGORIES
 
-# Ursachen-Taxonomie — muss mit scripts/quality_check.py::CATEGORIES übereinstimmen.
+# Ursachen-Taxonomie — Schlüssel wie qc/rating_check.py::CATEGORIES (assert unten).
 # Reihenfolge = Klassifikations-Präzedenz; Label für Dropdowns/Spalten.
 CATEGORY_LABELS = {
     "struktur_2008":     "Struktur 2008",
@@ -13,6 +18,8 @@ CATEGORY_LABELS = {
     "k40_verdacht":      "K40-Verdacht",
     "unerklaert":        "Unerklärt",
 }
+
+assert list(CATEGORY_LABELS) == list(CATEGORIES), "Taxonomie qc/rating_check.py ≠ rating_views"
 
 CATEGORY_EXPLANATIONS = {
     "struktur_2008":     "Fenster beginnt vor 2009: Quartalsfenster, global-Gruppen ohne "
@@ -35,7 +42,7 @@ BAND_PREFIX = "band:"
 
 
 def _db():
-    return connect(role="reader")
+    return connect(role="qc")
 
 
 def _fetch(sql: str, params=None) -> pd.DataFrame:
@@ -727,4 +734,41 @@ def load_player_qc_detail(fide_id: int, year: int) -> dict:
         "pub_end": pub_row[-1],
         "from_label": cols[0],
         "to_label": cols[-1],
+    }
+
+
+# ── Spieler-Zusammenfassung (ARPAD-Tool im Frontend) ─────────────────────────
+
+def player_qc_summary(conn, fide_id: int) -> dict:
+    """Zusammenfassung der QC-Fenster eines Spielers.
+
+    Mit der Verbindung des Aufrufers (ARPAD nutzt eine mit 5-s-Timeout).
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT fide_id, name FROM players WHERE fide_id = %s", (fide_id,))
+        row = cur.fetchone()
+        if not row:
+            return {"error": f"Kein Spieler mit FIDE-ID {fide_id} gefunden."}
+        player = {"fide_id": row[0], "name": row[1]}
+        cur.execute(
+            """SELECT flag, category, COUNT(*) AS n
+               FROM qc_rating_check WHERE fide_id = %s
+               GROUP BY flag, category""",
+            (fide_id,),
+        )
+        rows = [{"flag": f, "category": c, "n": n} for f, c, n in cur.fetchall()]
+    if not rows:
+        return {
+            "player": player,
+            "note": "Keine QC-Prüfungen für diesen Spieler vorhanden "
+                    "(kein Teil des QC-geprüften Datensatzes oder zu wenige Snapshots).",
+        }
+    by_flag: dict[str, int] = {}
+    for r in rows:
+        by_flag[r["flag"]] = by_flag.get(r["flag"], 0) + r["n"]
+    return {
+        "player": player,
+        "total_windows_checked": sum(r["n"] for r in rows),
+        "by_flag": by_flag,
+        "by_flag_and_category": rows,
     }

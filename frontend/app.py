@@ -18,10 +18,11 @@ app.title = "ELO-Einsichten"
 server = app.server  # WSGI-Einstieg für gunicorn (frontend/Dockerfile)
 
 # Seiten-Gruppen (anhand order-Wert aus register_page)
-# Aktiv: order 1–9  |  Test: order 10+  |  QC: order 20+
+# Aktiv: order 1–9  |  Test: order 10+
+# Die QC-Seiten (/qc, /qc-cases, /qc-corrections) liegen seit Phase 3b im
+# Orchestrator-Dashboard (Tab „QC", orchestrator/qc_ui.py).
 _AKTIV_PATHS = {"/c", "/dist", "/player-profile", "/arpad"}
 _TEST_PATHS  = {"/games", "/titles"}
-_QC_PATHS    = {"/qc", "/qc-corrections", "/qc-cases"}
 
 
 def _nav_group(label: str, paths: set) -> html.Span:
@@ -82,17 +83,6 @@ app.layout = html.Div(
                     ),
                     # Test-Gruppe
                     _nav_group("Test", _TEST_PATHS),
-                    # Trennstrich
-                    html.Span(
-                        "|",
-                        style={
-                            "color": "rgba(255,255,255,0.25)",
-                            "margin": "0 8px",
-                            "fontSize": "1.1rem",
-                        },
-                    ),
-                    # QC-Gruppe
-                    _nav_group("QC", _QC_PATHS),
                 ],
                 fluid=True,
                 style={"display": "flex", "alignItems": "center", "flexWrap": "wrap"},

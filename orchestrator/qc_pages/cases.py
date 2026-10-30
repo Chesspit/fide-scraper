@@ -1,18 +1,10 @@
 """QC Fälle — Fall-Explorer für Warn/Error-Fenster mit Spieler-Drill-Down."""
 
-import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dash_table, dcc, html
 
-import data_qc
+from qc import rating_views
 
-dash.register_page(
-    __name__,
-    path="/qc-cases",
-    name="QC Fälle",
-    title="ELO-Einsichten | QC Fälle",
-    order=22,
-)
 
 C_BG     = "#F5F5F5"
 C_CARD   = "#FFFFFF"
@@ -75,7 +67,7 @@ _YEAR_OPTIONS = [{"label": "Alle", "value": 0}] + [
     {"label": str(y), "value": y} for y in range(2026, 2005, -1)
 ]
 _CATEGORY_OPTIONS = [{"label": "Alle", "value": ""}] + [
-    {"label": lbl, "value": cat} for cat, lbl in data_qc.CATEGORY_LABELS.items()
+    {"label": lbl, "value": cat} for cat, lbl in rating_views.CATEGORY_LABELS.items()
 ]
 _FLAG_OPTIONS = [
     {"label": "Warn + Error", "value": ""},
@@ -85,60 +77,62 @@ _FLAG_OPTIONS = [
 
 _DD_STYLE = {"fontSize": "0.85rem"}
 
-layout = dbc.Container(
-    fluid=True,
-    style={"backgroundColor": C_BG, "minHeight": "100vh", "padding": "20px"},
-    children=[
-        html.H4("QC Fälle — Warn/Error-Fenster im Detail",
-                style={"marginBottom": "16px", "color": C_TEXT}),
+def layout():
+    """Beim Aktivieren des QC-Tabs gerendert (frische Optionen, kein DB-Zugriff beim Import)."""
+    return dbc.Container(
+        fluid=True,
+        style={"backgroundColor": C_BG, "minHeight": "100vh", "padding": "20px"},
+        children=[
+            html.H4("QC Fälle — Warn/Error-Fenster im Detail",
+                    style={"marginBottom": "16px", "color": C_TEXT}),
 
-        # Filterzeile
-        dbc.Row([
-            _filter_card("Jahr", dcc.Dropdown(
-                id="qcc-year-dd", options=_YEAR_OPTIONS, value=0,
-                clearable=False, style=_DD_STYLE)),
-            _filter_card("Kategorie", dcc.Dropdown(
-                id="qcc-category-dd", options=_CATEGORY_OPTIONS, value="",
-                clearable=False, style=_DD_STYLE)),
-            _filter_card("Flag", dcc.Dropdown(
-                id="qcc-flag-dd", options=_FLAG_OPTIONS, value="",
-                clearable=False, style=_DD_STYLE)),
-            _filter_card("Gruppe", dcc.Dropdown(
-                id="qcc-group-dd", options=data_qc.get_group_options(), value="all",
-                clearable=False, style=_DD_STYLE)),
-            _filter_card("Föderation", dcc.Dropdown(
-                id="qcc-fed-dd", options=data_qc.get_case_federation_options(), value="",
-                clearable=False, style=_DD_STYLE)),
-            _filter_card("Name", dcc.Input(
-                id="qcc-name-input", type="text", debounce=True, placeholder="Suche…",
-                style={"width": "100%", "fontSize": "0.85rem", "padding": "6px",
-                       "border": f"1px solid {C_BORDER}", "borderRadius": "4px"})),
-        ], className="g-2"),
+            # Filterzeile
+            dbc.Row([
+                _filter_card("Jahr", dcc.Dropdown(
+                    id="qcc-year-dd", options=_YEAR_OPTIONS, value=0,
+                    clearable=False, style=_DD_STYLE)),
+                _filter_card("Kategorie", dcc.Dropdown(
+                    id="qcc-category-dd", options=_CATEGORY_OPTIONS, value="",
+                    clearable=False, style=_DD_STYLE)),
+                _filter_card("Flag", dcc.Dropdown(
+                    id="qcc-flag-dd", options=_FLAG_OPTIONS, value="",
+                    clearable=False, style=_DD_STYLE)),
+                _filter_card("Gruppe", dcc.Dropdown(
+                    id="qcc-group-dd", options=rating_views.get_group_options(), value="all",
+                    clearable=False, style=_DD_STYLE)),
+                _filter_card("Föderation", dcc.Dropdown(
+                    id="qcc-fed-dd", options=rating_views.get_case_federation_options(), value="",
+                    clearable=False, style=_DD_STYLE)),
+                _filter_card("Name", dcc.Input(
+                    id="qcc-name-input", type="text", debounce=True, placeholder="Suche…",
+                    style={"width": "100%", "fontSize": "0.85rem", "padding": "6px",
+                           "border": f"1px solid {C_BORDER}", "borderRadius": "4px"})),
+            ], className="g-2"),
 
-        # Fall-Tabelle
-        html.Div(style=CARD, children=[
-            html.Div(id="qcc-cases-count",
-                     style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "8px"}),
-            html.Div(id="qcc-cases-table"),
-        ]),
+            # Fall-Tabelle
+            html.Div(style=CARD, children=[
+                html.Div(id="qcc-cases-count",
+                         style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "8px"}),
+                html.Div(id="qcc-cases-table"),
+            ]),
 
-        # Spieler-Detail
-        html.Div(
-            id="qcc-detail-section",
-            style={"display": "none"},
-            children=[
-                html.Div(style=CARD, children=[
-                    html.Div(id="qcc-detail-header", style={"marginBottom": "10px"}),
-                    html.Div(id="qcc-detail-explanation",
-                             style={"fontSize": "0.85rem", "color": C_MUTED,
-                                    "marginBottom": "10px"}),
-                    html.Div(id="qcc-detail-table"),
-                    html.Div(id="qcc-detail-checksum", style={"marginTop": "12px"}),
-                ]),
-            ],
-        ),
-    ],
-)
+            # Spieler-Detail
+            html.Div(
+                id="qcc-detail-section",
+                style={"display": "none"},
+                children=[
+                    html.Div(style=CARD, children=[
+                        html.Div(id="qcc-detail-header", style={"marginBottom": "10px"}),
+                        html.Div(id="qcc-detail-explanation",
+                                 style={"fontSize": "0.85rem", "color": C_MUTED,
+                                        "marginBottom": "10px"}),
+                        html.Div(id="qcc-detail-table"),
+                        html.Div(id="qcc-detail-checksum", style={"marginTop": "12px"}),
+                    ]),
+                ],
+            ),
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +168,7 @@ _CASE_COLUMNS = [
 )
 def update_cases(year, category, flag, group, federation, name_filter):
     try:
-        df = data_qc.load_cases(
+        df = rating_views.load_cases(
             year=int(year) if year else None,
             category=category or "",
             flag=flag or "",
@@ -192,7 +186,7 @@ def update_cases(year, category, flag, group, federation, name_filter):
             "correction": "Korr", "delta_adj": "Δadj", "missing_periods": "Fehlend",
             "flag": "Flag", "category": "Kategorie",
         })
-        df["Kategorie"] = df["Kategorie"].map(data_qc.CATEGORY_LABELS).fillna("–")
+        df["Kategorie"] = df["Kategorie"].map(rating_views.CATEGORY_LABELS).fillna("–")
 
         count_txt = (f"{len(df)} Fälle (max. 500, sortiert nach |Δadj|) — "
                      "Zeile klicken für Spieler-Monatszerlegung")
@@ -242,11 +236,11 @@ def update_player_detail(selected_rows, table_data):
     year = int(fenster.split("→")[1].strip()[:4])
 
     try:
-        detail = data_qc.load_player_qc_detail(int(fide_id), year)
+        detail = rating_views.load_player_qc_detail(int(fide_id), year)
         info = detail["info"]
 
         # Kategorie-Badge (Rohwert über Label zurückfinden)
-        label_to_cat = {v: k for k, v in data_qc.CATEGORY_LABELS.items()}
+        label_to_cat = {v: k for k, v in rating_views.CATEGORY_LABELS.items()}
         cat = label_to_cat.get(row.get("Kategorie", ""), "")
         badge = html.Span(
             row.get("Kategorie", "–"),
@@ -262,7 +256,7 @@ def update_player_detail(selected_rows, table_data):
                       style={"color": C_MUTED, "fontSize": "0.9rem"}),
             badge,
         ])
-        explanation = data_qc.CATEGORY_EXPLANATIONS.get(cat, "")
+        explanation = rating_views.CATEGORY_EXPLANATIONS.get(cat, "")
 
         if not detail["columns"]:
             return (visible, header, explanation,

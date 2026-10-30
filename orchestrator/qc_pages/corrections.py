@@ -1,18 +1,10 @@
 """FIDE 2024 Korrekturen — Einmalige ELO-Anpassung vom März 2024."""
 
-import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, callback, dash_table, dcc, html
 
-import data_qc
+from qc import rating_views
 
-dash.register_page(
-    __name__,
-    path="/qc-corrections",
-    name="FIDE 2024 Korrekturen",
-    title="ELO-Einsichten | FIDE 2024 Korrekturen",
-    order=21,
-)
 
 C_BG     = "#F5F5F5"
 C_CARD   = "#FFFFFF"
@@ -44,81 +36,83 @@ ERKLAERUNG = (
 
 FORMEL = "+0,4 × (2000 − Post-Game-Rating März 2024)"
 
-layout = dbc.Container(
-    fluid=True,
-    style={"backgroundColor": C_BG, "minHeight": "100vh", "padding": "20px"},
-    children=[
-        html.H4("FIDE 2024 — Einmalige ELO-Korrektur",
-                style={"marginBottom": "12px", "color": C_TEXT}),
+def layout():
+    """Beim Aktivieren des QC-Tabs gerendert (frische Optionen, kein DB-Zugriff beim Import)."""
+    return dbc.Container(
+        fluid=True,
+        style={"backgroundColor": C_BG, "minHeight": "100vh", "padding": "20px"},
+        children=[
+            html.H4("FIDE 2024 — Einmalige ELO-Korrektur",
+                    style={"marginBottom": "12px", "color": C_TEXT}),
 
-        # Erklärungsbox
-        html.Div(style={**CARD, "borderLeft": "4px solid #4A7AB5"}, children=[
-            html.P(ERKLAERUNG,
-                   style={"fontSize": "0.9rem", "color": C_TEXT, "marginBottom": "8px"}),
-            html.Div([
-                html.Span("Formel: ", style={"fontWeight": "600", "fontSize": "0.9rem"}),
-                html.Code(FORMEL, style={
-                    "backgroundColor": "#F0F4FF",
-                    "padding": "2px 8px",
-                    "borderRadius": "4px",
-                    "fontSize": "0.88rem",
-                    "color": "#2A4A8A",
-                }),
+            # Erklärungsbox
+            html.Div(style={**CARD, "borderLeft": "4px solid #4A7AB5"}, children=[
+                html.P(ERKLAERUNG,
+                       style={"fontSize": "0.9rem", "color": C_TEXT, "marginBottom": "8px"}),
+                html.Div([
+                    html.Span("Formel: ", style={"fontWeight": "600", "fontSize": "0.9rem"}),
+                    html.Code(FORMEL, style={
+                        "backgroundColor": "#F0F4FF",
+                        "padding": "2px 8px",
+                        "borderRadius": "4px",
+                        "fontSize": "0.88rem",
+                        "color": "#2A4A8A",
+                    }),
+                ]),
             ]),
-        ]),
 
-        # Suchfelder
-        html.Div(style=CARD, children=[
-            dbc.Row([
-                dbc.Col([
-                    html.Label("Spieler (Name)", style=LABEL_STYLE),
-                    dbc.Input(
-                        id="qcc-name-filter",
-                        debounce=True,
-                        style={"fontSize": "0.9rem"},
-                    ),
-                ], md=5),
-                dbc.Col([
-                    html.Label("Föderation", style=LABEL_STYLE),
-                    dcc.Dropdown(
-                        id="qcc-fed-filter",
-                        options=data_qc.get_federation_options(),
-                        value="GER",
-                        clearable=False,
-                        style={"fontSize": "0.9rem"},
-                    ),
-                ], md=2),
-                dbc.Col([
-                    html.Label("Grundgesamtheit", style=LABEL_STYLE),
-                    dcc.Dropdown(
-                        id="qcc-group-filter",
-                        options=data_qc.get_group_options(),
-                        # Default "curated" statt "all": beim naechsten
-                        # quality_check.py --rebuild enthaelt qc_rating_check die
-                        # gesamte gescrapte Population (243k statt 2.150 Spieler).
-                        # Ein fest verdrahtetes "all" wuerde die Kennzahlen dann
-                        # stillschweigend auf eine andere Grundgesamtheit
-                        # umstellen, ohne dass es jemand merkt.
-                        value="curated",
-                        clearable=False,
-                        style={"fontSize": "0.9rem"},
-                    ),
-                ], md=3),
-            ], className="g-2 align-items-end"),
-        ]),
+            # Suchfelder
+            html.Div(style=CARD, children=[
+                dbc.Row([
+                    dbc.Col([
+                        html.Label("Spieler (Name)", style=LABEL_STYLE),
+                        dbc.Input(
+                            id="qcc-name-filter",
+                            debounce=True,
+                            style={"fontSize": "0.9rem"},
+                        ),
+                    ], md=5),
+                    dbc.Col([
+                        html.Label("Föderation", style=LABEL_STYLE),
+                        dcc.Dropdown(
+                            id="qcc-fed-filter",
+                            options=rating_views.get_federation_options(),
+                            value="GER",
+                            clearable=False,
+                            style={"fontSize": "0.9rem"},
+                        ),
+                    ], md=2),
+                    dbc.Col([
+                        html.Label("Grundgesamtheit", style=LABEL_STYLE),
+                        dcc.Dropdown(
+                            id="qcc-group-filter",
+                            options=rating_views.get_group_options(),
+                            # Default "curated" statt "all": beim naechsten
+                            # quality_check.py --rebuild enthaelt qc_rating_check die
+                            # gesamte gescrapte Population (243k statt 2.150 Spieler).
+                            # Ein fest verdrahtetes "all" wuerde die Kennzahlen dann
+                            # stillschweigend auf eine andere Grundgesamtheit
+                            # umstellen, ohne dass es jemand merkt.
+                            value="curated",
+                            clearable=False,
+                            style={"fontSize": "0.9rem"},
+                        ),
+                    ], md=3),
+                ], className="g-2 align-items-end"),
+            ]),
 
-        # Tabelle
-        html.Div(style=CARD, children=[
-            html.Div([
-                html.Span("Spielerliste (alphabetisch)",
-                          style={"fontSize": "0.85rem", "color": C_MUTED}),
-                html.Span(id="qcc-table-note",
-                          style={"fontSize": "0.8rem", "color": C_MUTED, "marginLeft": "10px"}),
-            ], style={"marginBottom": "8px"}),
-            html.Div(id="qcc-player-table"),
-        ]),
-    ],
-)
+            # Tabelle
+            html.Div(style=CARD, children=[
+                html.Div([
+                    html.Span("Spielerliste (alphabetisch)",
+                              style={"fontSize": "0.85rem", "color": C_MUTED}),
+                    html.Span(id="qcc-table-note",
+                              style={"fontSize": "0.8rem", "color": C_MUTED, "marginLeft": "10px"}),
+                ], style={"marginBottom": "8px"}),
+                html.Div(id="qcc-player-table"),
+            ]),
+        ],
+    )
 
 
 @callback(
@@ -135,7 +129,7 @@ def update_table(name_filter, fed_filter, group):
     group       = group       or "curated"
 
     try:
-        df = data_qc.load_corrections_table(
+        df = rating_views.load_corrections_table(
             group, name_filter=name_filter, fed_filter=fed_filter, limit=TABLE_LIMIT
         )
     except Exception as e:
@@ -144,8 +138,8 @@ def update_table(name_filter, fed_filter, group):
     if df.empty:
         return html.Div("Keine Spieler gefunden.", style={"color": C_MUTED}), ""
 
-    total = data_qc.load_corrections_kpis(group).get("spieler", 0)
-    scope = data_qc.load_scope_summary(group)
+    total = rating_views.load_corrections_kpis(group).get("spieler", 0)
+    scope = rating_views.load_scope_summary(group)
     note = (
         f"— {len(df):,} von {total:,} Spielern (gefiltert/begrenzt)"
         if len(df) >= TABLE_LIMIT or (name_filter or fed_filter)
@@ -153,7 +147,7 @@ def update_table(name_filter, fed_filter, group):
     )
     # Grundgesamtheit immer mit ausweisen: sonst ist einer Zahl nicht anzusehen,
     # ob sie sich auf die kuratierten 2.150 oder die volle gescrapte Population
-    # bezieht (siehe data_qc._group_where()).
+    # bezieht (siehe rating_views._group_where()).
     note += f"  ·  Grundgesamtheit: {scope['spieler']:,} Spieler / {scope['fenster']:,} QC-Fenster"
 
     # Spaltenköpfe: id für Daten, name für Anzeige (mit Zeilenumbruch)

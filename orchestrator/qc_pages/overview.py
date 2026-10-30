@@ -1,19 +1,11 @@
 """QC Übersicht — Jahres- und Monatsdetail für Rating-Deltas."""
 
-import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
 from dash import Input, Output, State, callback, dash_table, dcc, html
 
-import data_qc
+from qc import rating_views
 
-dash.register_page(
-    __name__,
-    path="/qc",
-    name="QC Übersicht",
-    title="ELO-Einsichten | QC Übersicht",
-    order=20,
-)
 
 C_BG     = "#F5F5F5"
 C_CARD   = "#FFFFFF"
@@ -57,119 +49,122 @@ _ANNUAL_COLUMNS = [
     {"name": "Avg |Δadj|", "id": "Avg |Δadj|"},
 ]
 
-# Jahresdaten beim Start laden; 2025 ist Index 1 (nach 2026)
-try:
-    _initial_df = data_qc.load_annual_table("all")
-    _initial_df.columns = ["Jahr", "Spieler", "Fenster", "OK %", "Warn", "Error", "Avg |Δadj|"]
-    _initial_data = _initial_df.to_dict("records")
-    # Index von 2025 in der absteigend sortierten Liste finden
-    _years = [r["Jahr"] for r in _initial_data]
-    _default_row = _years.index(2025) if 2025 in _years else 0
-except Exception:
-    _initial_data = []
-    _default_row = 0
+def _initial_annual() -> tuple[list[dict], int]:
+    """Jahresdaten für den ersten Aufbau; 2025 ist Index 1 (nach 2026)."""
+    try:
+        df = rating_views.load_annual_table("all")
+        df.columns = ["Jahr", "Spieler", "Fenster", "OK %", "Warn", "Error", "Avg |Δadj|"]
+        data = df.to_dict("records")
+        years = [r["Jahr"] for r in data]
+        return data, (years.index(2025) if 2025 in years else 0)
+    except Exception:
+        return [], 0
+
 
 # ---------------------------------------------------------------------------
 # Layout
 # ---------------------------------------------------------------------------
-layout = dbc.Container(
-    fluid=True,
-    style={"backgroundColor": C_BG, "minHeight": "100vh", "padding": "20px"},
-    children=[
-        html.H4("QC Übersicht — Rating-Delta-Analyse",
-                style={"marginBottom": "16px", "color": C_TEXT}),
+def layout():
+    """Beim Aktivieren des QC-Tabs gerendert (frische Optionen, kein DB-Zugriff beim Import)."""
+    _initial_data, _default_row = _initial_annual()
+    return dbc.Container(
+        fluid=True,
+        style={"backgroundColor": C_BG, "minHeight": "100vh", "padding": "20px"},
+        children=[
+            html.H4("QC Übersicht — Rating-Delta-Analyse",
+                    style={"marginBottom": "16px", "color": C_TEXT}),
 
-        # Gruppen-Filter
-        dbc.Row([
-            dbc.Col(
-                html.Div(style=CARD, children=[
-                    html.Div("Gruppe", style={"fontSize": "0.78rem", "color": C_MUTED,
-                                              "marginBottom": "4px"}),
-                    dcc.Dropdown(id="qc-group-dd", options=data_qc.get_group_options(),
-                                 value="all", clearable=False,
-                                 style={"fontSize": "0.88rem"}),
-                ]),
-                md=4,
-            ),
-        ], className="g-2"),
+            # Gruppen-Filter
+            dbc.Row([
+                dbc.Col(
+                    html.Div(style=CARD, children=[
+                        html.Div("Gruppe", style={"fontSize": "0.78rem", "color": C_MUTED,
+                                                  "marginBottom": "4px"}),
+                        dcc.Dropdown(id="qc-group-dd", options=rating_views.get_group_options(),
+                                     value="all", clearable=False,
+                                     style={"fontSize": "0.88rem"}),
+                    ]),
+                    md=4,
+                ),
+            ], className="g-2"),
 
-        # KPI-Karten
-        dbc.Row([
-            _kpi_card("Fenster gesamt", "qc-kpi-total", md=2),
-            _kpi_card("OK %",           "qc-kpi-ok", md=2),
-            _kpi_card("Warn",           "qc-kpi-warn", md=2),
-            _kpi_card("Error",          "qc-kpi-error", md=2),
-            _kpi_card("Unerklärt",      "qc-kpi-unexplained", md=2),
-        ], className="g-2 mb-2"),
+            # KPI-Karten
+            dbc.Row([
+                _kpi_card("Fenster gesamt", "qc-kpi-total", md=2),
+                _kpi_card("OK %",           "qc-kpi-ok", md=2),
+                _kpi_card("Warn",           "qc-kpi-warn", md=2),
+                _kpi_card("Error",          "qc-kpi-error", md=2),
+                _kpi_card("Unerklärt",      "qc-kpi-unexplained", md=2),
+            ], className="g-2 mb-2"),
 
-        # Jahres-Tabelle
-        html.Div(style=CARD, children=[
-            html.Div("Jahresübersicht — Zeile klicken für Monatsdetail",
-                     style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "8px"}),
-            dash_table.DataTable(
-                id="qc-annual-datatable",
-                columns=_ANNUAL_COLUMNS,
-                data=_initial_data,
-                row_selectable="single",
-                selected_rows=[_default_row],
-                style_table={"overflowX": "auto"},
-                style_header={
-                    "backgroundColor": "#F0F0F0",
-                    "fontWeight": "600",
-                    "fontSize": "0.82rem",
-                    "color": C_TEXT,
-                    "borderBottom": f"2px solid {C_BORDER}",
-                },
-                style_cell={
-                    "fontSize": "0.88rem",
-                    "padding": "6px 10px",
-                    "textAlign": "right",
-                    "color": C_TEXT,
-                },
-                style_cell_conditional=[
-                    {"if": {"column_id": "Jahr"}, "textAlign": "left", "fontWeight": "600"},
+            # Jahres-Tabelle
+            html.Div(style=CARD, children=[
+                html.Div("Jahresübersicht — Zeile klicken für Monatsdetail",
+                         style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "8px"}),
+                dash_table.DataTable(
+                    id="qc-annual-datatable",
+                    columns=_ANNUAL_COLUMNS,
+                    data=_initial_data,
+                    row_selectable="single",
+                    selected_rows=[_default_row],
+                    style_table={"overflowX": "auto"},
+                    style_header={
+                        "backgroundColor": "#F0F0F0",
+                        "fontWeight": "600",
+                        "fontSize": "0.82rem",
+                        "color": C_TEXT,
+                        "borderBottom": f"2px solid {C_BORDER}",
+                    },
+                    style_cell={
+                        "fontSize": "0.88rem",
+                        "padding": "6px 10px",
+                        "textAlign": "right",
+                        "color": C_TEXT,
+                    },
+                    style_cell_conditional=[
+                        {"if": {"column_id": "Jahr"}, "textAlign": "left", "fontWeight": "600"},
+                    ],
+                    style_data_conditional=[
+                        {"if": {"filter_query": "{Error} > 0"},
+                         "backgroundColor": "#FFF8F8"},
+                        {"if": {"filter_query": "{Warn} > 0 && {Error} = 0"},
+                         "backgroundColor": "#FFFDE7"},
+                        {"if": {"state": "selected"},
+                         "backgroundColor": "#E3F2FD", "border": "1px solid #90CAF9"},
+                    ],
+                    page_action="none",
+                ),
+            ]),
+
+            # Ursachen nach Jahr
+            html.Div(style=CARD, children=[
+                html.Div("Ursachen nach Jahr — Kategorisierung der Warn/Error-Fenster "
+                         "(Details + Einzelfälle: Seite „QC Fälle“)",
+                         style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "8px"}),
+                html.Div(id="qc-category-table"),
+            ]),
+
+            # Monatsdetail
+            html.Div(
+                id="qc-detail-section",
+                style={"display": "none"},
+                children=[
+                    html.Div(id="qc-checksum-banner", style={"marginBottom": "12px"}),
+                    html.Div(style=CARD, children=[
+                        html.Div(id="qc-detail-header",
+                                 style={"fontSize": "0.95rem", "fontWeight": "600",
+                                        "color": C_TEXT, "marginBottom": "8px"}),
+                        html.Div(id="qc-monthly-table"),
+                    ]),
+                    html.Div(style=CARD, children=[
+                        html.Div("Top-10-Ausreißer (Warn + Error)",
+                                 style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "8px"}),
+                        html.Div(id="qc-offenders-table"),
+                    ]),
                 ],
-                style_data_conditional=[
-                    {"if": {"filter_query": "{Error} > 0"},
-                     "backgroundColor": "#FFF8F8"},
-                    {"if": {"filter_query": "{Warn} > 0 && {Error} = 0"},
-                     "backgroundColor": "#FFFDE7"},
-                    {"if": {"state": "selected"},
-                     "backgroundColor": "#E3F2FD", "border": "1px solid #90CAF9"},
-                ],
-                page_action="none",
             ),
-        ]),
-
-        # Ursachen nach Jahr
-        html.Div(style=CARD, children=[
-            html.Div("Ursachen nach Jahr — Kategorisierung der Warn/Error-Fenster "
-                     "(Details + Einzelfälle: Seite „QC Fälle“)",
-                     style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "8px"}),
-            html.Div(id="qc-category-table"),
-        ]),
-
-        # Monatsdetail
-        html.Div(
-            id="qc-detail-section",
-            style={"display": "none"},
-            children=[
-                html.Div(id="qc-checksum-banner", style={"marginBottom": "12px"}),
-                html.Div(style=CARD, children=[
-                    html.Div(id="qc-detail-header",
-                             style={"fontSize": "0.95rem", "fontWeight": "600",
-                                    "color": C_TEXT, "marginBottom": "8px"}),
-                    html.Div(id="qc-monthly-table"),
-                ]),
-                html.Div(style=CARD, children=[
-                    html.Div("Top-10-Ausreißer (Warn + Error)",
-                             style={"fontSize": "0.85rem", "color": C_MUTED, "marginBottom": "8px"}),
-                    html.Div(id="qc-offenders-table"),
-                ]),
-            ],
-        ),
-    ],
-)
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -190,15 +185,15 @@ layout = dbc.Container(
 def update_kpis(group):
     group = group or "all"
     try:
-        kpi = data_qc.load_annual_kpis(group)
+        kpi = rating_views.load_annual_kpis(group)
 
-        df_a = data_qc.load_annual_table(group)
+        df_a = rating_views.load_annual_table(group)
         df_a.columns = ["Jahr", "Spieler", "Fenster", "OK %", "Warn", "Error", "Avg |Δadj|"]
         annual_data = df_a.to_dict("records")
         years = [r["Jahr"] for r in annual_data]
         default_row = [years.index(2025)] if 2025 in years else ([0] if years else [])
 
-        df_c = data_qc.load_category_breakdown(group)
+        df_c = rating_views.load_category_breakdown(group)
         if not df_c.empty:
             category_table = dash_table.DataTable(
                 data=df_c.to_dict("records"),
@@ -271,11 +266,11 @@ def update_monthly_detail(selected_rows, table_data, group):
 
     try:
         # Monatstabelle
-        df_m = data_qc.load_monthly_table(year, group)
+        df_m = rating_views.load_monthly_table(year, group)
 
         # Zwei-Monats-Muster
-        df_raw = data_qc.load_monthly_delta_adj(year, group)
-        patterns = data_qc.detect_two_month_patterns(df_raw)
+        df_raw = rating_views.load_monthly_delta_adj(year, group)
+        patterns = rating_views.detect_two_month_patterns(df_raw)
         if not patterns.empty:
             patterns["period_end"] = pd.to_datetime(patterns["period_end"]).dt.strftime("%Y-%m")
             pattern_map = dict(zip(patterns["period_end"], patterns["pattern_players"]))
@@ -327,7 +322,7 @@ def update_monthly_detail(selected_rows, table_data, group):
             monthly_table = html.Div("Keine Monatsdaten.", style={"color": C_MUTED})
 
         # Jahresprüfsumme
-        cs = data_qc.load_annual_checksum(year, group)
+        cs = rating_views.load_annual_checksum(year, group)
         ok_pct = round(100.0 * cs["ok"] / cs["total"], 1) if cs["total"] else 0
         if ok_pct >= 97:
             bg, border = "#E8F5E9", "#A5D6A7"
@@ -351,7 +346,7 @@ def update_monthly_detail(selected_rows, table_data, group):
         )
 
         # Top-10-Ausreißer
-        df_o = data_qc.load_worst_offenders(year, group)
+        df_o = rating_views.load_worst_offenders(year, group)
         if not df_o.empty:
             df_o.columns = ["Spieler", "Gruppe", "Monat", "Von-ELO", "Nach-ELO", "Δadj", "Flag"]
             offenders_table = dash_table.DataTable(

@@ -1,6 +1,6 @@
 # Architektur: vier Blöcke in einem Repo
 
-Stand: 2026-10-18 · Kurzfassung und Entscheidungen: `docs/ideen_verbesserungen.md` Abschnitt G
+Stand: 2026-10-30 · Kurzfassung und Entscheidungen: `docs/ideen_verbesserungen.md` Abschnitt G
 
 Das Projekt wird logisch in vier Blöcke auf einer gemeinsamen DB gegliedert. Es bleibt **ein
 Repo** (eine DB, ein Schema, ein Compose-Stack, ein Entwickler). Die Ordner `scraper/`,
@@ -80,9 +80,12 @@ Jede Phase ist ein eigener Commit, Tests bleiben grün, `git revert` ist der Rü
 Testbasis (18.10.2026, Wegwerf-PG via `pgserver`, siehe CLAUDE.md-Gotchas): **256 grün,
 1 rot** (`test_retry_on_429`, schon länger bekannt).
 
-**Reihenfolge:** Phasen mit Worker-/Dashboard-Rebuild (2, 3) erst nach Ende des Welt-Backfills
-und nach dem November-Import, gebündelt in einem Deploy-Fenster. Der P0-Fix (neue/reaktivierte
-Spieler) ist kein Teil dieses Umbaus und wird separat besprochen.
+**Reihenfolge (geändert 30.10.2026):** Der Welt-Backfill ist seit 29.10. fertig, die Queue leer.
+Der Umbau wird **vorgezogen**, das November-Update wartet: Sperre `~/HOLD_FIDE_MONTHLY_UPDATE` auf
+dem VPS, Import erst nach explizitem OK des Users. Damit ist das Deploy-Fenster für die Phasen 2/3
+frei. Der P0-Fix ist erledigt (`monthly_update.sh` Schritt 4 = Listen-Gruppen, 30.10.).
+Hinweis für Phase 3: `orchestrator/audit.py` importiert seit 30.10. `list_population.latest_list_period`
+(Regel „steht in der neuesten Liste") — gehört nach `core/`.
 
 | Phase | Inhalt | Betriebsrisiko | Status |
 |---|---|---|---|

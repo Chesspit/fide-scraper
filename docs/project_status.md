@@ -785,7 +785,10 @@ bewusst nicht ungeprüft aufgeräumt):
 
 **Neu aus Session 2026-10-01 — zukünftiger Job: neue und reaktivierte Spieler zuverlässig erfassen**
 
-Status: ⏸ **P0 pausiert, Fix ausstehend** (nach dem Umzug zu Infomaniak, vor der November-Liste).
+Status: ✅ **Umgesetzt 30.10.2026** — `monthly_update.sh` Schritt 4 legt statt P0 Listen-Gruppen
+für jede neu importierte Periode an (`generate_list_batches.py --period`, Regel aus
+`orchestrator/list_population.py`). P0-Gruppen bleiben pausiert/obsolet. Erster Echtlauf mit der
+November-Liste; die ist per VPS-Sperre `~/HOLD_FIDE_MONTHLY_UPDATE` bis zum OK des Users zurückgestellt.
 Ersetzt bei Umsetzung auch die Zeile „Reaktivierte Spieler erfassen" oben.
 
 *Befund.* Das P0-Tier (eingeführt 01.09.2026, Commit `7bd302d`, monatlich automatisiert mit `7e96819`)

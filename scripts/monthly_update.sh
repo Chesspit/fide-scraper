@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 # Monatliches FIDE-Update: Rating-Liste herunterladen, TXT-Snapshot importieren,
-# dann P1/P2/P3-Monatsrefresh und P0-Neuzugänge auf dem VPS-Orchestrator anstoßen,
-# zuletzt die Datenprüfung (scripts/audit_data.py) als Bericht ablegen.
+# dann P1/P2/P3-Monatsrefresh und Listen-Gruppen für die neue Periode auf dem
+# VPS-Orchestrator anstoßen, zuletzt die Datenprüfung (scripts/audit_data.py)
+# als Bericht ablegen.
+#
+# ANHALTEN: Liegt auf dem VPS die Datei $FIDE_HOLD_FILE (Default
+# ~/HOLD_FIDE_MONTHLY_UPDATE), endet jeder Lauf sofort ohne Download, Import oder
+# Requeue — auch ein vorgemerkter Reset wartet. Setzen/aufheben von jedem Rechner:
+#   ssh pit@<vps> 'echo "Grund" > ~/HOLD_FIDE_MONTHLY_UPDATE'
+#   ssh pit@<vps> 'rm ~/HOLD_FIDE_MONTHLY_UPDATE'
+# Ist der VPS nicht erreichbar, wird der Lauf ebenfalls übersprungen (die
+# VPS-Schritte gingen ohnehin nicht) und am nächsten Tag wiederholt.
 #
 # Läuft komplett ohne Mac Mini / MacBook Pro — das eigentliche Nachscrapen
 # übernehmen die dc_update_1/2/3-Threads auf dem VPS (siehe
@@ -61,26 +70,48 @@ echo "$(date): ========================================"
 echo "$(date): Monatliches FIDE-Update${1:+ (explizit: $1)}"
 echo "$(date): ========================================"
 
+# Zentrale Sperre auf dem VPS (siehe Kopf). Liegt dort statt lokal, damit sie
+# auch den launchd-Lauf auf einem anderen Mac anhält.
+FIDE_HOLD_FILE="${FIDE_HOLD_FILE:-~/HOLD_FIDE_MONTHLY_UPDATE}"
+HOLD_REASON=$(ssh -o ConnectTimeout=15 -o BatchMode=yes "$FIDE_VPS" \
+    "if [ -e $FIDE_HOLD_FILE ]; then echo HOLD; cat $FIDE_HOLD_FILE; else echo FREE; fi" 2>/dev/null)
+case "$HOLD_REASON" in
+    FREE) ;;
+    HOLD*)
+        echo "$(date): ANGEHALTEN per $FIDE_VPS:$FIDE_HOLD_FILE — kein Download, Import oder Requeue."
+        echo "$(date): Grund: $(echo "$HOLD_REASON" | sed -n 2p)"
+        exit 0 ;;
+    *)
+        echo "$(date): VPS nicht erreichbar, Sperre nicht prüfbar — Lauf übersprungen, morgen erneut."
+        exit 0 ;;
+esac
+
 # --- Schritte 3+4 (Definition): VPS-Orchestrator — Refresh-Gruppen requeuen ---
 # Schritt 3 setzt NUR die P1/P2/P3-Gruppen zurück (federation-Sentinel, siehe
-# orchestrator/monthly_refresh_tiers.py), Schritt 4 NUR die P0-Gruppen (nie
-# gescrapte aktive Spieler, ohne Jahres-Rollover — P0 ist bewusst mehrjährig).
-# Der laufende Welt-Backfill (dc_ae/de/es/hk/in/mx/uk/us/dach) bleibt in beiden
-# Fällen unangetastet; scrape_periods sorgt für idempotentes Überspringen
-# bereits gescrapter Perioden.
+# orchestrator/monthly_refresh_tiers.py). Schritt 4 legt für jede neu
+# importierte Periode Listen-Gruppen an (orchestrator/generate_list_batches.py
+# --period): jede Kombo mit Partien laut Liste ohne scrape_periods-Zeile, ohne
+# active-Filter — erfasst Neuzugänge und Reaktivierte. Ersetzt seit 30.10.2026
+# das P0-Tier (reset_new_entrant_refresh.py), das bei Neuzugängen nur no_data
+# lieferte (docs/project_status.md, Session 2026-10-01). Läuft im worker-
+# Container, weil nur dessen Image die Listen-Gruppen kennt.
+# Bereits gescrapte Perioden überspringt der Worker idempotent (scrape_periods).
+# $1 = Leerzeichen-getrennte Perioden (YYYY-MM-01), für die Schritt 4 läuft.
 run_vps_resets() {
-    local ok=0
+    local ok=0 period
     echo ""
     echo "$(date): === Schritt 3/4: VPS-Orchestrator — P1/P2/P3-Monatsrefresh requeuen ==="
     ssh "$FIDE_VPS" \
         "cd $FIDE_VPS_COMPOSE_DIR && docker compose exec -T dashboard python3 orchestrator/reset_monthly_refresh.py" \
         || { echo "$(date): WARNUNG: reset_monthly_refresh.py fehlgeschlagen."; ok=1; }
 
-    echo ""
-    echo "$(date): === Schritt 4/4: VPS-Orchestrator — P0-Neuzugänge requeuen ==="
-    ssh "$FIDE_VPS" \
-        "cd $FIDE_VPS_COMPOSE_DIR && docker compose exec -T dashboard python3 orchestrator/reset_new_entrant_refresh.py" \
-        || { echo "$(date): WARNUNG: reset_new_entrant_refresh.py fehlgeschlagen."; ok=1; }
+    for period in $1; do
+        echo ""
+        echo "$(date): === Schritt 4/4: VPS-Orchestrator — Listen-Gruppen für $period ==="
+        ssh "$FIDE_VPS" \
+            "cd $FIDE_VPS_COMPOSE_DIR && docker compose exec -T worker python3 orchestrator/generate_list_batches.py --period $period" \
+            || { echo "$(date): WARNUNG: generate_list_batches.py --period $period fehlgeschlagen."; ok=1; }
+    done
 
     return $ok
 }
@@ -90,7 +121,8 @@ run_vps_resets() {
 PENDING_RESET_MARKER="$SCRIPT_DIR/data/.pending_vps_reset"
 if [ -f "$PENDING_RESET_MARKER" ]; then
     echo "$(date): Offener VPS-Reset aus früherem Lauf gefunden — hole ihn zuerst nach."
-    if run_vps_resets; then
+    # Marker enthält die Perioden (leer bei Markern aus der Zeit vor 30.10.2026)
+    if run_vps_resets "$(cat "$PENDING_RESET_MARKER")"; then
         rm -f "$PENDING_RESET_MARKER"
         echo "$(date): Nachgeholter Reset erfolgreich."
     else
@@ -256,11 +288,12 @@ process_period() {
 
 # --- Schritte 1+2: je Periode suchen/laden/importieren ------------------------
 ANY_IMPORTED=0
+IMPORTED_PERIODS=""
 HAD_ERROR=0
 for PERIOD in $PERIODS; do
     process_period "$PERIOD"
     case $? in
-        0) ANY_IMPORTED=1 ;;
+        0) ANY_IMPORTED=1; IMPORTED_PERIODS="$IMPORTED_PERIODS $PERIOD" ;;
         2) HAD_ERROR=1 ;;
     esac
 done
@@ -273,12 +306,12 @@ if [ "$ANY_IMPORTED" = "0" ]; then
     exit 0
 fi
 
-if run_vps_resets; then
+if run_vps_resets "$IMPORTED_PERIODS"; then
     rm -f "$PENDING_RESET_MARKER"
 else
     # Ohne Marker bliebe ein gescheiterter Reset unbemerkt liegen: der Import
     # gilt dann als erledigt, aber niemand scrapt den neuen Monat nach.
-    touch "$PENDING_RESET_MARKER"
+    echo "$IMPORTED_PERIODS" > "$PENDING_RESET_MARKER"
     echo "$(date): Reset vorgemerkt ($PENDING_RESET_MARKER) — der nächste Lauf holt ihn nach."
 fi
 
@@ -308,7 +341,7 @@ echo ""
 echo "$(date): ========================================"
 echo "$(date): Monatliches Update abgeschlossen ✓"
 echo "$(date): dc_update_1..3 holen den neuen Monat im Hintergrund nach (VPS-Dashboard),"
-echo "$(date): dc_newplayers_1/2 die seit letztem Monat neu aktiven, nie gescrapten Spieler."
+echo "$(date): inkl. Listen-Gruppen für Neuzugänge und Reaktivierte."
 echo "$(date): ========================================"
 [ "$HAD_ERROR" = "1" ] && exit 1
 exit 0

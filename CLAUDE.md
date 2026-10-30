@@ -203,11 +203,17 @@ neue Liste nicht an einem festen Kalendertag.
 1. Fehlende Perioden der letzten 3 Monate ermitteln (`FIDE_LOOKBACK_MONTHS`, älteste zuerst)
 2. Liste von `ratings.fide.com/download/standard_<mmm><yy>frl.zip` laden (404 = noch nicht da → Exit 0)
 3. Importieren
-4. **Nur wenn wirklich importiert wurde:** P1/P2/P3-Refresh + P0-Neuzugänge auf dem VPS requeuen
+4. **Nur wenn wirklich importiert wurde:** P1/P2/P3-Refresh requeuen + Listen-Gruppen für die neue
+   Periode anlegen (`generate_list_batches.py --period`, im `worker`-Container; ersetzt seit 30.10.2026 P0)
 5. **Nur nach Import:** Datenprüfung ab 2020 (`FIDE_AUDIT_SINCE`), Einzeiler ins Log, Bericht nach
    `~/backups/fide-scraper/audit/audit_<datum>.md`
 
 Ohne Schritt 4 werden neue Spieler nie nachgezogen. Log: `~/backups/fide-scraper/monthly.log`.
+
+**Anhalten:** Existiert auf dem VPS `~/HOLD_FIDE_MONTHLY_UPDATE`, endet jeder Lauf sofort (kein
+Download/Import/Requeue); VPS nicht erreichbar ⇒ Lauf ebenfalls übersprungen. ⚠️ **Seit 30.10.2026
+gesetzt:** November-Update erst nach explizitem OK des Users (Vier-Blöcke-Umbau geht vor).
+Aufheben: `ssh pit@179.237.106.106 'rm ~/HOLD_FIDE_MONTHLY_UPDATE'`.
 
 ⚠️ **Der launchd-Job gehört auf genau EIN Gerät** (aktuell: Mac Mini). Der Lock liegt unter
 `/tmp` und wirkt nur lokal — zwei Rechner mit demselben Job würden sich gegenseitig nicht

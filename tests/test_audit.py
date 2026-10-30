@@ -140,6 +140,21 @@ class TestRunAudit:
         assert "inaktiv: 1" in ns.note
         assert res.headline["pct_games_found"] == round(100 * 2 / 7, 2)
 
+    def test_player_missing_from_latest_list_is_withdrawn(self, data_db, conn):
+        _green_player(data_db, 1)
+        data_db.insert_rating(1, "2024-06-01", published_rating=2013, num_games=0)  # neueste Liste
+        data_db.insert_player(2)
+        data_db.insert_rating(2, P, published_rating=1500, num_games=6)  # zurückgezogenes Erstrating
+        res = _audit()
+        assert not res.has_hard()
+        assert res.check("periods_missing").n_findings == 0
+        wd = res.check("periods_withdrawn")
+        assert (wd.n_findings, wd.severity) == (1, INFO)
+        assert res.headline["soll_combos"] == 1
+        assert res.headline["withdrawn_combos"] == 1
+        ns = res.check("players_never_scraped")
+        assert ns.n_findings == 0 and "neuesten Liste): 1" in ns.note
+
     def test_listed_but_no_data(self, data_db, conn):
         data_db.insert_player(3)
         data_db.insert_rating(3, PREV, published_rating=1790, num_games=0)

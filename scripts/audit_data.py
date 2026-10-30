@@ -90,6 +90,9 @@ def print_scorecard(res: AuditResult, limit: int) -> None:
         print(f"  Föderationen: {', '.join(res.federations)}")
     print("=" * 72)
     print(f"  Soll-Kombinationen (Spieler×Periode mit Partien laut Liste): {_n(h['soll_combos'])}")
+    if h.get("withdrawn_combos"):
+        print(f"  nicht im Soll (Spieler nicht mehr in der neuesten Liste): "
+              f"{_n(h['withdrawn_combos'])}")
     if "soll_players" in h:
         print(f"  Soll-Spieler: {_n(h['soll_players'])}, davon mind. einmal gescrapt: "
               f"{_fmt_pct(h['pct_players_touched'])}")
@@ -146,6 +149,8 @@ def write_report(res: AuditResult, path: Path, elapsed: float) -> None:
         "| Kennzahl | Wert |",
         "|---|---:|",
         f"| Soll-Kombinationen | {_n(h['soll_combos'])} |",
+        f"| nicht im Soll: Spieler nicht mehr in der neuesten Liste | "
+        f"{_n(h.get('withdrawn_combos', 0))} |",
     ]
     if "soll_players" in h:
         lines += [
@@ -175,15 +180,15 @@ def write_report(res: AuditResult, path: Path, elapsed: float) -> None:
 
     if res.by_year:
         lines += ["## Nach Jahr", "",
-                  "| Jahr | Soll | gescrapt | fehlt | no_data/error | vollständig | Partien | "
-                  "Kette ok | erklärt | unerklärt |",
-                  "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+                  "| Jahr | Soll | gescrapt | fehlt | zurückgezogen | no_data/error | vollständig | "
+                  "Partien | Kette ok | erklärt | unerklärt |",
+                  "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
         for y, v in res.by_year.items():
             soll = v.get("soll", 0)
             chain = v.get("chain_checked", 0)
             lines.append(
                 f"| {y} | {_n(soll)} | {_fmt_pct(_p(v.get('ok', 0), soll))} | "
-                f"{_n(v.get('missing', 0))} | "
+                f"{_n(v.get('missing', 0))} | {_n(v.get('withdrawn', 0))} | "
                 f"{_n(v.get('listed_no_data', 0) + v.get('listed_error', 0))} | "
                 f"{_fmt_pct(_p(v.get('complete', 0), soll))} | "
                 f"{_fmt_pct(_p(v.get('found_games', 0), v.get('listed_games', 0)))} | "

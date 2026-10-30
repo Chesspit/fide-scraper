@@ -4,6 +4,11 @@ Maßstab ist die offizielle FIDE-Liste (rating_history.published_rating /
 num_games), nicht die Scraping-Queue und nicht der heutige Aktiv-Status:
 Soll ist jede Kombination (Spieler, Periode), für die FIDE in der Liste
 mindestens eine gewertete Partie ausweist. Heute inaktive Spieler zählen mit.
+Ausgenommen sind ungescrapte Kombos von Spielern, die in der neuesten Liste
+nicht mehr mit Rating stehen ("zurückgezogen", z. B. ~12.900 von FIDE
+zurückgenommene März-2026-Erstratings): dieselbe Regel wie in
+orchestrator/list_population.py — der Scraper holt sie bewusst nicht, das
+Audit führt sie als INFO statt als Lücke.
 
 Vier Ebenen, jede baut auf der vorigen auf:
 
@@ -54,6 +59,7 @@ from orchestrator.integrity import (
     check_ok_without_games,
     check_orphan_games,
 )
+from orchestrator.list_population import latest_list_period
 from orchestrator.sync_done_groups import valid_periods_for_year
 from scraper.db import is_valid_fide_period
 
@@ -206,6 +212,15 @@ def _fed_clause(federations: list[str] | None, alias: str = "p") -> str:
     return f"AND {alias}.federation = ANY(%(feds)s)" if federations else ""
 
 
+# Steht der Spieler in der neuesten importierten Liste mit Rating? Sonst gilt
+# eine ungescrapte Kombo als zurückgezogen (Regel aus list_population.py).
+# Ohne importierte Liste (%(latest)s NULL) ist niemand zurückgezogen.
+_IN_LATEST = """(%(latest)s::date IS NULL OR EXISTS (
+               SELECT 1 FROM rating_history lt
+               WHERE lt.fide_id = {alias}.fide_id AND lt.period = %(latest)s
+                 AND lt.published_rating > 0))"""
+
+
 _REF_SQL = """
     SELECT period,
            COUNT(*) FILTER (WHERE published_rating > 0)                      AS listed,
@@ -231,7 +246,8 @@ _REF_DUP_SQL = """
 REF_DUP_MAX_PCT = 20.0
 
 # Eine Zeile pro Soll-Kombination, drei Kategorie-Spalten:
-#   cat1  Vollständigkeit   ok | missing | listed_no_data | listed_error
+#   cat1  Vollständigkeit   ok | missing | withdrawn | listed_first_rating
+#                           | listed_no_data | listed_error
 #   cat2  Partienzahl       equal | fewer | fewer_first_rating | more  (nur ok)
 #   cat3  Kette             ok | no_prev | ro_shift | k40 | unexplained  (nur equal)
 # Zurück kommen Zähler je (Föderation, Kategorien) und eine Zufallsstichprobe
@@ -239,7 +255,8 @@ REF_DUP_MAX_PCT = 20.0
 _PERIOD_SQL = """
 WITH soll AS (
     SELECT rh.fide_id, rh.num_games, rh.published_rating AS pub, rh.std_rating AS ro,
-           COALESCE(p.federation, '???') AS federation
+           COALESCE(p.federation, '???') AS federation,
+           {in_latest} AS in_latest
     FROM rating_history rh
     LEFT JOIN players p ON p.fide_id = rh.fide_id
     WHERE rh.period = %(p)s AND rh.num_games > 0 {fed}
@@ -252,7 +269,7 @@ g AS (
     GROUP BY gr.fide_id
 ),
 base AS (
-    SELECT s.fide_id, s.federation, s.num_games, s.pub, s.ro,
+    SELECT s.fide_id, s.federation, s.num_games, s.pub, s.ro, s.in_latest,
            COALESCE(g.n, 0)  AS n,
            COALESCE(g.s, 0)  AS s,
            sp.status, sp.k_factor,
@@ -288,7 +305,8 @@ base2 AS (
 c AS (
     SELECT b.*,
            b.pub - b.pub_prev - b.s - b.corr AS residual,
-           CASE WHEN b.status IS NULL      THEN 'missing'
+           CASE WHEN b.status IS NULL AND NOT b.in_latest THEN 'withdrawn'
+                WHEN b.status IS NULL      THEN 'missing'
                 WHEN b.status = 'ok'       THEN 'ok'
                 -- Erstbewertung: die Berechnungsseite bleibt dann oft leer
                 WHEN b.pub_prev IS NULL    THEN 'listed_first_rating'
@@ -428,6 +446,7 @@ WITH soll AS (
 ),
 t AS (
     SELECT s.*, COALESCE(p.federation, '???') AS federation, p.name, p.active,
+           {in_latest} AS in_latest,
            NOT EXISTS (
                SELECT 1 FROM scrape_periods sp
                WHERE sp.fide_id = s.fide_id AND sp.period = ANY(%(periods)s::date[])
@@ -436,15 +455,16 @@ t AS (
     LEFT JOIN players p ON p.fide_id = s.fide_id
     WHERE TRUE {fed}
 )
-SELECT 'n', federation, active, never, COUNT(*), SUM(listed_games)::bigint, NULL::int, NULL::text
-FROM t GROUP BY federation, active, never
+SELECT 'n', federation, active, never, in_latest,
+       COUNT(*), SUM(listed_games)::bigint, NULL::int, NULL::text
+FROM t GROUP BY federation, active, never, in_latest
 UNION ALL
-SELECT 's', federation, active, never, 1, listed_games, fide_id,
+SELECT 's', federation, active, never, in_latest, 1, listed_games, fide_id,
        json_build_object('name', name, 'listed_periods', listed_periods,
                          'listed_games', listed_games)::text
 FROM (
     SELECT t.*, ROW_NUMBER() OVER (ORDER BY listed_games DESC) AS rn
-    FROM t WHERE never
+    FROM t WHERE never AND in_latest
 ) z
 WHERE rn <= %(sample)s
 """
@@ -473,7 +493,8 @@ def _query_period(conn_factory: ConnFactory, p: date, params: dict,
         with conn.cursor() as cur:
             args = {**params, "p": p, "prev": previous_period(p)}
             if layers & {1, 2, 3}:
-                cur.execute(_PERIOD_SQL.format(fed=fed), args)
+                cur.execute(_PERIOD_SQL.format(
+                    fed=fed, in_latest=_IN_LATEST.format(alias="rh")), args)
                 per_rows = cur.fetchall()
             if layers & {2, 3}:
                 fed_join = ("JOIN players p ON p.fide_id = gr.fide_id"
@@ -522,6 +543,7 @@ def run_audit(
         "tol": chain_tolerance,
         "jump": jump,
         "sample": sample,
+        "latest": None,
     }
 
     C = {c.id: c for c in [
@@ -538,6 +560,9 @@ def run_audit(
                     "generate_new_entrant_batches.py prüfen oder backfill.py --fide-ids …"),
         CheckResult("periods_missing", 1, "Perioden mit Partien laut Liste, nicht gescrapt",
                     "Offene Arbeit: Queue-Gruppen für Föderation×Jahr requeuen"),
+        CheckResult("periods_withdrawn", 1, "Ungescrapt, Spieler nicht mehr in der neuesten Liste",
+                    "Erwartbar: von FIDE zurückgezogene Ratings (z. B. März-2026-Erstratings), "
+                    "die Berechnungsseite liefert nichts; zählt nicht zum Soll"),
         CheckResult("periods_listed_no_data", 1, "Liste sagt Partien, Scrape sagt no_data/error",
                     "Stichprobe auf ratings.fide.com; bei einer Häufung in einer Periode (Muster Vorfall "
                     "2026-07-14) Kombos löschen und neu scrapen"),
@@ -581,6 +606,7 @@ def run_audit(
         with conn.cursor() as cur:
             cur.execute(_REF_SQL, params)
             ref = {r[0]: (r[1], r[2]) for r in cur.fetchall()}
+            params["latest"] = latest_list_period(cur)
     finally:
         conn.close()
     for i, p in enumerate(periods):
@@ -668,6 +694,8 @@ def run_audit(
                         extra = dict(p=p, federation=fed, fide_id=fide_id, detail=detail)
                         if cat1 == "missing":
                             _sample_add(C["periods_missing"], sample, **extra)
+                        elif cat1 == "withdrawn":
+                            _sample_add(C["periods_withdrawn"], sample, **extra)
                         elif cat1 == "listed_first_rating":
                             _sample_add(C["periods_no_data_first_rating"], sample, **extra)
                         elif cat1 != "ok":
@@ -680,6 +708,16 @@ def run_audit(
                             _sample_add(C["chain_matches_list"], sample, category=cat3, **extra)
                         if is_jump:
                             _sample_add(C["rating_jumps"], sample, **extra)
+                        continue
+
+                    wd = C["periods_withdrawn"]
+                    wd.n_checked += cnt
+                    if cat1 == "withdrawn":
+                        wd.n_findings += cnt
+                        wd.by_year[p.year] += cnt
+                        wd.by_federation[fed] += cnt
+                        by_year[p.year]["withdrawn"] += cnt
+                        by_fed[fed]["withdrawn"] += cnt
                         continue
 
                     by_year[p.year]["soll"] += cnt
@@ -808,7 +846,8 @@ def run_audit(
         ro.note = ("Abweichung ist bei nachgewerteten Turnieren normal (~30 %); "
                    "springt eine Periode gegen 100 %, ist die Vorliste verdächtig")
         for cid in ("game_count_first_rating", "ro_matches_list", "rating_jumps",
-                    "periods_no_data_first_rating", "games_unrated_players"):
+                    "periods_no_data_first_rating", "periods_withdrawn",
+                    "games_unrated_players"):
             if C[cid].n_findings:
                 C[cid].raise_to(INFO)
         for cid in ("k_times_change", "value_ranges"):
@@ -839,18 +878,23 @@ def run_audit(
         conn = _open(conn_factory)
         try:
             with conn.cursor() as cur:
-                cur.execute(_NEVER_SCRAPED_SQL.format(fed=_fed_clause(federations)),
+                cur.execute(_NEVER_SCRAPED_SQL.format(
+                                fed=_fed_clause(federations),
+                                in_latest=_IN_LATEST.format(alias="s")),
                             {**params, "periods": [p.isoformat() for p in run_periods]})
                 rows = cur.fetchall()
         finally:
             conn.close()
         ns = C["players_never_scraped"]
-        inactive_never = 0
-        for kind, fed, active, never, cnt, games, fide_id, detail in rows:
+        inactive_never = withdrawn_never = 0
+        for kind, fed, active, never, in_latest, cnt, games, fide_id, detail in rows:
             if kind == "s":
                 row = {"fide_id": fide_id, "federation": fed, "active": active}
                 row.update(json.loads(detail))
                 ns.sample.append(row)
+                continue
+            if never and not in_latest:
+                withdrawn_never += cnt  # zurückgezogen, s. periods_withdrawn
                 continue
             ns.n_checked += cnt
             by_fed[fed]["players"] += cnt
@@ -860,7 +904,8 @@ def run_audit(
                 by_fed[fed]["players_never"] += cnt
                 if not active:
                     inactive_never += cnt
-        ns.note = f"davon heute inaktiv: {inactive_never:,}"
+        ns.note = (f"davon heute inaktiv: {inactive_never:,}; nicht mitgezählt "
+                   f"(nicht mehr in der neuesten Liste): {withdrawn_never:,}")
         if ns.n_findings:
             ns.raise_to(HARD)
 
@@ -902,6 +947,7 @@ def run_audit(
         "periods": len(periods),
         "periods_skipped": len(skipped),
         "soll_combos": soll,
+        "withdrawn_combos": sum(v["withdrawn"] for v in by_year.values()),
         "pct_periods_scraped": _pct(sum(v["ok"] for v in by_year.values()), soll),
         "pct_periods_complete": _pct(sum(v["complete"] for v in by_year.values()), soll),
         "pct_games_found": _pct(found_games, listed_games),

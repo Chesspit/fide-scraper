@@ -780,7 +780,7 @@ bewusst nicht ungeprüft aufgeräumt):
 | `rating_corrections` 2024-03 für gescrapte Spieler neu berechnen | Mittel | ⬜ Formel mit Rating nach den Partien (6.4a); betrifft `quality_check.py`-Ergebnisse für das März-2024-Fenster |
 | Inaktive Spieler seit 2020 in die Population aufnehmen? | Entscheidung | ✅ Ja (Okt. 2026, revidiert ggü. „Nein“ vom 17.09.): Listen-Gruppen `update_only=3` (Commit `38f9334`) scrapen offene Soll-Kombos nach offizieller Liste ohne `active`-Filter — `orchestrator/generate_list_batches.py`, Details `docs/scraping_status.md` |
 | Reaktivierte Spieler erfassen | Mittel | ⬜ `players.active` beim Monatsimport aus dem Listen-Flag nachziehen (analog `sync_players_std_rating`); sonst werden wieder aktive Spieler nie gescrapt (2.293 Fälle in 2026-09). Ändert die Coverage-Zahlen |
-| März-2026-Anomalie klären | Niedrig | ✅ 30.10.2026: zurückgezogene FIDE-Erstratings, nichts zu scrapen (6.4). Offen nur noch kosmetisch: in Coverage/Audit als „erklärt" statt fehlend ausweisen |
+| März-2026-Anomalie klären | Niedrig | ✅ 30.10.2026: zurückgezogene FIDE-Erstratings, nichts zu scrapen (6.4). `audit_data.py` führt sie seither als INFO `periods_withdrawn` außerhalb des Solls (Live 2026-01…04: 13.602 zurückgezogen, 0 fehlend) |
 | Stichproben 2020-01/2020-05/2022-01 (no_data) | Niedrig | ⬜ Periodenweise über der Schwelle, Ursache offen (2024-07 hat sich mit dem Juni-Neuimport erledigt) |
 
 **Neu aus Session 2026-10-01 — zukünftiger Job: neue und reaktivierte Spieler zuverlässig erfassen**

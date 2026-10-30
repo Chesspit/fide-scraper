@@ -4,6 +4,15 @@ Run from project root:
     .venv/bin/python notebooks/_generate_08.py
 """
 
+import sys
+
+# Quelle der Wahrheit ist jetzt die marimo-Fassung notebooks/08_qc_elo_analysis.py.
+# Dieser Generator schreibt die .ipynb OHNE Outputs neu und löscht damit
+# gespeicherte Ergebnisse (NB14 verlor so 1952 Zeilen).
+if __name__ == "__main__" and "--force" not in sys.argv:
+    sys.exit("Ersetzt durch notebooks/08_qc_elo_analysis.py (marimo edit). "
+             "Nur mit --force ausführen — überschreibt die .ipynb ohne Ergebnisse.")
+
 from pathlib import Path
 import nbformat as nbf
 

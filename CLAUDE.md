@@ -43,7 +43,8 @@ fide-scraper/
 │   ├── qc_ui.py, qc_pages/    ← Dashboard-Tab „QC" (Audit-Läufe, Einzelabfrage, Rating-Fenster, Fälle, 2024)
 │   └── check_proxy_pool.py    ← Gateway-Smoke-Test (läuft im Worker-Container)
 ├── qc/                        ← Block 4: audit, integrity, coverage, rating_check, reconcile,
-│                                 rating_views, live (Spieler × Periode), audit_store (qc_audit_runs), db
+│                                 rating_views, window_detail (Notebooks 08/10/11), live (Spieler × Periode),
+│                                 audit_store (qc_audit_runs), db
 ├── frontend/                  ← Block 2: ELO-Einsichten, EDITION=public|intern (app.py → PAGES)
 ├── notebooks/                 ← Block 3: marimo (NN_*.py, Quelle der Wahrheit) + .ipynb-Archiv, _setup.py
 ├── deploy/infomaniak/         ← Produktions-Stack (Compose, bootstrap.sh, memory_watch.sh); Runbook docs/umzug_infomaniak.md
@@ -297,11 +298,11 @@ gescrapten Rating-/Partiedaten über 4 feste, sichere Query-Tools (kein Text-to-
 | 05 | Σ rating_change_weighted pro Jahr; Splits nach Geschlecht/Farbe/Stärke-Bucket |
 | 06 | Alters-Kohorten (Anker 2015): <20 / 20–30 / 30–40 / 40–50 / >50 |
 | 07 | female_top Peer-Performance (Kohorte × Stärke-Bucket × Gegner-Geschlecht) |
-| 08 | QC Elo-Analyse |
-| 10–11 | QC-Detail 2024 / 2008 |
+| 08 | QC Elo-Analyse (marimo) |
+| 10–11 | QC-Detail 2024 / 2008 (marimo) |
 | 13 | ⚠️ veraltet — s. Notebook 14 |
-| 14 | Top-40-Frauen (Jahresende 2016–2025, dynamisch aus `rating_history`) vs. Männer im Elo-Band 2400–2600 × Gegner-Geschlecht × Turniertyp + Permutationstest |
-| 15 | Pro Spielerin der Top-40-Kohorte: Partien/Ergebnis/Rating-Δ gegen gleich starke (±50) bzw. stärkere (≥50) Gegner, ganze Karriere, nach Gegner-Geschlecht |
+| 14 | (marimo) Top-40-Frauen (Jahresende 2016–2025, dynamisch aus `rating_history`) vs. Männer im Elo-Band 2400–2600 × Gegner-Geschlecht × Turniertyp + Permutationstest |
+| 15 | (marimo) Pro Spielerin der Top-40-Kohorte: Partien/Ergebnis/Rating-Δ gegen gleich starke (±50) bzw. stärkere (≥50) Gegner, ganze Karriere, nach Gegner-Geschlecht |
 
 Notebooks 01–04 und 07 basieren auf den Gruppen `female_top`/`male_control`
 (`players.analysis_group`), die aktuell nur unvollständig befüllt sind — siehe
@@ -312,8 +313,9 @@ nötig).
 Verbindung: `DATABASE_URL` aus `.env.notebook` → `localhost:5434` (über `core.db.connect_analysis()`).
 
 **marimo (seit Phase 6):** Notebooks als reine `.py`-Dateien, git-diffbar und reaktiv.
-14 und 15 liegen als `notebooks/14_top40_female_vs_band_men.py` / `15_top40_equal_strength_summary.py`
-vor, die `.ipynb` bleiben als Archiv, bis die marimo-Fassung lokal geprüft ist.
+Überführt: 08, 10, 11 (QC, Abfragen über `qc/window_detail.py`) sowie 14 und 15
+(`notebooks/NN_*.py`); die `.ipynb` bleiben als Archiv, bis die marimo-Fassung lokal geprüft ist.
+Ihre Generatoren `_generate_08/10/11/14/15.py` brechen ohne `--force` ab.
 
 ```bash
 .venv/bin/marimo edit notebooks/14_top40_female_vs_band_men.py   # interaktiv

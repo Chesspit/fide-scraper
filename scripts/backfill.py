@@ -3,11 +3,8 @@
 
 import argparse
 import logging
-import sys
 import time
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scraper.db import (
     ensure_connection,

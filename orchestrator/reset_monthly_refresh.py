@@ -20,11 +20,8 @@ Verwendung:
 """
 
 import argparse
-import sys
 from datetime import date
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from orchestrator.monthly_refresh_tiers import TIERS
 from orchestrator.setup_db import connect

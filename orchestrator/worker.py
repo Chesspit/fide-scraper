@@ -24,12 +24,10 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from orchestrator import runtime_settings, state_io
 from orchestrator.state_io import (
@@ -38,12 +36,8 @@ from orchestrator.state_io import (
     read_worker_state,
     write_state,
 )
-from orchestrator.list_population import (
-    UPDATE_ONLY_LIST,
-    latest_list_period,
-    population_sql,
-    soll_combos,
-)
+from core.periods import latest_list_period, valid_periods_for_year
+from orchestrator.list_population import UPDATE_ONLY_LIST, population_sql, soll_combos
 from orchestrator.monthly_refresh_tiers import TIER_FILTERS
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.proxy_manager import ProxyManager, is_proxy_auth_failure
@@ -51,7 +45,6 @@ from orchestrator.queue_manager import AUTO_RETRY_MAX, Group, QueueManager, get_
 from scraper.db import (
     ensure_connection,
     get_connection,
-    is_valid_fide_period,
     save_period,
     save_period_no_data,
 )
@@ -257,29 +250,6 @@ def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
             params = (federation, elo_min, elo_max) + filter_params
         cur.execute(query, params)
         return [row[0] for row in cur.fetchall()]
-
-
-# ---------------------------------------------------------------------------
-# Period helpers
-# ---------------------------------------------------------------------------
-
-def valid_periods_for_year(year: int) -> list[str]:
-    """Return valid FIDE period strings for the given year, capped at last month."""
-    today = date.today()
-    # Cap at the first day of the previous month — current month has no FIDE data yet
-    if today.month == 1:
-        cutoff = date(today.year - 1, 12, 1)
-    else:
-        cutoff = date(today.year, today.month - 1, 1)
-
-    periods = []
-    for month in range(1, 13):
-        d = date(year, month, 1)
-        if d > cutoff:
-            break
-        if is_valid_fide_period(d):
-            periods.append(d.isoformat())
-    return periods
 
 
 # ---------------------------------------------------------------------------

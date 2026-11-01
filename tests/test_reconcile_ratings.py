@@ -1,4 +1,4 @@
-"""Tests for scripts/reconcile_ratings.py — pure logic, no database needed.
+"""Tests for qc/reconcile.py (CLI: scripts/reconcile_ratings.py) — pure logic, no database needed.
 
 Covers the four specified special cases:
 1. ±1 tolerance counts as noise
@@ -7,13 +7,9 @@ Covers the four specified special cases:
 4. rule layer extensible without touching the core
 """
 
-import sys
 from datetime import date
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-
-from reconcile_ratings import (
+from qc.reconcile import (
     BUCKET_EXACT,
     BUCKET_HIGH,
     BUCKET_UNCERTAIN,

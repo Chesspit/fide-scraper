@@ -20,23 +20,20 @@ Rating stehen ("erklärt"). Beleg: 14.024 März-2026-Erstratings, die FIDE
 zurückgezogen hat — Profil "Not rated", Kalkulation "No records found".
 
 Zeitraum: only_period gesetzt → nur diese Periode; sonst das Gruppenjahr bis
-zum Cutoff aus worker.valid_periods_for_year (Vormonat). Die jeweils neueste
+zum Cutoff aus core.periods.valid_periods_for_year (Vormonat). Die jeweils neueste
 Periode laufen über eigene only_period-Gruppen, damit sich Jahres- und
 Perioden-Gruppen nicht dieselben Kombos teilen.
+
+latest_list_period und die Bedingung "steht in der neuesten Liste" liegen in
+core/periods.py (auch von qc/audit.py genutzt).
 
 Importiert von worker.py (Live-Auswahl) und generate_list_batches.py
 (Gruppenbildung), damit beide Seiten nie auseinanderlaufen.
 """
 
-from datetime import date
+from core.periods import in_latest_list_sql
 
 UPDATE_ONLY_LIST = 3
-
-
-def latest_list_period(cur) -> date | None:
-    """Neueste importierte Liste (Index-Scan auf idx_rating_history_period_pubrating)."""
-    cur.execute("SELECT max(period) FROM rating_history WHERE published_rating > 0")
-    return cur.fetchone()[0]
 
 
 def population_sql(federation_filter: str) -> str:
@@ -60,9 +57,7 @@ def population_sql(federation_filter: str) -> str:
         JOIN rating_history rh ON rh.fide_id = fp.fide_id AND rh.period BETWEEN %s AND %s
         LEFT JOIN scrape_periods sp ON sp.fide_id = rh.fide_id AND sp.period = rh.period
         WHERE rh.num_games > 0
-          AND EXISTS (SELECT 1 FROM rating_history lt
-                      WHERE lt.fide_id = rh.fide_id AND lt.period = %s
-                        AND lt.published_rating > 0)
+          AND {in_latest_list_sql("rh")}
         GROUP BY fp.fide_id, fp.federation
         HAVING count(*) FILTER (WHERE sp.fide_id IS NULL) > 0
     """

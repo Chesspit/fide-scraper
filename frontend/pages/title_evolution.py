@@ -1,6 +1,5 @@
 """Page 2: GM/IM Entwicklung über Zeit — animierter Bar Race, Karte, Bubble."""
-import sys, os, math
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import math
 
 import dash
 from dash import Input, Output, callback, dcc, html

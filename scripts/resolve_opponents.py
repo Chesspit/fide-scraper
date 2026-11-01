@@ -31,7 +31,6 @@ import sys
 from bisect import bisect_left
 from collections import defaultdict
 from datetime import date
-from pathlib import Path
 
 import psycopg2
 import psycopg2.extras
@@ -41,9 +40,8 @@ try:
 except ImportError:
     _fuzz = None
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scraper.config import get_database_url
+from core.config import get_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -561,7 +559,7 @@ def main():
     args = parser.parse_args()
 
     conn = psycopg2.connect(
-        get_database_url(),
+        get_database_url("ingest"),
         options="-c statement_timeout=900000",  # 15 min, see scraper/db.py
     )
     try:

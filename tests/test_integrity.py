@@ -1,4 +1,4 @@
-"""Tests für orchestrator/integrity.py — False-Positive-Erkennung.
+"""Tests für qc/integrity.py — False-Positive-Erkennung.
 
 Braucht die PG-Test-DB (conftest.py::data_db); ohne erreichbare PG: skip.
 Jeder Check bekommt einen Widerspruchs-Fall + einen Gesund-Fall.
@@ -6,7 +6,7 @@ Jeder Check bekommt einen Widerspruchs-Fall + einen Gesund-Fall.
 
 import pytest
 
-from orchestrator.integrity import (
+from qc.integrity import (
     CHECK_IDS,
     check_blocked_error_rows,
     check_done_groups_missing_combos,

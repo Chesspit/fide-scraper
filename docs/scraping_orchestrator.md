@@ -312,7 +312,7 @@ Zuordnung folgt der **konfigurierten `timezone` je Thread** (nicht den `federati
 
 **Betriebshinweise:**
 - **GB-Budget:** keine Budget-Bremse im Code (bewusste Entscheidung) — Verbrauchskontrolle ausschließlich über das DataImpulse-Dashboard. Achtung: die orchestrator-eigenen `mb_downloaded`-Werte sind **dekomprimierte** Bytes und überschätzen den abgerechneten (gzip-)Traffic; nur als grobe Obergrenze lesbar.
-- `scripts/check_proxy_pool.py` ist als Pool-Health-Check obsolet (nichts Statisches mehr zu testen), bleibt aber als Smoke-Test gegen das Gateway nutzbar.
+- `orchestrator/check_proxy_pool.py` (bis Phase 4: `scripts/`) ist als Pool-Health-Check obsolet (nichts Statisches mehr zu testen), bleibt aber als Smoke-Test gegen das Gateway nutzbar.
 - `DIRECT_FALLBACK_ON_429=false` bleibt auf dem VPS (dessen IP ist weiterhin FIDE-geblockt).
 - Sticky Sessions (Ports 10000–20000) werden bewusst nicht genutzt — Rotation pro Request passt exakt zur bestehenden „frischer Proxy pro Retry"-Logik im Worker.
 

@@ -317,8 +317,9 @@ fi
 
 # --- Schritt 5: Datenprüfung (nur nach echtem Import) ------------------------
 # Vollständigkeit + Elo-Plausibilität gegen die offizielle Liste, siehe
-# orchestrator/audit.py. Kein --until nötig: audit_data.py deckelt selbst auf
+# qc/audit.py. Kein --until nötig: audit_data.py deckelt selbst auf
 # den Vormonat, die gerade importierte Liste zählt also noch nicht als Lücke.
+# --store legt den Lauf in qc_audit_runs ab (QC-Bereich im Dashboard, Migration 021).
 # Harte Befunde (Exit 1) sind der Normalzustand, solange der Backfill läuft —
 # sie dürfen den Monatslauf nicht als fehlgeschlagen markieren.
 AUDIT_SINCE="${FIDE_AUDIT_SINCE:-2020-01}"
@@ -329,6 +330,7 @@ echo ""
 echo "$(date): === Schritt 5: Datenprüfung ab $AUDIT_SINCE ==="
 AUDIT_LINE=$(DATABASE_URL="$DB_URL" "$PY" "$SCRIPT_DIR/scripts/audit_data.py" \
     --since "$AUDIT_SINCE" --summary-only --report "$AUDIT_REPORT" \
+    --store --source monthly_update \
     2>>"$AUDIT_DIR/audit.log")
 if [ -n "$AUDIT_LINE" ]; then
     echo "$(date): $AUDIT_LINE"

@@ -10,4 +10,4 @@ requires-python = ">=3.12"
 dependencies = []
 
 [tool.setuptools.packages.find]
-include = ["scraper*", "orchestrator*", "scripts*"]
+include = ["core*", "qc*", "scraper*", "orchestrator*", "scripts*"]

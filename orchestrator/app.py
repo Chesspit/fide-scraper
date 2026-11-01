@@ -9,13 +9,9 @@ Then open http://localhost:8050
 """
 
 import os
-import sys
 import time
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import dash
 import dash_bootstrap_components as dbc
@@ -25,6 +21,7 @@ from dash import Input, Output, State, callback_context, dash_table, dcc, html
 from orchestrator import runtime_settings, state_io, store
 from orchestrator.fide_iso import fide_to_iso3, SOUTH_AMERICA_FEDS
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
+from orchestrator.qc_ui import TAB_ID as QC_TAB_ID, tab_qc
 from orchestrator.state_io import read_worker_state
 from orchestrator.store import (
     query_continents,
@@ -1246,7 +1243,7 @@ tab_bericht2 = dbc.Container(fluid=True, children=[
 ], className="py-3")
 
 # ---------------------------------------------------------------------------
-# Tab 9 — Abdeckung (Ground Truth, orchestrator/coverage.py)
+# Tab 9 — Abdeckung (Ground Truth, qc/coverage.py)
 # ---------------------------------------------------------------------------
 # Misst an den Daten selbst (players ⨯ scrape_periods ⨯ game_results), nicht an
 # der Queue: beantwortet "wie vollständig ist der Datenbestand?" statt "wie viele
@@ -1379,6 +1376,7 @@ app.layout = dbc.Container(fluid=True, children=[
         dbc.Tab(tab_bericht,  label="📊 Bericht Scraper",    tab_id="tab-bericht"),
         dbc.Tab(tab_bericht2, label="🗺 Bericht Länder",     tab_id="tab-bericht2"),
         dbc.Tab(tab_coverage, label="📈 Abdeckung",          tab_id="tab-coverage"),
+        dbc.Tab(tab_qc,       label="🔎 QC",                 tab_id=QC_TAB_ID),
     ], id="main-tabs", active_tab="tab-heatmap"),
 ], style={"backgroundColor": "#F8F9FA", "minHeight": "100vh", "paddingBottom": "40px"})
 
@@ -1733,7 +1731,6 @@ def toggle_dc_thread(values, ids):
                 _save_dc_thread_enabled(dc_id, bool(val))
                 break
     return values
-
 
 
 @app.callback(

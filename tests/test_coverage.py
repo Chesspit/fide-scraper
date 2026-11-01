@@ -1,15 +1,15 @@
-"""Tests für orchestrator/coverage.py — Ground-Truth-Coverage in 3 Dimensionen."""
+"""Tests für qc/coverage.py — Ground-Truth-Coverage in 3 Dimensionen."""
 
 import pytest
 
-from orchestrator.coverage import (
+from qc.coverage import (
     coverage_by_analysis_group,
     coverage_by_elo_band,
     coverage_by_federation,
     coverage_totals,
 )
 from orchestrator.setup_db import connect
-from orchestrator.sync_done_groups import valid_periods_for_year
+from core.periods import valid_periods_for_year
 
 
 @pytest.fixture

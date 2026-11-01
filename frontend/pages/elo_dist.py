@@ -1,7 +1,4 @@
 """Page 5: ELO-Verteilung — Perzentil-Bänder aller FIDE-Spieler."""
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 import dash
 import pandas as pd
 from dash import Input, Output, callback, dcc, html

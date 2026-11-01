@@ -86,7 +86,7 @@ Container auf — wenn sich Pfade ändern, `monthly_update.sh` mitziehen.
 - **5:** `frontend/app.py` hat heute Navbar-Gruppen Aktiv/Test/QC. Edition per Umgebungs-
   variable; Seiten nur bei passender Edition registrieren (Callbacks!). Compose
   (`deploy/infomaniak/docker-compose.yml`): zwei Services, öffentlicher Router ohne
-  `fide-auth`, dafür `ratelimit`-Middleware; interner Router `intern-elo.chesspit.net` mit
+  `fide-auth`, dafür `ratelimit`-Middleware; interner Router `internelo.chesspit.net` mit
   `fide-auth`. Ein Test, der für `EDITION=public` prüft, dass `/games`, `/arpad`, `/qc*`
   nicht in `dash.page_registry` stehen.
 - **6 marimo:** `marimo` in die Analyse-Abhängigkeiten. Notebook 14 und 15 zuerst
@@ -100,7 +100,7 @@ Container auf — wenn sich Pfade ändern, `monthly_update.sh` mitziehen.
 1. PR durchsehen, Branch lokal auschecken, Tests gegen lokale Wegwerf-PG.
 2. Deploy-Fenster: Migrationen anwenden, Worker + Dashboard + Frontends neu bauen,
    Worker-Log und Saves prüfen (`docs/project_status.md`, Orchestrator-Deploy).
-3. DNS `intern-elo.chesspit.net` anlegen; öffentliches `elo.chesspit.net` erst nach
+3. DNS `internelo.chesspit.net` anlegen; öffentliches `elo.chesspit.net` erst nach
    ausdrücklichem OK ohne Passwort schalten.
 4. DB-Rollen (2a) anwenden und Dienste nacheinander umstellen.
 5. marimo-Notebooks lokal ausführen, Ergebnisse mit den `.ipynb` vergleichen.

@@ -1,9 +1,7 @@
 """Data loading for the FIDE dashboard."""
-import os
 import pandas as pd
-import psycopg2
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+from core.db import connect
 
 DEFAULT_PLAYER_IDS = [
     2805677,   # Gelfand, Boris (1968)
@@ -35,7 +33,7 @@ _cache: dict = {}
 
 
 def _connect():
-    return psycopg2.connect(DATABASE_URL)
+    return connect(role="reader")
 
 
 def _fetch(sql: str, params=None) -> pd.DataFrame:

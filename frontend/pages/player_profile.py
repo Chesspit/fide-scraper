@@ -1,16 +1,13 @@
 """Spieler-Steckbrief — interaktiver Steckbrief für einen FIDE-Spieler."""
-import os
-import sys
 from datetime import date
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.graph_objects as go
-import psycopg2
 from dash import Input, Output, State, callback, dcc, html, no_update
+
+from core.db import connect
 
 dash.register_page(
     __name__,
@@ -71,7 +68,7 @@ CLR_LABELS = ["Weiß", "Schwarz"]
 # DB
 # ---------------------------------------------------------------------------
 def _db():
-    return psycopg2.connect(os.environ["DATABASE_URL"])
+    return connect(role="reader")
 
 
 def _default_player_option() -> list[dict]:

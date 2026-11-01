@@ -4,6 +4,15 @@ Run from project root:
     .venv/bin/python notebooks/_generate_14.py
 """
 
+import sys
+
+# Phase 6 (Vier-Blöcke-Umbau): Quelle der Wahrheit ist jetzt die marimo-Fassung
+# notebooks/14_top40_female_vs_band_men.py. Dieser Generator schreibt die .ipynb OHNE Outputs neu
+# und löscht damit die gespeicherten Ergebnisse (NB14 verlor so 1952 Zeilen).
+if __name__ == "__main__" and "--force" not in sys.argv:
+    sys.exit("Ersetzt durch notebooks/14_top40_female_vs_band_men.py (marimo edit). "
+             "Nur mit --force ausführen — überschreibt die .ipynb ohne Ergebnisse.")
+
 from pathlib import Path
 import nbformat as nbf
 

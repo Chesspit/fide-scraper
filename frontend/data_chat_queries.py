@@ -4,12 +4,10 @@ Reine DB-Logik, kein Anthropic-Import hier (Trennung von Query- und LLM-Layer).
 Jede Funktion hier wird 1:1 von einem @beta_tool-Wrapper in data_arpad.py exponiert.
 Nur SELECT-Statements; alle Nutzer-Werte über %(name)s-Platzhalter, nie String-Interpolation.
 """
-import os
-
-import psycopg2
 import psycopg2.extras
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+from core.db import connect
+from qc.rating_views import player_qc_summary
 
 # Kurz — Chat-Tool-Queries laufen synchron im Request-Zyklus eines Dash-Callbacks.
 # Kontrast: scraper/db.py nutzt 15 min als Runaway-Query-Netz für Batch-Jobs.
@@ -17,10 +15,7 @@ _STATEMENT_TIMEOUT_MS = 5_000
 
 
 def _connect():
-    return psycopg2.connect(
-        DATABASE_URL,
-        options=f"-c statement_timeout={_STATEMENT_TIMEOUT_MS}",
-    )
+    return connect(role="reader", statement_timeout_ms=_STATEMENT_TIMEOUT_MS)
 
 
 def _fetch_dicts(sql: str, params: dict | None = None) -> list[dict]:
@@ -151,34 +146,12 @@ def get_player_game_stats(fide_id: int, opponent_sex: str | None = None,
 
 
 def get_player_qc_summary(fide_id: int) -> dict:
-    """Liefert eine Zusammenfassung der Datenqualitäts-Prüfungen (QC) für einen Spieler."""
-    player_rows = _fetch_dicts(
-        "SELECT fide_id, name FROM players WHERE fide_id = %(fid)s", {"fid": fide_id})
-    if not player_rows:
-        return {"error": f"Kein Spieler mit FIDE-ID {fide_id} gefunden."}
+    """Liefert eine Zusammenfassung der Datenqualitäts-Prüfungen (QC) für einen Spieler.
 
-    rows = _fetch_dicts(
-        """
-        SELECT flag, category, COUNT(*) AS n
-        FROM qc_rating_check WHERE fide_id = %(fid)s
-        GROUP BY flag, category
-        """,
-        {"fid": fide_id},
-    )
-    if not rows:
-        return {
-            "player": player_rows[0],
-            "note": "Keine QC-Prüfungen für diesen Spieler vorhanden "
-                    "(kein Teil des QC-geprüften Datensatzes oder zu wenige Snapshots).",
-        }
-    total = sum(r["n"] for r in rows)
-    by_flag: dict[str, int] = {}
-    for r in rows:
-        by_flag.setdefault(r["flag"], 0)
-        by_flag[r["flag"]] += r["n"]
-    return {
-        "player": player_rows[0],
-        "total_windows_checked": total,
-        "by_flag": by_flag,
-        "by_flag_and_category": rows,
-    }
+    Abfrage liegt in qc/rating_views.py (Frontend → qc ist erlaubt, eigenes QC-SQL nicht).
+    """
+    conn = _connect()
+    try:
+        return player_qc_summary(conn, fide_id)
+    finally:
+        conn.close()

@@ -4,30 +4,10 @@ from datetime import date
 import psycopg2
 import psycopg2.extras
 
-from scraper.config import get_database_url
+from core.db import connect
+from core.periods import is_valid_fide_period
 
 logger = logging.getLogger(__name__)
-
-
-def is_valid_fide_period(d: date) -> bool:
-    """Return True only for months FIDE actually published rating data.
-
-    FIDE publishing history (verified against scrape_periods):
-    - before 2008-04: no individual game data
-    - 2008:           quarterly    → Apr, Jul, Oct
-    - 2009:           5×/year      → Jan, Apr, Jul, Sep, Nov
-    - 2010-01–2012-07: bi-monthly  → Jan, Mar, May, Jul, Sep, Nov
-    - 2012-08+:        monthly     → all months
-    """
-    if d < date(2008, 4, 1):
-        return False
-    if d.year == 2008:
-        return d.month in (4, 7, 10)
-    if d.year == 2009:
-        return d.month in (1, 4, 7, 9, 11)
-    if d < date(2012, 8, 1):
-        return d.month in (1, 3, 5, 7, 9, 11)
-    return True
 
 
 _FIDE_2024_CORRECTION_PERIOD = "2024-03-01"
@@ -79,10 +59,7 @@ _STATEMENT_TIMEOUT_MS = 15 * 60 * 1000
 
 
 def get_connection():
-    return psycopg2.connect(
-        get_database_url(),
-        options=f"-c statement_timeout={_STATEMENT_TIMEOUT_MS}",
-    )
+    return connect(role="ingest", statement_timeout_ms=_STATEMENT_TIMEOUT_MS)
 
 
 def _is_connection_broken(conn) -> bool:

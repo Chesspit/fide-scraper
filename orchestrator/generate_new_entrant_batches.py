@@ -25,12 +25,9 @@ Usage:
 """
 
 import argparse
-import sys
-from pathlib import Path
 
 import psycopg2
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from orchestrator.generate_monthly_refresh_batches import (
     _assign_thread_affinity,
@@ -46,7 +43,7 @@ from orchestrator.monthly_refresh_tiers import (
     TIER_CONTINENT,
 )
 from orchestrator.setup_db import connect
-from scraper.config import get_database_url
+from core.config import get_database_url
 
 UPDATE_ONLY_NEVER_SCRAPED = 2
 

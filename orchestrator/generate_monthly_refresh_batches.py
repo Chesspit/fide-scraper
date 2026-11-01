@@ -30,13 +30,10 @@ Usage:
 
 import argparse
 import math
-import sys
 from datetime import date
-from pathlib import Path
 
 import psycopg2
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from orchestrator.monthly_refresh_tiers import (
     DC_UPDATE_POOL,
@@ -48,7 +45,7 @@ from orchestrator.monthly_refresh_tiers import (
     TIERS,
 )
 from orchestrator.setup_db import connect
-from scraper.config import get_database_url
+from core.config import get_database_url
 
 
 def load_tier_population(tier: str) -> list[int]:

@@ -2,7 +2,7 @@
 
 Zwei Implementierungen müssen übereinstimmen:
   * SQL  — fn_elo_band()/fn_elo_group() aus migrations/017_elo_band_function.sql
-  * pandas — notebooks/_setup.py::elo_band_floor()/elo_band()
+  * Python — core/elo.py::elo_band_floor()/elo_band() (re-exportiert von notebooks/_setup.py)
 
 Sie liegen bewusst doppelt vor (SQL für Coverage/QC-Abfragen, pandas für die
 Notebooks, die ihre Daten ohnehin schon im DataFrame haben). Genau deshalb
@@ -15,15 +15,12 @@ so schlägt der Test an, wenn jemand die SQL-Datei ändert, ohne den pandas-Help
 nachzuziehen.
 """
 
-import sys
 from pathlib import Path
 
 import pytest
 
+from core.elo import elo_band, elo_band_floor
 from orchestrator.setup_db import connect
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "notebooks"))
-from _setup import elo_band, elo_band_floor  # noqa: E402
 
 MIGRATION = (
     Path(__file__).resolve().parent.parent

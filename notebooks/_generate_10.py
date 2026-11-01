@@ -7,6 +7,15 @@ Per player with 2024 QC warn/error:
               Dec-23 cell shows FIDE March-2024 correction for sub-2000 players
   Row 3 — Unexplained Δ:   published_Δ − game_Δ − fide_corr per month
 """
+
+import sys
+
+# Quelle der Wahrheit ist jetzt die marimo-Fassung notebooks/10_qc_2024_detail.py.
+# Dieser Generator schreibt die .ipynb OHNE Outputs neu und löscht damit
+# gespeicherte Ergebnisse (NB14 verlor so 1952 Zeilen).
+if __name__ == "__main__" and "--force" not in sys.argv:
+    sys.exit("Ersetzt durch notebooks/10_qc_2024_detail.py (marimo edit). "
+             "Nur mit --force ausführen — überschreibt die .ipynb ohne Ergebnisse.")
 import nbformat as nbf
 
 CELLS = []

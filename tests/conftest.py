@@ -23,7 +23,7 @@ def _resolve_test_dsn() -> str | None:
     if dsn:
         return dsn
     try:
-        from scraper.config import get_database_url
+        from core.config import get_database_url
         base = get_database_url()
     except Exception:
         return None
@@ -39,7 +39,7 @@ def _ensure_test_db(dsn: str) -> None:
     except psycopg2.OperationalError as exc:
         if "does not exist" not in str(exc):
             raise
-    from scraper.config import get_database_url
+    from core.config import get_database_url
     dbname = dsn.rpartition("/")[2]
     admin = psycopg2.connect(get_database_url(), connect_timeout=3)
     admin.autocommit = True

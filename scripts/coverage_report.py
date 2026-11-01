@@ -13,12 +13,9 @@ Usage:
 import argparse
 import csv
 import logging
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from orchestrator.coverage import (
+from qc.coverage import (
     DEFAULT_YEAR_FROM,
     DEFAULT_YEAR_TO,
     coverage_by_analysis_group,
@@ -27,7 +24,7 @@ from orchestrator.coverage import (
     coverage_by_federation,
     coverage_totals,
 )
-from orchestrator.setup_db import connect
+from qc.db import connect
 
 logger = logging.getLogger(__name__)
 

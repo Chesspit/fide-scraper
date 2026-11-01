@@ -28,16 +28,14 @@ import argparse
 import sys
 from collections import Counter, defaultdict
 from datetime import date
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from orchestrator.generate_groups import federation_continent
 from orchestrator.generate_monthly_refresh_batches import _assign_thread_affinity
-from orchestrator.list_population import UPDATE_ONLY_LIST, latest_list_period, population_sql
+from core.periods import latest_list_period, valid_periods_for_year
+from orchestrator.list_population import UPDATE_ONLY_LIST, population_sql
 from orchestrator.monthly_refresh_tiers import DC_UPDATE_POOL, GAP_TIER, TIER_CONTINENT
 from orchestrator.setup_db import connect
-from orchestrator.worker import valid_periods_for_year
 
 # Kombos statt Spieler als Maß: bei ~260-330 Kombos/h/Thread ≈ 5-8 Std./Gruppe,
 # passt in ein Tagesfenster (active_hours werden nur beim Claimen geprüft).

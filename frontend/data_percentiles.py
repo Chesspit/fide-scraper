@@ -1,15 +1,13 @@
 """Build and load ELO percentile bands from FIDE ZIP snapshots."""
-import os, re, sys, zipfile
+import os, re, zipfile
 from datetime import date
 
 import numpy as np
 import pandas as pd
 
-_here = os.path.dirname(os.path.abspath(__file__))
-if _here not in sys.path:
-    sys.path.insert(0, _here)
+from data_titles import CONTINENT
 
-from data_titles import CONTINENT  # noqa: E402
+_here = os.path.dirname(os.path.abspath(__file__))
 
 DATA_DIR   = os.path.join(os.path.dirname(_here), "data")
 CACHE_PATH = os.path.join(_here, "percentile_cache.parquet")

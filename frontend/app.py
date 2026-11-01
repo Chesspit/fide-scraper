@@ -1,7 +1,7 @@
 """ELO-Einsichten — Dash multi-page app in zwei Editionen.
 
 EDITION=public  nur öffentliche Seiten (elo.chesspit.net, ohne Passwort)
-EDITION=intern  alle Seiten (intern-elo.chesspit.net, BasicAuth)
+EDITION=intern  alle Seiten (internelo.chesspit.net, BasicAuth)
 
 Sicherheitsprinzip (docs/architektur_vier_bloecke.md, Abschnitt 0): Interne
 Seiten werden in der öffentlichen Edition gar nicht importiert. Dash-Callbacks

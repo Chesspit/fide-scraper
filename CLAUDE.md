@@ -71,7 +71,7 @@ fide-scraper/
 | DB lokal | `postgresql://fide:<DB_PASSWORD>@localhost:5434/fidedb` (Passwort nur in `.env`, Server-Wert in `/opt/fide-scraper/.env`) |
 | Tunnel starten | `bash scripts/tunnel.sh` |
 | Orchestrator-Dashboard | https://scelo.chesspit.net (BasicAuth) — Steuerung, Queue, Tabs „Abdeckung" und „QC" |
-| Analyse-Frontend | https://elo.chesspit.net (gleiche BasicAuth) — ELO-Einsichten, Top 100, ARPAD. Nach dem Umbau-Deploy: `intern-elo.chesspit.net` (BasicAuth, alle Seiten) und `elo.chesspit.net` öffentlich (`frontend-public`, Compose-Profil `public`, erst nach OK des Users) |
+| Analyse-Frontend | https://elo.chesspit.net (gleiche BasicAuth) — ELO-Einsichten, Top 100, ARPAD. Nach dem Umbau-Deploy: `internelo.chesspit.net` (BasicAuth, alle Seiten) und `elo.chesspit.net` öffentlich (`frontend-public`, Compose-Profil `public`, erst nach OK des Users) |
 
 DB-Container heißt `fide-db` (Port 5432 nur auf `127.0.0.1`), Diagnosen also
 `docker compose -f /opt/fide-scraper/deploy/infomaniak/docker-compose.yml logs …` bzw. `docker exec fide-db psql -U fide -d fidedb`.

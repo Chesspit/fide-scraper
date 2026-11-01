@@ -172,7 +172,7 @@ services:
     logging: *logging
 
   # ── Block 2: ELO-Einsichten in zwei Editionen aus einem Code (frontend/app.py) ──
-  # intern: alle Seiten (Partien-Detail, ARPAD), BasicAuth, intern-elo.chesspit.net.
+  # intern: alle Seiten (Partien-Detail, ARPAD), BasicAuth, internelo.chesspit.net.
   # public: nur öffentliche Seiten, OHNE Passwort, mit Rate-Limit, elo.chesspit.net.
   #
   # ⚠️ frontend-public = Veröffentlichung. Der Service liegt im Profil "public" und
@@ -205,7 +205,7 @@ services:
       - "127.0.0.1:8055:8055"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`${INTERN_FRONTEND_HOST:-intern-elo.chesspit.net}`) || Host(`${FRONTEND_HOST:-elo.chesspit.net}`)"
+      - "traefik.http.routers.frontend.rule=Host(`${INTERN_FRONTEND_HOST:-internelo.chesspit.net}`) || Host(`${FRONTEND_HOST:-elo.chesspit.net}`)"
       - "traefik.http.routers.frontend.priority=10"
       - "traefik.http.routers.frontend.entrypoints=https"
       - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"

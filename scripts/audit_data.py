@@ -35,6 +35,7 @@ from qc.audit import (
     DEFAULT_FORMULA_THRESHOLD_PCT,
     DEFAULT_FEWER_THRESHOLD_PCT,
     DEFAULT_JUMP,
+    STATEMENT_TIMEOUT,
     DEFAULT_NO_DATA_THRESHOLD_PCT,
     HARD,
     INFO,
@@ -277,6 +278,8 @@ def main() -> int:
                         help="Stichprobenzeilen je Check auf der Konsole (Default 3)")
     parser.add_argument("--jobs", type=int, default=2,
                         help="parallele DB-Verbindungen (Default 2; die DB ist geteilt)")
+    parser.add_argument("--statement-timeout", default=STATEMENT_TIMEOUT,
+                        help=f"Limit je DB-Abfrage (Default {STATEMENT_TIMEOUT})")
     parser.add_argument("--chain-tolerance", type=float, default=DEFAULT_CHAIN_TOLERANCE)
     parser.add_argument("--chain-threshold", type=float, default=DEFAULT_CHAIN_THRESHOLD_PCT,
                         help="%% unerklärter Kettenfenster je Periode, ab dem hart (Default 2)")
@@ -321,7 +324,7 @@ def main() -> int:
             no_data_threshold_pct=args.no_data_threshold,
             fewer_threshold_pct=args.fewer_threshold,
             jump=args.jump, with_integrity=not args.no_integrity,
-            progress=progress,
+            progress=progress, statement_timeout=args.statement_timeout,
         )
     except Exception:
         logger.exception("Audit abgebrochen")

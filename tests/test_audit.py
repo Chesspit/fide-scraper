@@ -7,6 +7,7 @@ damit SQL- und Python-Erwartungswert gegeneinander geprüft werden.
 Szenario-Periode 2024-05 (Vorliste 2024-04, Kappung 400 aktiv).
 """
 
+import time
 from datetime import date
 from pathlib import Path
 
@@ -14,11 +15,13 @@ import pytest
 
 from core.elo import diff_cap, fide_expected
 from core.periods import parse_period, previous_period
+import qc.audit
 from qc.audit import (
     HARD,
     INFO,
     OK,
     SOFT,
+    _open,
     audit_periods,
     run_audit,
 )
@@ -388,3 +391,39 @@ class TestRunAudit:
         # Ohne Grenzen (bisheriges Verhalten) werden beide gefunden
         assert len(check_ok_without_games(conn)) == 1
         assert len(check_orphan_games(conn)) == 1
+
+
+# ── Laufzeit: Limit und Abbruch ──────────────────────────────────────────────
+
+class TestRuntimeLimits:
+    def test_open_sets_timeout_and_disables_jit(self, data_db):
+        c = _open(connect, "7min")
+        try:
+            with c.cursor() as cur:
+                cur.execute("SHOW statement_timeout")
+                assert cur.fetchone()[0] == "7min"
+                cur.execute("SHOW jit")
+                assert cur.fetchone()[0] == "off"
+        finally:
+            c.close()
+
+    def test_failed_period_cancels_waiting_periods(self, data_db, monkeypatch):
+        periods = [f"2024-{m:02d}-01" for m in range(1, 7)]
+        data_db.insert_player(1, federation="GER")
+        # Verschiedene Ratings: identische Folgelisten gälten als verwechselt und
+        # würden übersprungen, dann käme keine Periode bei _query_period an.
+        for i, p in enumerate(periods):
+            data_db.insert_rating(1, p, published_rating=2000 + i, num_games=1)
+        started = []
+
+        def failing(conn_factory, p, *args):
+            started.append(p)
+            time.sleep(0.2)  # Zeit für den Abbruch, bevor weitere Perioden starten
+            raise RuntimeError("Timeout")
+
+        monkeypatch.setattr(qc.audit, "_query_period", failing)
+        with pytest.raises(RuntimeError, match="Timeout"):
+            _audit(since=date(2024, 1, 1), until=date(2024, 6, 1))
+        # Der Worker greift sich die nächste Periode, sobald die erste scheitert;
+        # alle weiteren müssen abgebrochen sein.
+        assert len(started) <= 2

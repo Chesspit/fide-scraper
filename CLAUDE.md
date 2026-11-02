@@ -48,7 +48,7 @@ fide-scraper/
 ├── frontend/                  ← Block 2: ELO-Einsichten, EDITION=public|intern (app.py → PAGES)
 ├── notebooks/                 ← Block 3: marimo (NN_*.py, Quelle der Wahrheit) + .ipynb-Archiv, _setup.py
 ├── deploy/infomaniak/         ← Produktions-Stack (Compose, bootstrap.sh, memory_watch.sh); Runbook docs/umzug_infomaniak.md
-├── migrations/                ← 001_initial.sql … 022_db_roles.sql (022 vorbereitet, s. docs/db_rollen.md)
+├── migrations/                ← 001_initial.sql … 024_scrape_periods_period_index.sql (022 vorbereitet, s. docs/db_rollen.md)
 ├── scripts/
 │   ├── monthly_update.sh      ← FIDE-Liste laden + importieren + VPS-Requeue + Audit (täglich per launchd)
 │   ├── import_rating_snapshots.py, backfill.py, resolve_opponents.py   ← Block 1

@@ -86,7 +86,7 @@ DEFAULT_NO_DATA_THRESHOLD_PCT = 1.0  # no_data trotz Liste, Anteil der versuchte
 DEFAULT_FEWER_THRESHOLD_PCT = 3.0    # weniger Partien als gelistet, Anteil der ok-Kombos
 DEFAULT_JUMP = 150                   # |Δ Liste| in einer Periode
 REF_MIN_RATIO = 0.5                  # Liste gilt als unvollständig unter 50 % des Nachbar-Medians
-STATEMENT_TIMEOUT = "15min"
+STATEMENT_TIMEOUT = "30min"           # je Abfrage; überschreibbar per statement_timeout
 
 
 # Elo-Formel (fide_expected, diff_cap) und Periodenhelfer (parse_period,
@@ -423,17 +423,20 @@ WHERE rn <= %(sample)s
 ConnFactory = Callable[[], object]
 
 
-def _open(conn_factory: ConnFactory):
+def _open(conn_factory: ConnFactory, statement_timeout: str = STATEMENT_TIMEOUT):
     conn = conn_factory()
     conn.set_session(readonly=True, autocommit=True)
     with conn.cursor() as cur:
-        cur.execute(f"SET statement_timeout = '{STATEMENT_TIMEOUT}'")
+        cur.execute("SELECT set_config('statement_timeout', %s, false)", (statement_timeout,))
+        # Die CTEs führen zu weit überschätzten Zeilenzahlen; JIT kompiliert dann
+        # für jede Periode teuer, ohne dass es sich bei realen Mengen lohnt.
+        cur.execute("SET jit = off")
     return conn
 
 
-def _query_period(conn_factory: ConnFactory, p: date, params: dict,
-                  layers: set[int]) -> tuple[date, list, list]:
-    conn = _open(conn_factory)
+def _query_period(conn_factory: ConnFactory, p: date, params: dict, layers: set[int],
+                  statement_timeout: str = STATEMENT_TIMEOUT) -> tuple[date, list, list]:
+    conn = _open(conn_factory, statement_timeout)
     try:
         fed = _fed_clause(params.get("feds"))
         per_rows: list = []
@@ -479,6 +482,7 @@ def run_audit(
     jump: int = DEFAULT_JUMP,
     with_integrity: bool = True,
     progress: Callable[[int, int, date], None] | None = None,
+    statement_timeout: str = STATEMENT_TIMEOUT,
 ) -> AuditResult:
     """Führt die Prüfung aus. conn_factory liefert je Aufruf eine neue Verbindung
     (für die parallelen Periodenabfragen), z.B. orchestrator.setup_db.connect.
@@ -549,7 +553,7 @@ def run_audit(
 
     # ── Ebene 0 ──
     listed: dict[date, int] = {}
-    conn = _open(conn_factory)
+    conn = _open(conn_factory, statement_timeout)
     try:
         with conn.cursor() as cur:
             cur.execute(_REF_SQL, params)
@@ -574,7 +578,7 @@ def run_audit(
                                 "neighbour_median": median})
             skipped.append(p)
     nexts = [date(p.year + (p.month == 12), p.month % 12 + 1, 1) for p in periods]
-    conn = _open(conn_factory)
+    conn = _open(conn_factory, statement_timeout)
     try:
         with conn.cursor() as cur:
             cur.execute(_REF_DUP_SQL, {"ps": [p.isoformat() for p in periods],
@@ -622,10 +626,19 @@ def run_audit(
         prev_unreliable: list[date] = []
         done = 0
         with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
-            futures = [pool.submit(_query_period, conn_factory, p, params, layers)
-                       for p in run_periods]
+            futures = {pool.submit(_query_period, conn_factory, p, params, layers,
+                                   statement_timeout): p
+                       for p in run_periods}
             for fut in as_completed(futures):
-                p, per_rows, game_rows = fut.result()
+                try:
+                    p, per_rows, game_rows = fut.result()
+                except Exception:
+                    # Sonst arbeitet der Pool beim Verlassen des with-Blocks alle
+                    # wartenden Perioden ab, deren Ergebnis niemand mehr liest.
+                    logger.error("Periode %s fehlgeschlagen, Audit bricht ab",
+                                 futures[fut].strftime("%Y-%m"))
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    raise
                 done += 1
                 if progress:
                     progress(done, len(run_periods), p)
@@ -823,7 +836,7 @@ def run_audit(
 
     # ── Ebene 1: nie gescrapte Spieler (über den ganzen Zeitraum) ──
     if 1 in layers and run_periods:
-        conn = _open(conn_factory)
+        conn = _open(conn_factory, statement_timeout)
         try:
             with conn.cursor() as cur:
                 cur.execute(_NEVER_SCRAPED_SQL.format(
@@ -861,7 +874,7 @@ def run_audit(
 
     # ── Ebene 2: strukturelle Checks aus integrity.py, zeitlich gefiltert ──
     if 2 in layers and with_integrity:
-        conn = _open(conn_factory)
+        conn = _open(conn_factory, statement_timeout)
         try:
             for fn, cid, title in (
                 (check_ok_without_games, "ok_without_games", "status=ok ohne Partien"),

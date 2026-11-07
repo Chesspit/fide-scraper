@@ -46,7 +46,7 @@ fide-scraper/
 │                                 rating_views, window_detail (Notebooks 08/10/11), live (Spieler × Periode),
 │                                 audit_store (qc_audit_runs), db
 ├── frontend/                  ← Block 2: ELO-Einsichten, EDITION=public|intern (app.py → PAGES)
-├── notebooks/                 ← Block 3: marimo (NN_*.py, Quelle der Wahrheit) + .ipynb-Archiv, _setup.py
+├── notebooks/                 ← Block 3: marimo (NN_*.py) + noch nicht überführte .ipynb, _setup.py
 ├── deploy/infomaniak/         ← Produktions-Stack (Compose, bootstrap.sh, memory_watch.sh); Runbook docs/umzug_infomaniak.md
 ├── migrations/                ← 001_initial.sql … 024_scrape_periods_period_index.sql (022 vorbereitet, s. docs/db_rollen.md)
 ├── scripts/
@@ -279,7 +279,7 @@ gescrapten Rating-/Partiedaten über 4 feste, sichere Query-Tools (kein Text-to-
 | Tunnel-Drop beim lokalen Backfill | `db.py::ensure_connection()` 10× Retry bis 5 Min |
 | Opponent-Match falsch (diff >200) | Query: `ABS(opponent_rating - std_rating) > 200` |
 | VPS-IP von FIDE geblockt | Primär lokal scrapen via `scripts/legacy/run_local_backfill.sh` |
-| `_generate_NN.py` ausführen löscht Notebook-Ergebnisse | Der Generator schreibt die `.ipynb` ohne Outputs neu (NB14 verlor so 1952 Zeilen Tabellen/Grafiken). Für 14/15 gilt die marimo-Fassung, die Generatoren brechen dort ohne `--force` ab |
+| `_generate_NN.py` ausführen löscht Notebook-Ergebnisse | Der Generator schreibt die `.ipynb` ohne Outputs neu (NB14 verlor so 1952 Zeilen Tabellen/Grafiken). Gilt für die noch nicht überführten Notebooks; für 08/10/11/14/15 gibt es keine Generatoren mehr |
 | `ModuleNotFoundError: core`/`qc` lokal | Neue Top-Level-Pakete: `.venv/bin/pip install -e . --no-deps` erneut ausführen (editable Install kennt nur die Pakete vom Installationszeitpunkt) |
 | Frontend zeigt `/games`, `/arpad` nicht | `EDITION` fehlt → öffentliche Edition. Lokal `EDITION=intern python frontend/app.py` |
 | `std_rating = 0` heißt „unbewertet", nicht „schwach" | Betrifft 1,26 von 1,5 Mio aktiven Spielern. In Filtern immer `std_rating > 0` statt `IS NOT NULL` — sonst Phantom-Band 0 bzw. Millionen Phantom-Soll-Perioden |
@@ -314,8 +314,9 @@ Verbindung: `DATABASE_URL` aus `.env.notebook` → `localhost:5434` (über `core
 
 **marimo (seit Phase 6):** Notebooks als reine `.py`-Dateien, git-diffbar und reaktiv.
 Überführt: 08, 10, 11 (QC, Abfragen über `qc/window_detail.py`) sowie 14 und 15
-(`notebooks/NN_*.py`); die `.ipynb` bleiben als Archiv, bis die marimo-Fassung lokal geprüft ist.
-Ihre Generatoren `_generate_08/10/11/14/15.py` brechen ohne `--force` ab.
+(`notebooks/NN_*.py`). Am 07.11.2026 lokal gegen die alten `.ipynb` geprüft (NB14 zahlengleich,
+NB15 nur durch neue Daten verschieden); `.ipynb` und Generatoren dieser fünf danach gelöscht
+(in der Git-History vor dem Lösch-Commit noch abrufbar).
 
 ```bash
 .venv/bin/marimo edit notebooks/14_top40_female_vs_band_men.py   # interaktiv

@@ -517,8 +517,8 @@ python scripts/audit_data.py --since 2026-01 --federation LIE    # ~1 min
 
 | Notebook | Inhalt |
 |---|---|
-| `10_qc_2024_detail.ipynb` | Pro Spieler: ELO Dez-23–Dez-24, Partien-Δ, unerklärtes Δ, Jahres-Prüfsumme |
-| `11_qc_2008_detail.ipynb` | Pro Spieler: ELO Okt-07–Jan-09, Partien-Δ (Apr/Jul/Okt-08), Jahres-Prüfsumme |
+| `10_qc_2024_detail.py` (marimo) | Pro Spieler: ELO Dez-23–Dez-24, Partien-Δ, unerklärtes Δ, Jahres-Prüfsumme |
+| `11_qc_2008_detail.py` (marimo) | Pro Spieler: ELO Okt-07–Jan-09, Partien-Δ (Apr/Jul/Okt-08), Jahres-Prüfsumme |
 
 ### 6.7 Notebook 13 — Absoluter Elo-Vergleich female_top vs. male_control
 

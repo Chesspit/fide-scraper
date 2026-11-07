@@ -77,7 +77,8 @@ def _(elo_band, load_query, pd):
     SELECT
         gr.fide_id, 'top40_female' AS cohort,
         rh.std_rating AS own_rating, gr.opponent_rating, gr.opponent_sex, gr.result,
-        gr.rating_change_weighted, gr.expected_score, gr.over_performance, gr.tournament_type
+        gr.rating_change_weighted, gr.expected_score, gr.over_performance, gr.tournament_type,
+        gr.period, gr.game_index
     FROM game_results gr
     JOIN female_cohort fc        ON fc.fide_id = gr.fide_id
     LEFT JOIN rating_history rh  ON rh.fide_id = gr.fide_id AND rh.period = gr.period
@@ -89,7 +90,8 @@ def _(elo_band, load_query, pd):
     SELECT
         gr.fide_id, 'male_2400_2600' AS cohort,
         rh.std_rating AS own_rating, gr.opponent_rating, gr.opponent_sex, gr.result,
-        gr.rating_change_weighted, gr.expected_score, gr.over_performance, gr.tournament_type
+        gr.rating_change_weighted, gr.expected_score, gr.over_performance, gr.tournament_type,
+        gr.period, gr.game_index
     FROM game_results gr
     JOIN players p               ON p.fide_id = gr.fide_id
     JOIN rating_history rh       ON rh.fide_id = gr.fide_id AND rh.period = gr.period
@@ -97,6 +99,8 @@ def _(elo_band, load_query, pd):
       AND rh.std_rating BETWEEN 2400 AND 2600
       AND gr.period BETWEEN '2016-01-01' AND '2025-12-31'
       AND gr.opponent_sex IN ('M', 'F')
+    -- feste Reihenfolge: sonst schwanken Float-Summen und damit Gleichstände im Permutationstest
+    ORDER BY cohort, fide_id, period, game_index
     '''
     raw = load_query(sql)
     n_raw = len(raw)
@@ -361,7 +365,9 @@ def _(SEX_ORDER, df, elo_band_order, np, pd):
         for i in range(n_perm):
             rng.shuffle(pooled)
             diffs[i] = pooled[:n_a].mean() - pooled[n_a:].mean()
-        p_value = (np.abs(diffs) >= np.abs(observed)).mean()
+        # Toleranz: bei kleinen Kohorten treffen viele Permutationen den beobachteten Wert
+        # exakt, Rundungsrauschen darf über diese Gleichstände nicht entscheiden
+        p_value = (np.abs(diffs) >= np.abs(observed) - 1e-12).mean()
         return (observed, p_value, diffs) if return_diffs else (observed, p_value)
 
     def player_level_means(df_scope, value_col):

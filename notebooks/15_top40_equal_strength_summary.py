@@ -367,12 +367,15 @@ def _(mo):
 
 
 @app.cell
-def _(table_equal, table_stronger, yearly_equal, yearly_stronger):
-    table_equal.to_csv('top40_equal_strength_summary_per_player.csv', index=False)
-    table_stronger.to_csv('top40_stronger_opponent_summary_per_player.csv', index=False)
-    yearly_equal.to_csv('top40_yearly_avg_opponent_rating_equal.csv')
-    yearly_stronger.to_csv('top40_yearly_avg_opponent_rating_stronger.csv')
-    print('wrote top40_equal_strength_summary_per_player.csv, top40_stronger_opponent_summary_per_player.csv, '
+def _(mo, table_equal, table_stronger, yearly_equal, yearly_stronger):
+    # immer neben das Notebook schreiben, egal aus welchem Ordner marimo gestartet wurde
+    _out = mo.notebook_dir()
+    table_equal.to_csv(_out / 'top40_equal_strength_summary_per_player.csv', index=False)
+    table_stronger.to_csv(_out / 'top40_stronger_opponent_summary_per_player.csv', index=False)
+    yearly_equal.to_csv(_out / 'top40_yearly_avg_opponent_rating_equal.csv')
+    yearly_stronger.to_csv(_out / 'top40_yearly_avg_opponent_rating_stronger.csv')
+    print(f'wrote 4 CSVs to {_out}: top40_equal_strength_summary_per_player.csv, '
+          'top40_stronger_opponent_summary_per_player.csv, '
           'top40_yearly_avg_opponent_rating_equal.csv, top40_yearly_avg_opponent_rating_stronger.csv')
     return
 

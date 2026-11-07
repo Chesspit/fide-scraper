@@ -417,7 +417,7 @@ der Frauen ≥ 2400 identifiziert werden:
 Diese Population ist für den Geschlechtervergleich methodisch sauberer als der
 April-2026-Snapshot. **Kein Scraping nötig — nur `rating_history` + `players`.**
 
-**Umsetzung:** `notebooks/14_top40_female_vs_band_men.ipynb` (`_generate_14.py`) — Top-40-Frauen
+**Umsetzung:** `notebooks/14_top40_female_vs_band_men.py` (marimo; bis 07.11.2026 `.ipynb` aus `_generate_14.py`) — Top-40-Frauen
 je Jahresende Dez-2016…Dez-2025 (Union → 65 Spielerinnen, zunächst als Top-50/2021–2025
 mit 70 Spielerinnen umgesetzt, 2026-08-03 auf Top 40/10 Jahre erweitert) statt einer fixen
 Elo-Range, kombiniert mit F7 (siehe unten) für die Männer-Vergleichspopulation. Ersetzt

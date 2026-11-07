@@ -5,7 +5,7 @@ Artefakt-Seite, aber eine Karte pro Spielerin statt einer Gesamt-Tabelle.
 Quelle: notebooks/top40_2400_strength_summary_overall_per_player.csv
         (erzeugt von notebooks/16_top40_2400_strength_breakdown.ipynb)
         notebooks/top40_female_roster_2016-2025.csv
-        (erzeugt von notebooks/14_top40_female_vs_band_men.ipynb — für FIDE-ID
+        (Top-40-Kohorte wie in notebooks/14_top40_female_vs_band_men.py — für FIDE-ID
         und Jahresend-Elo 2016-2025, daraus wird das Schwellenjahr abgeleitet)
 
 Nutzung:

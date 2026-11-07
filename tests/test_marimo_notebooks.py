@@ -2,7 +2,7 @@
 
 Je Notebook: `marimo check` ohne Befund, Zellgraph ohne Mehrfachdefinitionen/
 Zyklen, und die Importe der Setup-Zelle (_setup → core) funktionieren.
-Ausführung und Ergebnisvergleich mit den .ipynb passieren lokal.
+Ausführen geht nur lokal mit Tunnel (`marimo export ipynb --include-outputs`).
 """
 
 import subprocess

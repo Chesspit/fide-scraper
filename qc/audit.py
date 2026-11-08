@@ -75,6 +75,10 @@ _SEVERITY_RANK = {OK: 0, INFO: 1, SOFT: 2, HARD: 3}
 LAYERS = (0, 1, 2, 3)
 
 DEFAULT_CHAIN_TOLERANCE = 1.0        # Elo-Punkte, Rundungsrauschen
+# Näherung für K=40 / Ro-Verschiebung: Bis 08.11.2026 galten diese Fälle ohne
+# Betragsprüfung als erklärt. Stichprobe IND+GER 2025-10: ab Ro schließt die
+# Kette nur bei ~25 %, der Rest liegt zu ~90 % innerhalb von 10 Punkten.
+DEFAULT_CHAIN_NEAR_TOLERANCE = 10.0
 DEFAULT_CHAIN_THRESHOLD_PCT = 2.0    # Anteil unerklärter Fenster je Periode
 DEFAULT_FORMULA_THRESHOLD_PCT = 0.1  # Anteil Formel-Abweichungen je Periode
 # Liste und Berechnungsseite weichen auch bei FIDE selbst ab (Stichprobe
@@ -197,7 +201,10 @@ REF_DUP_MAX_PCT = 20.0
 #   cat1  Vollständigkeit   ok | missing | withdrawn | listed_first_rating
 #                           | listed_no_data | listed_error
 #   cat2  Partienzahl       equal | fewer | fewer_first_rating | more  (nur ok)
-#   cat3  Kette             ok | no_prev | ro_shift | k40 | unexplained  (nur equal)
+#   cat3  Kette             ok | no_prev | ro_ok | near | unexplained  (nur equal)
+#         ro_ok  Ro ≠ Vorliste, Kette schließt ab Ro (± tol)
+#         near   K=40 oder Ro ≠ Vorliste, Rest ab Vorliste oder Ro ≤ near_tol
+#         K=40/Ro-Verschiebung mit größerem Rest zählen als unexplained.
 # Zurück kommen Zähler je (Föderation, Kategorien) und eine Zufallsstichprobe
 # der nicht-grünen Zeilen.
 _PERIOD_SQL = """
@@ -253,6 +260,7 @@ base2 AS (
 c AS (
     SELECT b.*,
            b.pub - b.pub_prev - b.s - b.corr AS residual,
+           b.pub - b.ro - b.s - b.corr AS residual_ro,
            CASE WHEN b.status IS NULL AND NOT b.in_latest THEN 'withdrawn'
                 WHEN b.status IS NULL      THEN 'missing'
                 WHEN b.status = 'ok'       THEN 'ok'
@@ -272,8 +280,10 @@ k AS (
            CASE WHEN c.cat2 IS DISTINCT FROM 'equal' THEN NULL
                 WHEN c.pub_prev IS NULL OR c.pub IS NULL THEN 'no_prev'
                 WHEN ABS(c.residual) <= %(tol)s THEN 'ok'
-                WHEN c.ro IS NOT NULL AND c.ro <> c.pub_prev THEN 'ro_shift'
-                WHEN c.k_factor = 40 THEN 'k40'
+                WHEN c.ro IS NOT NULL AND c.ro <> c.pub_prev
+                     AND ABS(c.residual_ro) <= %(tol)s THEN 'ro_ok'
+                WHEN (c.k_factor = 40 OR (c.ro IS NOT NULL AND c.ro <> c.pub_prev))
+                     AND LEAST(ABS(c.residual), ABS(c.residual_ro)) <= %(near_tol)s THEN 'near'
                 ELSE 'unexplained' END AS cat3,
            CASE WHEN c.ro IS NULL OR c.pub_prev IS NULL OR c.status IS DISTINCT FROM 'ok'
                 THEN NULL ELSE c.ro = c.pub_prev END AS ro_eq,
@@ -292,7 +302,8 @@ SELECT 's', federation, cat1, cat2, cat3, ro_eq, jump, 1, NULL, NULL, fide_id,
        json_build_object(
            'status', status, 'num_games', num_games, 'games', n,
            'pub_prev', pub_prev, 'pub', pub, 'ro', ro, 'k', k_factor,
-           'sum_change', s, 'correction', corr, 'residual', residual
+           'sum_change', s, 'correction', corr, 'residual', residual,
+           'residual_ro', residual_ro
        )::text
 FROM (
     SELECT k.*, ROW_NUMBER() OVER (
@@ -475,6 +486,7 @@ def run_audit(
     sample: int = 20,
     jobs: int = 2,
     chain_tolerance: float = DEFAULT_CHAIN_TOLERANCE,
+    chain_near_tolerance: float = DEFAULT_CHAIN_NEAR_TOLERANCE,
     chain_threshold_pct: float = DEFAULT_CHAIN_THRESHOLD_PCT,
     formula_threshold_pct: float = DEFAULT_FORMULA_THRESHOLD_PCT,
     no_data_threshold_pct: float = DEFAULT_NO_DATA_THRESHOLD_PCT,
@@ -493,6 +505,7 @@ def run_audit(
         "periods": [p.isoformat() for p in periods],
         "feds": federations,
         "tol": chain_tolerance,
+        "near_tol": chain_near_tolerance,
         "jump": jump,
         "sample": sample,
         "latest": None,
@@ -665,7 +678,7 @@ def run_audit(
                             key = {"fewer": "game_count_fewer", "more": "game_count_more",
                                    "fewer_first_rating": "game_count_first_rating"}[cat2]
                             _sample_add(C[key], sample, **extra)
-                        elif cat3 in ("unexplained", "k40", "ro_shift") and not prev_bad:
+                        elif cat3 in ("unexplained", "near", "ro_ok") and not prev_bad:
                             _sample_add(C["chain_matches_list"], sample, category=cat3, **extra)
                         if is_jump:
                             _sample_add(C["rating_jumps"], sample, **extra)
@@ -825,7 +838,8 @@ def run_audit(
         n_unexplained = sum(b for b, _ in pp["chain_matches_list"].values())
         _apply_period_threshold(
             ch, pp["chain_matches_list"], chain_threshold_pct, "unerklärt",
-            prefix=f"{n_unexplained:,} unerklärt, Rest erklärt (K=40 / Ro-Verschiebung). "
+            prefix=f"{n_unexplained:,} unerklärt, Rest erklärt (ab Ro exakt bzw. K=40/Ro-"
+                   f"Verschiebung mit Rest ≤ {chain_near_tolerance:g}). "
                    + (f"Ohne verlässliche Vorliste ausgelassen: "
                       f"{', '.join(f'{p:%Y-%m}' for p in sorted(prev_unreliable))}. "
                       if prev_unreliable else ""))

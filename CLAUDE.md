@@ -202,8 +202,10 @@ python scripts/audit_data.py --since 2026-01 --federation LIE       # schnell, e
 | 2 | Partienzahl = `num_games`; Integritätschecks im Zeitraum | weniger Partien (außer Erstbewertung) |
 | 3 | Kette `Liste[P] − Liste[vorher] = Σ K×Δ`, Elo-Formel je Partie, K×Δ, Wertebereiche | unerklärte Kette > 2 % je Periode, Formel > 0,1 % |
 
-Die **Kette** schließt fachlich nicht immer (K=40 und Ro ≠ Vorliste bei nachgewerteten
-Turnieren → „erklärt"), deshalb eine Schwelle statt Einzelbefunden. Die **Formel** ist
+Die **Kette** schließt fachlich nicht immer, deshalb eine Schwelle statt Einzelbefunden.
+„Erklärt" heißt seit 08.11.2026: Kette schließt **ab Ro** (`ro_ok`), oder K=40/Ro ≠ Vorliste
+mit Rest ≤ `--chain-near-tolerance` (Default 10, `near`). Vorher galten K=40/Ro-Verschiebung
+ohne Betragsprüfung als erklärt (Stichprobe IND 2025-10: ab Ro schlossen davon nur ~25 %). Die **Formel** ist
 exakt (509.691 Partien, 0 Abweichungen), aber nur für Perioden mit genau einem Turnier
 prüfbar, weil die Summary-Zeile ein einziges Ro liefert. Exit 1 bei harten Befunden;
 solange der Backfill läuft, ist das der Normalzustand.

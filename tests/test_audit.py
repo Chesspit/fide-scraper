@@ -296,7 +296,7 @@ class TestRunAudit:
         data_db.insert_period(5, P, status="ok", k_factor=20)
         data_db.insert_game(5, P, 1, 0.0, result="0.5", rating_change=0.0,
                             opponent_rating=1900)
-        # Spieler 6: gleicher Bruch, aber K=40 → erklärt
+        # Spieler 6: gleicher Bruch, aber K=40 und Rest ≤ Näherungstoleranz → erklärt (near)
         data_db.insert_player(6)
         data_db.insert_rating(6, PREV, published_rating=1600, num_games=0)
         data_db.insert_rating(6, P, published_rating=1610, num_games=1, std_rating=1600)
@@ -307,9 +307,41 @@ class TestRunAudit:
         ch = res.check("chain_matches_list")
         assert (ch.n_checked, ch.n_findings) == (3, 2)
         assert ch.severity == SOFT  # 33 % unerklärt < 50 %
-        assert {s["category"] for s in ch.sample} == {"unexplained", "k40"}
+        assert {s["category"] for s in ch.sample} == {"unexplained", "near"}
         assert res.by_year[2024]["chain_unexplained"] == 1
         assert _audit(chain_threshold_pct=2.0).check("chain_matches_list").severity == HARD
+
+    def _chain_player(self, data_db, fide_id, pub, ro, k, prev=1600):
+        """Eine Partie mit Δ 0: Kette ab Vorliste = pub − prev, ab Ro = pub − ro."""
+        data_db.insert_player(fide_id)
+        data_db.insert_rating(fide_id, PREV, published_rating=prev, num_games=0)
+        data_db.insert_rating(fide_id, P, published_rating=pub, num_games=1, std_rating=ro)
+        data_db.insert_period(fide_id, P, status="ok", k_factor=k)
+        data_db.insert_game(fide_id, P, 1, 0.0, result="0.5", rating_change=0.0,
+                            opponent_rating=ro)
+
+    def test_k40_with_large_residual_is_unexplained(self, data_db, conn):
+        self._chain_player(data_db, 6, pub=1630, ro=1600, k=40)  # Rest 30 > 10
+        ch = _audit(chain_threshold_pct=50.0).check("chain_matches_list")
+        assert ch.sample[0]["category"] == "unexplained"
+        assert _audit(chain_near_tolerance=30.0).check("chain_matches_list").sample[0][
+            "category"] == "near"
+
+    def test_ro_shift_closing_from_ro_is_explained_exactly(self, data_db, conn):
+        # Vorliste 1600, FIDE rechnete ab Ro 1450: Liste 1450 + 0 → ro_ok
+        self._chain_player(data_db, 8, pub=1450, ro=1450, k=40)
+        res = _audit()
+        ch = res.check("chain_matches_list")
+        assert (ch.n_findings, ch.sample[0]["category"]) == (1, "ro_ok")
+        assert res.by_year[2024].get("chain_unexplained", 0) == 0
+        assert res.by_year[2024]["chain_explained"] == 1
+
+    def test_ro_shift_with_large_residual_is_unexplained(self, data_db, conn):
+        # Ro weicht ab, aber weder ab Vorliste (+60) noch ab Ro (+40) schließt die Kette
+        self._chain_player(data_db, 9, pub=1660, ro=1620, k=20)
+        res = _audit(chain_threshold_pct=50.0)
+        assert res.check("chain_matches_list").sample[0]["category"] == "unexplained"
+        assert res.by_year[2024]["chain_unexplained"] == 1
 
     def test_known_correction_explains_chain(self, data_db, conn):
         _green_player(data_db, 1)

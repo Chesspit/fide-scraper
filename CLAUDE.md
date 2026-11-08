@@ -200,10 +200,15 @@ python scripts/audit_data.py --since 2026-01 --federation LIE       # schnell, e
 | 0 | Liste je Periode vorhanden (sonst wird die Periode übersprungen) | Liste fehlt |
 | 1 | Soll-Kombos gescrapt? Spieler im Zeitraum nie gescrapt? no_data trotz Liste? | > 0 |
 | 2 | Partienzahl = `num_games`; Integritätschecks im Zeitraum | weniger Partien (außer Erstbewertung) |
-| 3 | Kette `Liste[P] − Liste[vorher] = Σ K×Δ`, Elo-Formel je Partie, K×Δ, Wertebereiche | unerklärte Kette > 2 % je Periode, Formel > 0,1 % |
+| 3 | Kette `Liste[P] − Liste[vorher] = Σ K×Δ`, Elo-Formel je Partie, K×Δ, Wertebereiche | Formel > 0,1 % (Kette > 2 % unerklärt: nur weich) |
 
-Die **Kette** schließt fachlich nicht immer (K=40 und Ro ≠ Vorliste bei nachgewerteten
-Turnieren → „erklärt"), deshalb eine Schwelle statt Einzelbefunden. Die **Formel** ist
+Die **Kette** schließt fachlich nicht immer, deshalb eine Schwelle statt Einzelbefunden.
+„Erklärt" heißt seit 08.11.2026: Kette schließt **ab Ro** (`ro_ok`), oder K=40/Ro ≠ Vorliste
+mit Rest ≤ `--chain-near-tolerance` (Default 10, `near`). Vorher galten K=40/Ro-Verschiebung
+ohne Betragsprüfung als erklärt (Stichprobe IND 2025-10: ab Ro schlossen davon nur ~25 %).
+Die Kette ist **höchstens weich**: FIDE korrigiert Ratings nach Erscheinen der Liste rückwirkend
+(Stichprobe 08.11.2026: FIDE-Profil = Vorliste + Σ K×Δ, nur die TXT-Liste weicht ab). Sie misst
+also FIDE-Revisionen, nicht unsere Datenqualität — die prüfen Partienzahl und Formel. Die **Formel** ist
 exakt (509.691 Partien, 0 Abweichungen), aber nur für Perioden mit genau einem Turnier
 prüfbar, weil die Summary-Zeile ein einziges Ro liefert. Exit 1 bei harten Befunden;
 solange der Backfill läuft, ist das der Normalzustand.

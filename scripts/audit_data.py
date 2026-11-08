@@ -31,6 +31,7 @@ from pathlib import Path
 from core.periods import parse_period
 from qc.audit import (
     DEFAULT_CHAIN_THRESHOLD_PCT,
+    DEFAULT_CHAIN_NEAR_TOLERANCE,
     DEFAULT_CHAIN_TOLERANCE,
     DEFAULT_FORMULA_THRESHOLD_PCT,
     DEFAULT_FEWER_THRESHOLD_PCT,
@@ -281,6 +282,8 @@ def main() -> int:
     parser.add_argument("--statement-timeout", default=STATEMENT_TIMEOUT,
                         help=f"Limit je DB-Abfrage (Default {STATEMENT_TIMEOUT})")
     parser.add_argument("--chain-tolerance", type=float, default=DEFAULT_CHAIN_TOLERANCE)
+    parser.add_argument("--chain-near-tolerance", type=float, default=DEFAULT_CHAIN_NEAR_TOLERANCE,
+                        help="Rest, bis zu dem K=40/Ro-Verschiebung als erklärt gilt (Default: %(default)s)")
     parser.add_argument("--chain-threshold", type=float, default=DEFAULT_CHAIN_THRESHOLD_PCT,
                         help="%% unerklärter Kettenfenster je Periode, ab dem hart (Default 2)")
     parser.add_argument("--formula-threshold", type=float,
@@ -319,6 +322,7 @@ def main() -> int:
             connect, since, until, layers=layers, federations=feds,
             sample=args.sample, jobs=args.jobs,
             chain_tolerance=args.chain_tolerance,
+            chain_near_tolerance=args.chain_near_tolerance,
             chain_threshold_pct=args.chain_threshold,
             formula_threshold_pct=args.formula_threshold,
             no_data_threshold_pct=args.no_data_threshold,

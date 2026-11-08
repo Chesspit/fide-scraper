@@ -23,7 +23,7 @@ INTERN_ONLY_PATHS = {"/games", "/arpad", "/qc", "/qc-cases", "/qc-corrections"}
 INTERN_ONLY_ID_PREFIXES = ("gd-", "arpad-", "qc-", "qcc-")
 
 _PROBE = """
-import json, dash, app
+import json, dash, app, stories
 client = app.server.test_client()
 deps = client.get("/_dash-dependencies").get_json()
 outputs = []
@@ -34,6 +34,8 @@ print(json.dumps({
     "paths": sorted(p["path"] for p in dash.page_registry.values()),
     "outputs": sorted(set(outputs)),
     "status_games": client.get("/games").status_code,
+    "story_hrefs": [s["href"] for s in stories.stories_for(app.EDITION)],
+    "analysen_html": client.get("/analysen").status_code,
 }))
 """
 
@@ -85,3 +87,15 @@ def test_unknown_edition_fails():
     out = subprocess.run([sys.executable, "-c", "import app"], cwd=FRONTEND, env=env,
                          capture_output=True, text=True, timeout=120)
     assert out.returncode != 0 and "EDITION" in out.stderr
+
+
+@pytest.mark.parametrize("edition", ["public", "intern"])
+def test_story_tiles_link_to_registered_pages(edition, public, intern):
+    probe = {"public": public, "intern": intern}[edition]
+    assert "/analysen" in probe["paths"] and probe["analysen_html"] == 200
+    assert probe["story_hrefs"], "Analysen-Übersicht ohne Kacheln"
+    assert set(probe["story_hrefs"]) <= set(probe["paths"])
+
+
+def test_public_story_tiles_hide_internal_pages(public):
+    assert not INTERN_ONLY_PATHS & set(public["story_hrefs"])

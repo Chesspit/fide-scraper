@@ -1,5 +1,6 @@
 """Extract Top-100 players by standard rating from FIDE ZIP snapshots (one per year)."""
 import os, re, zipfile
+from core.fide_list import MONTH_RATING_PATTERN
 import pandas as pd
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
@@ -57,7 +58,7 @@ def _parse_top100(path: str, year: int, month: int) -> pd.DataFrame:
     header = raw[0]
 
     # Detect rating column by month pattern (e.g. 'Jan09' or 'jan20')
-    m = re.search(r"[A-Za-z]{3}\d{2}", header)
+    m = MONTH_RATING_PATTERN.search(header)
     if not m:
         return pd.DataFrame()
     rat_pos = m.start()

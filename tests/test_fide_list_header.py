@@ -16,3 +16,10 @@ def test_month_label_found_at_its_start(label):
 def test_july11_header_gets_rating_column():
     cols = detect_columns_from_header(PRE2013.format(m="July11"))
     assert cols["std_rating"] == (53, 58)
+
+
+def test_july11_games_column_follows_rating_not_header():
+    # Kopf um eins verschoben ("July11"), Datenzeilen nicht: Games = Rating + 6
+    cols = detect_columns_from_header(PRE2013.format(m="July11"))
+    assert cols["std_games"] == (59, 64)
+    assert detect_columns_from_header(PRE2013.format(m="May10 "))["std_games"] == (59, 64)

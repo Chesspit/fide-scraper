@@ -51,7 +51,7 @@ def load_2700_history() -> pd.DataFrame:
     if "history" in _cache:
         return _cache["history"]
 
-    # Step 1: fast ID lookup via published_rating index
+    # Step 1: fast ID lookup via partial index idx_rating_history_pub2700 (Migration 025)
     id_df = _fetch(
         "SELECT DISTINCT fide_id FROM rating_history "
         "WHERE published_rating >= 2700 AND period >= %s",

@@ -62,10 +62,12 @@ def detect_columns_from_header(header_line: str) -> dict:
         m = MONTH_RATING_PATTERN.search(header_line)
         if m:
             cols["std_rating"] = (m.start(), m.start() + 5)
-            # "GamesBorn" in pre-2013: Games immediately follows the rating (5 chars wide)
-            games_pos = header_line.find("Games")
-            if games_pos >= 0:
-                cols["std_games"] = (games_pos, games_pos + 5)
+            # "GamesBorn" in pre-2013: Games folgt dem Rating nach einem Leerzeichen
+            # (5 Zeichen breit). Aus der Rating-Position rechnen statt "Games" im
+            # Kopf zu suchen: in jul11frl.txt schiebt das sechsstellige "July11"
+            # den Kopf um eins nach rechts, die Datenzeilen aber nicht.
+            if "Games" in header_line:
+                cols["std_games"] = (m.start() + 6, m.start() + 11)
             logger.info("Detected pre-2013 column layout (rating col: %s, no Sex/WTit): %s",
                         m.group(), cols)
             return cols

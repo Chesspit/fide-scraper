@@ -309,7 +309,9 @@ class TestRunAudit:
         assert ch.severity == SOFT  # 33 % unerklärt < 50 %
         assert {s["category"] for s in ch.sample} == {"unexplained", "near"}
         assert res.by_year[2024]["chain_unexplained"] == 1
-        assert _audit(chain_threshold_pct=2.0).check("chain_matches_list").severity == HARD
+        # Schwelle gerissen → trotzdem nur weich (FIDE-Revisionen, s. qc/audit.py)
+        strict = _audit(chain_threshold_pct=2.0).check("chain_matches_list")
+        assert strict.severity == SOFT and "überschritten in 1 Perioden" in strict.note
 
     def _chain_player(self, data_db, fide_id, pub, ro, k, prev=1600):
         """Eine Partie mit Δ 0: Kette ab Vorliste = pub − prev, ab Ro = pub − ro."""

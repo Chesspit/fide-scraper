@@ -838,8 +838,14 @@ def run_audit(
         n_unexplained = sum(b for b, _ in pp["chain_matches_list"].values())
         _apply_period_threshold(
             ch, pp["chain_matches_list"], chain_threshold_pct, "unerklärt",
+            # Höchstens weich: Die Kette vergleicht heutige Berechnungsseiten mit
+            # Listen, die FIDE danach rückwirkend korrigiert. Stichprobe 2025-10
+            # (6 Profile): FIDE-Profil = Vorliste + Σ K×Δ, nur die Liste weicht ab.
+            # Datenqualität prüfen game_count_* und game_formula.
+            max_severity=SOFT,
             prefix=f"{n_unexplained:,} unerklärt, Rest erklärt (ab Ro exakt bzw. K=40/Ro-"
-                   f"Verschiebung mit Rest ≤ {chain_near_tolerance:g}). "
+                   f"Verschiebung mit Rest ≤ {chain_near_tolerance:g}). Höchstens weich: "
+                   f"FIDE korrigiert Ratings nach Erscheinen der Liste. "
                    + (f"Ohne verlässliche Vorliste ausgelassen: "
                       f"{', '.join(f'{p:%Y-%m}' for p in sorted(prev_unreliable))}. "
                       if prev_unreliable else ""))
@@ -951,8 +957,11 @@ def run_audit(
 
 def _apply_period_threshold(check: CheckResult, per_period: dict[date, list[int]],
                             threshold_pct: float, what: str, prefix: str = "",
-                            digits: int = 2) -> None:
-    """Hart, sobald eine Periode die Schwelle reißt; sonst weich bei Befunden."""
+                            digits: int = 2, max_severity: str = HARD) -> None:
+    """Hart, sobald eine Periode die Schwelle reißt; sonst weich bei Befunden.
+
+    max_severity deckelt das Ergebnis (Kette: höchstens weich, s. run_audit).
+    """
     rates = sorted(((p, 100.0 * b / n) for p, (b, n) in per_period.items() if n),
                    key=lambda t: -t[1])
     check.worst_periods = [(p.isoformat(), round(v, digits)) for p, v in rates[:10] if v > 0]
@@ -961,7 +970,7 @@ def _apply_period_threshold(check: CheckResult, per_period: dict[date, list[int]
                   f"überschritten in {len(over)} Perioden"
                   + (f": {', '.join(f'{p:%Y-%m}' for p in sorted(over)[:12])}" if over else ""))
     if over:
-        check.raise_to(HARD)
+        check.raise_to(max_severity)
     elif check.n_findings:
         check.raise_to(SOFT)
 

@@ -46,6 +46,8 @@ fide-scraper/
 │                                 rating_views, window_detail (Notebooks 08/10/11), live (Spieler × Periode),
 │                                 audit_store (qc_audit_runs), db
 ├── frontend/                  ← Block 2: ELO-Einsichten, EDITION=public|intern (app.py → PAGES)
+│   ├── pages/analysen.py      ← Startseite „Analysen": Kachel je Geschichte; Einträge in stories.py,
+│   │                             Kachelbilder per build_story_covers.py (assets/analysen/*.png, im Git)
 ├── notebooks/                 ← Block 3: marimo (NN_*.py) + noch nicht überführte .ipynb, _setup.py
 ├── deploy/infomaniak/         ← Produktions-Stack (Compose, bootstrap.sh, memory_watch.sh); Runbook docs/umzug_infomaniak.md
 ├── migrations/                ← 001_initial.sql … 024_scrape_periods_period_index.sql (022 vorbereitet, s. docs/db_rollen.md)
@@ -286,6 +288,7 @@ gescrapten Rating-/Partiedaten über 4 feste, sichere Query-Tools (kein Text-to-
 | DB-Tests: `permission denied to create database` | Der `fide`-User darf `fide_orch_test` nicht anlegen. Lokale Wegwerf-PG nutzen und `ORCH_TEST_DATABASE_URL` setzen (z. B. `pip install pgserver` in einem Python-3.12-venv) |
 | Fehlerhafte Liste → stiller Datenverlust | Der Pre-Filter in `worker.py::scrape_group()` markiert Kombos mit `num_games = 0` **ohne Abruf** als `no_data`. Nach einem Listen-Neuimport die falschen Zeilen löschen und mit `orchestrator/generate_period_repair_batches.py --period YYYY-MM-01` GAP-Gruppen (nur diese Periode) anlegen — Vorfall 2024-06, `docs/project_status.md` 6.4a |
 | Dashboard zeigt „no available server“ | Das ist der alte Hostinger-Traefik — der Rechner löst `scelo` noch auf die alte IP auf. `/etc/hosts` prüfen (Mac Mini hatte dort einen festen Eintrag), sonst DNS-Cache leeren |
+| Listenkopf `July11` statt `Jul11` (jul11frl.txt) | Rating-Spalte nur über `core.fide_list.MONTH_RATING_PATTERN` suchen — eigene Regex fanden `uly11` (Frontend-Caches: Ratings ohne erste Ziffer) bzw. nichts (DB-Import: Periode 2011-07 fehlt) |
 | `COALESCE(...) AS x` + `SELECT DISTINCT` | Dann muss `ORDER BY` den **Alias** nutzen, nicht die Ursprungsspalte („ORDER BY expressions must appear in select list") |
 
 ---

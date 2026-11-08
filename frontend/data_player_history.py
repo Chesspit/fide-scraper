@@ -1,5 +1,6 @@
 """Build and load per-player ELO history from all FIDE ZIP snapshots."""
 import os, re, sys, zipfile
+from core.fide_list import MONTH_RATING_PATTERN
 from datetime import date
 
 import numpy as np
@@ -50,7 +51,7 @@ def _parse_zip(path: str) -> list[tuple[int, str, str, int]]:
 
     header = raw[0]
 
-    m = re.search(r"[A-Za-z]{3}\d{2}", header)
+    m = MONTH_RATING_PATTERN.search(header)
     if not m:
         return []
     rat_pos = m.start()

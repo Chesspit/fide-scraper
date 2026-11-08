@@ -56,3 +56,6 @@ orchestrator/reassign_np_help_state.json
 
 # marimo-Session-Cache (lokale Zellausgaben, z. B. nach "marimo export")
 __marimo__/
+
+# Kachelbilder der Analysen-Übersicht (frontend/build_story_covers.py) gehören ins Repo
+!frontend/assets/analysen/*.png

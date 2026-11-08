@@ -23,6 +23,7 @@ from dash import html, dcc
 EDITIONS = ("public", "intern")
 # Seitenmodul → Editionen, in denen es registriert wird (Seitenaufteilung Abschnitt 0).
 PAGES = {
+    "pages.analysen":        {"public", "intern"},   # /analysen — Einstieg, Kacheln aus stories.py
     "pages.elo_c":           {"public", "intern"},   # /c
     "pages.elo_dist":        {"public", "intern"},   # /dist
     "pages.title_evolution": {"public", "intern"},   # /titles
@@ -112,6 +113,12 @@ app.layout = html.Div(
                         className="navbar-brand mb-0 h1",
                         style={"marginRight": "24px"},
                     ),
+                    # Einstieg: Analysen-Übersicht
+                    dbc.Nav(
+                        dbc.NavItem(dcc.Link("Analysen", href="/analysen", className="nav-link fw-semibold")),
+                        navbar=True,
+                        style={"display": "inline-flex"},
+                    ),
                     # Aktiv-Gruppe
                     _nav_group("Aktiv", _AKTIV_PATHS),
                     # Trennstrich
@@ -144,7 +151,7 @@ from dash import Input, Output
 @app.callback(Output("url-redirect", "pathname"), Input("url-redirect", "pathname"))
 def redirect_root(pathname):
     if pathname == "/":
-        return "/player-profile"
+        return "/analysen"
     return pathname
 
 

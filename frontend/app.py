@@ -28,6 +28,7 @@ PAGES = {
     "pages.elo_dist":        {"public", "intern"},   # /dist
     "pages.title_evolution": {"public", "intern"},   # /titles
     "pages.player_profile":  {"public", "intern"},   # /player-profile
+    "pages.gm_peak":         {"intern"},             # /gm-peak — Story E1, öffentlich erst nach OK
     "pages.game_detail":     {"intern"},             # /games
     "pages.arpad":           {"intern"},             # /arpad — kostet Anthropic-Guthaben
 }

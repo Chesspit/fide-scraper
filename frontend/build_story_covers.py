@@ -108,6 +108,27 @@ def cover_games() -> None:
     _save(fig, "games")
 
 
+def cover_gm_peak() -> None:
+    """Typische GM-Karrierekurve, dazu blasse Einzelverläufe."""
+    import sys
+    sys.path.insert(0, str(HERE))
+    import data_gm_peak as gp
+
+    df = gp.load_gm_years()
+    c = gp.age_curve(df, True)
+    fig, ax = _canvas()
+    # Stichprobe über alle Jahrgänge (fest, damit das Bild reproduzierbar bleibt)
+    ids = df.drop_duplicates("fide_id").sort_values("birth_year").iloc[::45]["fide_id"]
+    for fid in ids:
+        p = df[df["fide_id"] == fid].sort_values("age")
+        rel = (p["rating"] - p["peak_window"])
+        ax.plot(p["age"], rel, color=LINE, lw=0.8, alpha=0.5)
+    ax.plot(c["age"], c["curve"], color=ACCENT, lw=3.2)
+    ax.set_xlim(12, 72)
+    ax.set_ylim(-420, 260)  # oben Platz für die Schlagzeile
+    _save(fig, "gm_peak")
+
+
 def cover_arpad() -> None:
     """Zwei Sprechblasen — Frage und Antwort."""
     from matplotlib.patches import FancyBboxPatch, Polygon
@@ -133,3 +154,4 @@ if __name__ == "__main__":
     cover_player()
     cover_games()
     cover_arpad()
+    cover_gm_peak()

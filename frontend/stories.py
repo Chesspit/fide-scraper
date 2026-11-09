@@ -18,6 +18,16 @@ INTERN = frozenset({"intern"})
 
 STORIES = [
     {
+        "slug": "gm_peak",
+        "kicker": "Mit 27 am stärksten",
+        "title": "Wann ist ein Großmeister am stärksten?",
+        "teaser": "Die Karrierekurve aller 1.899 Großmeister: steiler Anstieg, kurzes "
+                  "Plateau, langsamer Abstieg — und warum es seit 2022 schneller bergab geht.",
+        "href": "/gm-peak",
+        "date": "2026-11-09",
+        "editions": INTERN,
+    },
+    {
         "slug": "player",
         "kicker": "Steckbrief",
         "title": "Ein Spieler, eine Karriere",

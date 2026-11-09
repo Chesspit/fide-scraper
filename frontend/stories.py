@@ -18,6 +18,16 @@ INTERN = frozenset({"intern"})
 
 STORIES = [
     {
+        "slug": "zone2400",
+        "kicker": "Zone 2400",
+        "title": "Durchgangsstation oder Endstation?",
+        "teaser": "Wer die 2400 knackt, fällt meist wieder zurück. Was aus 2.187 Einsteigern "
+                  "seit 2011 wurde — und warum das Alter fast alles entscheidet.",
+        "href": "/zone-2400",
+        "date": "2026-11-09",
+        "editions": INTERN,
+    },
+    {
         "slug": "gm_peak",
         "kicker": "Mit 27 am stärksten",
         "title": "Wann ist ein Großmeister am stärksten?",

@@ -129,6 +129,33 @@ def cover_gm_peak() -> None:
     _save(fig, "gm_peak")
 
 
+def cover_zone2400() -> None:
+    """Wege durch die Zone 2400–2600: viele zurück, einer nach oben (Gukesh)."""
+    import sys
+    sys.path.insert(0, str(HERE))
+    import data_zone2400 as z
+
+    s = z.load_entries()
+    sample = s.sort_values("entry").iloc[::40]["fide_id"].tolist()
+    t = pq.read_table(HERE / "player_history_cache.parquet",
+                      filters=[("fide_id", "in", sample + [46616543])]).to_pandas()
+    fig, ax = _canvas()
+    ax.axhspan(z.LOW, z.HIGH, color="#1d242b", lw=0)
+    for fid in sample:
+        p = t[t["fide_id"] == fid].sort_values("period")
+        e = s.loc[s["fide_id"] == fid, "entry"].iloc[0]
+        p = p[p["period"] >= e - pd.DateOffset(months=6)]
+        x = (p["period"] - e).dt.days / 365.25
+        ax.plot(x, p["rating"], color=LINE, lw=0.9, alpha=0.6)
+    g = t[t["fide_id"] == 46616543].sort_values("period")
+    e = s.loc[s["fide_id"] == 46616543, "entry"].iloc[0]
+    g = g[g["period"] >= e - pd.DateOffset(months=6)]
+    ax.plot((g["period"] - e).dt.days / 365.25, g["rating"], color=ACCENT, lw=3.2)
+    ax.set_xlim(-0.6, 5.2)
+    ax.set_ylim(2250, 3000)  # oben Platz für die Schlagzeile
+    _save(fig, "zone2400")
+
+
 def cover_arpad() -> None:
     """Zwei Sprechblasen — Frage und Antwort."""
     from matplotlib.patches import FancyBboxPatch, Polygon
@@ -155,3 +182,4 @@ if __name__ == "__main__":
     cover_games()
     cover_arpad()
     cover_gm_peak()
+    cover_zone2400()

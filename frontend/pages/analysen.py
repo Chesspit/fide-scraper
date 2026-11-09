@@ -58,6 +58,7 @@ def layout(**_):
     # EDITION wie in app.py (Default public); hier gelesen statt importiert,
     # weil app.py die Seiten selbst importiert.
     edition = os.environ.get("EDITION", "public").strip().lower()
+    stories = stories_for(edition)
     return html.Div(
         [
             html.H2("Analysen", className="page-title"),
@@ -66,7 +67,9 @@ def layout(**_):
                 "seit 2009. Jede Kachel führt zu einer Auswertung.",
                 className="story-intro",
             ),
-            html.Div([_kachel(s) for s in stories_for(edition)], className="story-grid"),
+            html.Div([_kachel(s) for s in stories]
+                     or [html.P("Die ersten Analysen erscheinen hier in Kürze.", className="story-intro")],
+                     className="story-grid"),
         ],
         className="story-page",
     )

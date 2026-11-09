@@ -11,8 +11,9 @@ aufsummierte mittlere Veränderung ergibt eine typische Karrierekurve; ihr
 Maximum ist das typische Peak-Alter. Jahre ohne Veränderung gelten als Jahre
 ohne Partien („inaktiv“) und lassen sich ausblenden.
 
-Cache: gm_peak_cache.parquet neben dieser Datei (gitignored wie alle Caches),
-wird beim ersten Zugriff aus den beiden Quellen gebaut (~30 s).
+Cache: gm_peak_cache.parquet neben dieser Datei (gitignored wie alle Caches).
+Auf dem VPS liegen keine FIDE-Listen — Cache lokal bauen (`python data_gm_peak.py`,
+~2 s) und mit den anderen Caches nach /opt/fide-scraper/frontend/ hochkopieren.
 """
 from __future__ import annotations
 

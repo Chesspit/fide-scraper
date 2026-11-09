@@ -19,8 +19,8 @@ from pathlib import Path
 import pytest
 
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
-# /gm-peak, /zone-2400: Stories bleiben intern, bis der User sie freigibt
-INTERN_ONLY_PATHS = {"/games", "/arpad", "/qc", "/qc-cases", "/qc-corrections", "/gm-peak", "/zone-2400"}
+# /gm-peak, /zone-2400, /pause: Stories bleiben intern, bis der User sie freigibt
+INTERN_ONLY_PATHS = {"/games", "/arpad", "/qc", "/qc-cases", "/qc-corrections", "/gm-peak", "/zone-2400", "/pause"}
 INTERN_ONLY_ID_PREFIXES = ("gd-", "arpad-", "qc-", "qcc-")
 
 _PROBE = """

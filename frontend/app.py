@@ -30,6 +30,7 @@ PAGES = {
     "pages.player_profile":  {"public", "intern"},   # /player-profile
     "pages.gm_peak":         {"intern"},             # /gm-peak — Story E1, öffentlich erst nach OK
     "pages.zone_2400":       {"intern"},             # /zone-2400 — Story A3, öffentlich erst nach OK
+    "pages.pause":           {"intern"},             # /pause — Story E2, öffentlich erst nach OK
     "pages.game_detail":     {"intern"},             # /games
     "pages.arpad":           {"intern"},             # /arpad — kostet Anthropic-Guthaben
 }

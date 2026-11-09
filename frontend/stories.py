@@ -18,6 +18,16 @@ INTERN = frozenset({"intern"})
 
 STORIES = [
     {
+        "slug": "pause",
+        "kicker": "Corona",
+        "title": "Die Pause und ihre Folgen",
+        "teaser": "2020 kam das gewertete Schach fast zum Stillstand. Wer kam zurück, wer blieb "
+                  "weg — und wer nahm danach wem die Punkte ab?",
+        "href": "/pause",
+        "date": "2026-11-09",
+        "editions": INTERN,
+    },
+    {
         "slug": "zone2400",
         "kicker": "Zone 2400",
         "title": "Durchgangsstation oder Endstation?",

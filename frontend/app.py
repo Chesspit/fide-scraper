@@ -58,44 +58,53 @@ for _name in (m for m, editions in PAGES.items() if EDITION in editions):
     # pages_folder="" muss es hier eingetragen werden (sonst NoLayoutException).
     dash.page_registry[_name]["layout"] = _module.layout
 
-# Seiten-Gruppen (anhand order-Wert aus register_page)
-# Aktiv: order 1–9  |  Test: order 10+
-# Die QC-Seiten (/qc, /qc-cases, /qc-corrections) liegen seit Phase 3b im
-# Orchestrator-Dashboard (Tab „QC", orchestrator/qc_ui.py).
-_AKTIV_PATHS = {"/c", "/dist", "/player-profile", "/arpad"}
-_TEST_PATHS  = {"/games", "/titles"}
+# Header-Navigation: Gruppen in fester Reihenfolge, "Analysen" = Kachelseite.
+# Seiten erscheinen nur, wenn sie in dieser Edition registriert sind; eine Gruppe
+# ohne registrierte Seite entfällt. „Premium" ist nur eine Beschriftung, kein Zugangsschutz.
+# Die QC-Seiten liegen seit Phase 3b im Orchestrator-Dashboard (Tab „QC").
+_NAV_GROUPS = [
+    ("Interaktiv", ["/c", "/dist", "/titles"]),
+    (None,         ["/analysen"]),   # Kachelseite, eigener Eintrag ohne Gruppenlabel
+    ("Premium",    ["/player-profile", "/games", "/arpad"]),
+]
+
+_GROUP_LABEL_STYLE = {
+    "color": "rgba(255,255,255,0.45)",
+    "fontSize": "0.72rem",
+    "letterSpacing": "0.08em",
+    "textTransform": "uppercase",
+    "marginRight": "2px",
+    "whiteSpace": "nowrap",
+}
 
 
-def _nav_group(label: str, paths: set) -> html.Span:
-    """Gibt eine Navbar-Gruppe mit Label + Links zurück."""
-    pages = sorted(
-        [p for p in dash.page_registry.values() if p["path"] in paths],
-        key=lambda p: p.get("order", 99),
-    )
+def _nav_group(label: str | None, paths: list[str], first: bool) -> html.Span | None:
+    """Gruppenlabel (optional) + Links der registrierten Seiten, None wenn keine registriert."""
+    by_path = {p["path"]: p for p in dash.page_registry.values()}
     links = [
-        dbc.NavItem(
-            dcc.Link(p["name"], href=p["path"], className="nav-link")
-        )
-        for p in pages
+        dbc.NavItem(dcc.Link(
+            by_path[path]["name"], href=path,
+            className="nav-link fw-semibold" if path == "/analysen" else "nav-link",
+        ))
+        for path in paths
+        if path in by_path
     ]
+    if not links:
+        return None
     return html.Span(
         [
-            html.Span(
-                label,
-                style={
-                    "color": "rgba(255,255,255,0.45)",
-                    "fontSize": "0.72rem",
-                    "letterSpacing": "0.08em",
-                    "textTransform": "uppercase",
-                    "marginRight": "4px",
-                    "marginLeft": "16px",
-                    "whiteSpace": "nowrap",
-                },
-            ),
+            *([html.Span(label, style=_GROUP_LABEL_STYLE)] if label else []),
             dbc.Nav(links, navbar=True, style={"display": "inline-flex"}),
         ],
-        style={"display": "inline-flex", "alignItems": "center"},
+        style={"display": "inline-flex", "alignItems": "center",
+               "marginLeft": "0" if first else "14px"},
     )
+
+
+def _nav_groups() -> list[html.Span]:
+    groups = [_nav_group(label, paths, first=(i == 0))
+              for i, (label, paths) in enumerate(_NAV_GROUPS)]
+    return [g for g in groups if g is not None]
 
 
 app.layout = html.Div(
@@ -111,27 +120,10 @@ app.layout = html.Div(
                         + ([dbc.Badge("intern", color="warning", className="ms-2")]
                            if EDITION == "intern" else []),
                         className="navbar-brand mb-0 h1",
-                        style={"marginRight": "24px"},
+                        style={"marginRight": "12px"},
                     ),
-                    # Einstieg: Analysen-Übersicht
-                    dbc.Nav(
-                        dbc.NavItem(dcc.Link("Analysen", href="/analysen", className="nav-link fw-semibold")),
-                        navbar=True,
-                        style={"display": "inline-flex"},
-                    ),
-                    # Aktiv-Gruppe
-                    _nav_group("Aktiv", _AKTIV_PATHS),
-                    # Trennstrich
-                    html.Span(
-                        "|",
-                        style={
-                            "color": "rgba(255,255,255,0.25)",
-                            "margin": "0 8px",
-                            "fontSize": "1.1rem",
-                        },
-                    ),
-                    # Test-Gruppe
-                    _nav_group("Test", _TEST_PATHS),
+                    # Navigation: Interaktiv · Analysen (Kachelseite) · Premium
+                    *_nav_groups(),
                 ],
                 fluid=True,
                 style={"display": "flex", "alignItems": "center", "flexWrap": "wrap"},

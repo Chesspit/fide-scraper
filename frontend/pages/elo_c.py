@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 from data import DEFAULT_PLAYER_IDS, HIGHLIGHT_COLORS, MAX_HIGHLIGHTS, load_2700_history
 from data_top100 import load_top100
 
-dash.register_page(__name__, path="/c", name="ELO-Top100", title="ELO-Einsichten | ELO-Top100", order=1)
+dash.register_page(__name__, path="/c", name="Top100", title="ELO-Einsichten | Top100", order=1)
 
 BAND_CONFIGS = [
     (0.00, 0.50, "rgba(175,175,175,0.50)"),   # Rang 200–101

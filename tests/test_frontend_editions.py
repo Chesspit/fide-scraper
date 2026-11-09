@@ -19,7 +19,8 @@ from pathlib import Path
 import pytest
 
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
-INTERN_ONLY_PATHS = {"/games", "/arpad", "/qc", "/qc-cases", "/qc-corrections"}
+# /gm-peak, /zone-2400: Stories bleiben intern, bis der User sie freigibt
+INTERN_ONLY_PATHS = {"/games", "/arpad", "/qc", "/qc-cases", "/qc-corrections", "/gm-peak", "/zone-2400"}
 INTERN_ONLY_ID_PREFIXES = ("gd-", "arpad-", "qc-", "qcc-")
 
 _PROBE = """
@@ -93,7 +94,8 @@ def test_unknown_edition_fails():
 def test_story_tiles_link_to_registered_pages(edition, public, intern):
     probe = {"public": public, "intern": intern}[edition]
     assert "/analysen" in probe["paths"] and probe["analysen_html"] == 200
-    assert probe["story_hrefs"], "Analysen-Übersicht ohne Kacheln"
+    if edition == "intern":   # öffentlich darf die Übersicht leer sein, bis Stories freigegeben sind
+        assert probe["story_hrefs"], "Analysen-Übersicht ohne Kacheln"
     assert set(probe["story_hrefs"]) <= set(probe["paths"])
 
 

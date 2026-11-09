@@ -97,6 +97,21 @@ def cover_zone2400() -> None:
 
 
 
+def cover_pause() -> None:
+    """Aktive Spieler je Monat: der Einbruch 2020 und die Rückkehr."""
+    df = pd.read_parquet(HERE / "covid_activity.parquet")
+    t = df[df["dim"] == "all"].sort_values("period")
+    fig, ax = _canvas()
+    pause = (t["period"] >= "2020-04-01") & (t["period"] < "2021-07-01")
+    ax.fill_between(t["period"], 0, t["n"], color=LINE, alpha=0.25, lw=0)
+    ax.fill_between(t["period"], 0, t["n"].where(pause), color=ACCENT, alpha=0.18, lw=0)
+    ax.plot(t["period"], t["n"], color=ACCENT, lw=2.6)
+    ax.set_ylim(0, t["n"].max() * 1.7)  # oben Platz für die Schlagzeile
+    ax.margins(x=0.01)
+    _save(fig, "pause")
+
+
 if __name__ == "__main__":
     cover_gm_peak()
     cover_zone2400()
+    cover_pause()

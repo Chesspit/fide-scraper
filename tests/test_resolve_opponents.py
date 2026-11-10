@@ -7,6 +7,7 @@ from scripts.resolve_opponents import (
     make_rating_fn,
     normalize_name,
     periods_to_process,
+    make_gap,
     pick_closest,
 )
 
@@ -31,8 +32,20 @@ def test_rating_fn_prefers_period_rating_then_std():
 def test_pick_closest_uses_period_rating_and_limit():
     fn = make_rating_fn({10: 1500, 11: 2210})
     cands = [(10, 2200), (11, 1500)]  # heutige Ratings irreführend
-    assert pick_closest(cands, 2200, fn) == (11, 10)
-    assert pick_closest(cands, 1900, fn, max_diff=100)[0] is None
+    assert pick_closest(cands, make_gap(2200), fn) == (11, 10)
+    assert pick_closest(cands, make_gap(1900), fn, max_diff=100)[0] is None
+
+
+def test_gap_respects_400_point_cap():
+    """Ro 2552, angezeigt 2152 = Ro − 400: echter Gegner kann beliebig darunter liegen."""
+    g = make_gap(2152, ro=2552, cap=400)
+    assert g(1582) == 0
+    assert g(2200) == 48
+    assert make_gap(2152, ro=2552, cap=None)(1582) == 570   # 2022–2024: keine Kappung
+    assert make_gap(2152, ro=2400, cap=400)(1582) == 570    # nicht auf der Grenze
+    assert make_gap(None) is None
+    # Ro der Zusammenfassung (2314) weicht ab, Vorliste (2307) trifft die Grenze
+    assert make_gap(1907, ro=(2307, 2314), cap=400)(1404) == 0
 
 
 def _matcher(by_name_fed, by_name) -> Matcher:

@@ -49,6 +49,7 @@ except ImportError:
 
 
 from core.config import get_database_url
+from core.elo import diff_cap
 from core.periods import (is_valid_fide_period, last_complete_period, parse_period,
                           previous_period)
 
@@ -139,15 +140,43 @@ def make_rating_fn(period_ratings: dict[int, int]):
     return rating_fn
 
 
+def make_gap(opp_rating: int | None, ro=None, cap: int | None = None):
+    """gap(r) → Abstand zwischen Kandidaten-Rating r und dem Gegner-Rating der Partie.
+
+    FIDE zeigt das Gegner-Rating nach der 400-Punkte-Regel gekappt (eigenes Rating
+    ± 400). Steht der Wert genau auf der Kappungsgrenze, ist jedes Rating jenseits davon
+    ebenso plausibel (Beispiel: eigenes Rating 2307, angezeigt 1907, echter Gegner 1404).
+    ro: eigenes Rating oder mehrere Kandidaten dafür (Vorliste, Ro der Zusammenfassung —
+    sie weichen ab, wenn mehrere Turniere in der Periode liegen). None, wenn die Partie
+    kein Gegner-Rating hat.
+    """
+    if opp_rating is None:
+        return None
+    owns = [x for x in (ro if isinstance(ro, (list, tuple)) else [ro]) if x]
+    lower = upper = False
+    if cap:
+        lower = any(abs(opp_rating - (o - cap)) <= 1 for o in owns)  # Gegner war schwächer
+        upper = any(abs(opp_rating - (o + cap)) <= 1 for o in owns)  # Gegner war stärker
+
+    def gap(r: int) -> int:
+        if lower and r < opp_rating:
+            return 0
+        if upper and r > opp_rating:
+            return 0
+        return abs(r - opp_rating)
+    return gap
+
+
 def pick_closest(
     cands: list[tuple],
-    opp_rating: int | None,
+    gap,
     rating_fn,
     max_diff: int | None = None,
 ) -> tuple[int | None, float]:
-    """Aus Kandidaten [(fide_id, std_rating, ...)] den mit dem nächsten Rating zur Zeit
-    der Partie wählen. (fide_id, diff); bei diff > max_diff (None, diff)."""
-    if opp_rating is None:
+    """Aus Kandidaten [(fide_id, std_rating, ...)] den mit dem kleinsten Abstand
+    (gap, siehe make_gap) zum Gegner-Rating der Partie wählen.
+    (fide_id, diff); bei diff > max_diff (None, diff)."""
+    if gap is None:
         return None, float("inf")
 
     best_id = None
@@ -156,7 +185,7 @@ def pick_closest(
         rating_then = rating_fn(cand[0], cand[1])
         if rating_then is None:
             continue
-        diff = abs(rating_then - opp_rating)
+        diff = gap(rating_then)
         if diff < best_diff:
             best_id = cand[0]
             best_diff = diff
@@ -181,7 +210,7 @@ def build_token_index(by_name: dict, min_token_len: int = 3) -> dict[str, set]:
 
 def fuzzy_match(
     opp_norm: str,
-    opp_rating: int | None,
+    gap,
     rating_fn,
     token_index: dict,
     by_name: dict,
@@ -204,7 +233,7 @@ def fuzzy_match(
     """
     if _fuzz is None:
         return None, 0, -1.0, None
-    if opp_rating is None:
+    if gap is None:
         return None, 0, -1.0, None
 
     tokens = [t for t in opp_norm.split() if len(t) >= 3]
@@ -256,7 +285,7 @@ def fuzzy_match(
             rating_then = rating_fn(fide_id, cand[1])
             if rating_then is None:
                 continue
-            diff = abs(rating_then - opp_rating)
+            diff = gap(rating_then)
             if diff > rating_tolerance:
                 continue
             # Prefer higher score; tie-break on lower rating diff
@@ -293,9 +322,15 @@ class Matcher:
             self.token_index = build_token_index(self.by_name)
             logger.info("  %d indexed tokens (len>=3)", len(self.token_index))
 
-    def match(self, opp_name, opp_fed, opp_rating, rating_fn) -> tuple[int | None, str]:
-        """→ (fide_id, Stufe) mit Stufe exact | fallback | fuzzy | ambiguous | none."""
+    def match(self, opp_name, opp_fed, opp_rating, rating_fn,
+              ro=None, cap: int | None = None) -> tuple[int | None, str]:
+        """→ (fide_id, Stufe) mit Stufe exact | fallback | fuzzy | ambiguous | none.
+
+        ro = eigenes Rating des gescrapten Spielers (Wert oder Tupel aus Vorliste und
+        Ro), cap = 400-Punkte-Regel der Partie; beide nur für die Kappung (make_gap).
+        """
         norm = normalize_name(opp_name)
+        gap = make_gap(opp_rating, ro, cap)
 
         # Stufe 1: Name + Föderation
         cands = self.by_name_fed.get((norm, opp_fed), [])
@@ -304,12 +339,12 @@ class Matcher:
                 # Einziger Namensträger der Föderation: nur übernehmen, wenn das Rating
                 # passt oder sich nicht prüfen lässt. Sonst ist es ein Namensvetter und der
                 # Gesuchte hat die Föderation gewechselt (Fedoseev RUS→SLO) → Stufe 2.
-                fid = cands[0][0]
-                r = rating_fn(fid, None, period_only=True)
-                if opp_rating is None or r is None or abs(r - opp_rating) <= self.exact_tolerance:
+                fid, std = cands[0][0], cands[0][1]
+                r = rating_fn(fid, std)
+                if gap is None or r is None or gap(r) <= self.exact_tolerance:
                     return fid, "exact"
             else:
-                best_id, _ = pick_closest(cands, opp_rating, rating_fn,
+                best_id, _ = pick_closest(cands, gap, rating_fn,
                                           max_diff=self.exact_tolerance)
                 if best_id is not None:
                     return best_id, "exact"
@@ -317,7 +352,7 @@ class Matcher:
         # Stufe 2: nur Name (Föderationswechsel), Rating-begrenzt
         cands_any_fed = self.by_name.get(norm, [])
         if cands_any_fed:
-            best_id, _ = pick_closest(cands_any_fed, opp_rating, rating_fn,
+            best_id, _ = pick_closest(cands_any_fed, gap, rating_fn,
                                       max_diff=self.fed_fallback_tolerance)
             if best_id is not None:
                 return best_id, "fallback"
@@ -327,7 +362,7 @@ class Matcher:
         # fände die Unschärfe bloß einen fremden Namen mit passendem Rating (Nikhil, Gopal).
         if self.fuzzy and not cands and not cands_any_fed:
             fz_id, _, _, _ = fuzzy_match(
-                norm, opp_rating, rating_fn, self.token_index, self.by_name,
+                norm, gap, rating_fn, self.token_index, self.by_name,
                 surname=normalize_name((opp_name or "").split(",")[0]),
                 score_threshold=self.fuzzy_threshold,
                 rating_tolerance=self.fuzzy_rating_tolerance,
@@ -397,11 +432,14 @@ def resolve_period(conn, matcher: Matcher, period: date, dry_run: bool) -> Count
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, opponent_name, opponent_federation, opponent_rating
-            FROM game_results
-            WHERE period = %s AND opponent_fide_id IS NULL
+            SELECT g.id, g.opponent_name, g.opponent_federation, g.opponent_rating,
+                   rh.std_rating, pv.published_rating, g.tournament_start_date
+            FROM game_results g
+            LEFT JOIN rating_history rh ON rh.fide_id = g.fide_id AND rh.period = g.period
+            LEFT JOIN rating_history pv ON pv.fide_id = g.fide_id AND pv.period = %s
+            WHERE g.period = %s AND g.opponent_fide_id IS NULL
             """,
-            (period,),
+            (previous_period(period), period),
         )
         rows = cur.fetchall()
     stats["unresolved_before"] = len(rows)
@@ -409,8 +447,10 @@ def resolve_period(conn, matcher: Matcher, period: date, dry_run: bool) -> Count
     updates: list[tuple[int, int]] = []
     if rows:
         rating_fn = make_rating_fn(load_period_ratings(conn, period))
-        for row_id, opp_name, opp_fed, opp_rating in rows:
-            fid, stage = matcher.match(opp_name, opp_fed, opp_rating, rating_fn)
+        for row_id, opp_name, opp_fed, opp_rating, ro, own_prev, t_start in rows:
+            cap = diff_cap(t_start or period)
+            fid, stage = matcher.match(opp_name, opp_fed, opp_rating, rating_fn,
+                                       (own_prev, ro), cap)
             stats[stage] += 1
             if fid is not None:
                 updates.append((row_id, fid))

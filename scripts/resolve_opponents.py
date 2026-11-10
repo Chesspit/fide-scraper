@@ -126,6 +126,34 @@ def load_period_ratings(conn, period: date) -> dict[int, int]:
     return ratings
 
 
+class ParquetRatings:
+    """Ratinglisten aus einem lokalen Parquet (fide_id, period, rating), z. B.
+    frontend/player_history_cache.parquet. Erspart je Periode ~1 Mio Zeilen
+    rating_history-I/O auf dem VPS (dort ~50 s je Periode, 3 GB RAM)."""
+
+    def __init__(self, path: str):
+        import pandas as pd
+        df = pd.read_parquet(path, columns=["fide_id", "period", "rating"])
+        df = df[df["rating"] > 0]
+        df["period"] = df["period"].dt.date
+        self.by_period = {
+            p: (g["fide_id"].to_numpy(), g["rating"].to_numpy())
+            for p, g in df.groupby("period", sort=False)
+        }
+        logger.info("  Parquet-Ratings: %d Perioden (%s … %s)", len(self.by_period),
+                    min(self.by_period), max(self.by_period))
+
+    def load(self, conn, period: date) -> dict[int, int]:
+        prev = previous_period(period)
+        if period not in self.by_period or prev not in self.by_period:
+            return load_period_ratings(conn, period)
+        ratings: dict[int, int] = {}
+        for p in (period, prev):            # Vorliste zuletzt → gewinnt
+            ids, vals = self.by_period[p]
+            ratings.update(zip(ids.tolist(), vals.tolist()))
+        return ratings
+
+
 def make_rating_fn(period_ratings: dict[int, int]):
     """rating_fn(fide_id, std_rating) → Rating zur Periode, sonst heutiges std_rating.
 
@@ -404,6 +432,7 @@ FROM (
     LEFT JOIN players p ON p.fide_id = COALESCE(g.opponent_fide_id, m.opponent_fide_id)
     LEFT JOIN rating_history rh ON rh.fide_id = g.fide_id AND rh.period = g.period
     WHERE g.period = %(period)s
+      AND g.fide_id %% %(k)s = %(i)s
       AND (m.id IS NOT NULL
            OR g.opponent_match_quality IS NULL
            OR g.tournament_type IS NULL)
@@ -426,7 +455,8 @@ def periods_to_process(period: str | None, since: str | None, until: str | None)
     return out
 
 
-def resolve_period(conn, matcher: Matcher, period: date, dry_run: bool) -> Counter:
+def resolve_period(conn, matcher: Matcher, period: date, dry_run: bool,
+                   ratings_source=None) -> Counter:
     """Eine Periode: offene Gegner zuordnen und alle Anreicherungsspalten schreiben."""
     stats: Counter = Counter()
     with conn.cursor() as cur:
@@ -442,11 +472,16 @@ def resolve_period(conn, matcher: Matcher, period: date, dry_run: bool) -> Count
             (previous_period(period), period),
         )
         rows = cur.fetchall()
+    # Lesetransaktion sofort beenden: das Zuordnen dauert bei 250k Partien Minuten,
+    # und eine offene Transaktion würde idle_in_transaction_session_timeout auslösen.
+    conn.rollback()
     stats["unresolved_before"] = len(rows)
 
     updates: list[tuple[int, int]] = []
     if rows:
-        rating_fn = make_rating_fn(load_period_ratings(conn, period))
+        loader = ratings_source.load if ratings_source else load_period_ratings
+        rating_fn = make_rating_fn(loader(conn, period))
+        conn.rollback()
         for row_id, opp_name, opp_fed, opp_rating, ro, own_prev, t_start in rows:
             cap = diff_cap(t_start or period)
             fid, stage = matcher.match(opp_name, opp_fed, opp_rating, rating_fn,
@@ -459,25 +494,66 @@ def resolve_period(conn, matcher: Matcher, period: date, dry_run: bool) -> Count
         conn.rollback()
         return stats
 
+    # In Häppchen schreiben (je ~50k Zeilen, eigener Commit): kürzere Sperren für den
+    # Worker, und ein Tunnelabriss kostet höchstens ein Häppchen. Bereits geschriebene
+    # Häppchen fallen beim Wiederholen aus der Auswahl (opponent_fide_id bzw.
+    # opponent_match_quality gesetzt), das ist also idempotent.
+    chunks = max(1, -(-len(rows) // WRITE_CHUNK_ROWS))
     with conn.cursor() as cur:
         cur.execute("CREATE TEMP TABLE IF NOT EXISTS _resolved "
-                    "(id bigint PRIMARY KEY, opponent_fide_id integer) ON COMMIT DELETE ROWS")
+                    "(id bigint PRIMARY KEY, opponent_fide_id integer)")
+        cur.execute("TRUNCATE _resolved")
         if updates:
             buf = io.StringIO("".join(f"{i}\t{f}\n" for i, f in updates))
             cur.copy_expert("COPY _resolved (id, opponent_fide_id) FROM STDIN", buf)
             cur.execute("ANALYZE _resolved")
-        cur.execute(_ENRICH_SQL, {"period": period})
-        stats["rows_written"] = cur.rowcount
-    conn.commit()
+        conn.commit()
+        for i in range(chunks):
+            cur.execute(_ENRICH_SQL, {"period": period, "k": chunks, "i": i})
+            stats["rows_written"] += cur.rowcount
+            conn.commit()
     return stats
 
 
-def resolve_opponents(conn, periods: list[date], dry_run: bool, pause: float, **matcher_kw):
+WRITE_CHUNK_ROWS = 50_000
+
+
+def connect():
+    """Verbindung mit Sicherheitsnetzen: statement_timeout gegen Runaway-Queries,
+    idle_in_transaction_session_timeout, damit ein Tunnelabriss zwischen UPDATE und
+    COMMIT keine Sitzung mit Zeilensperren zurücklässt (Vorfall 10.11.2026)."""
+    return psycopg2.connect(
+        get_database_url("ingest"),
+        options="-c statement_timeout=900000 -c idle_in_transaction_session_timeout=120000",
+        keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=6,
+    )
+
+
+MAX_RETRIES = 5
+
+
+def resolve_opponents(conn, periods: list[date], dry_run: bool, pause: float,
+                      ratings_parquet: str | None = None, reconnect=connect, **matcher_kw):
     matcher = Matcher(conn, **matcher_kw)
+    ratings_source = ParquetRatings(ratings_parquet) if ratings_parquet else None
     total: Counter = Counter()
     for i, period in enumerate(periods, 1):
         t0 = time.monotonic()
-        st = resolve_period(conn, matcher, period, dry_run)
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                st = resolve_period(conn, matcher, period, dry_run, ratings_source)
+                break
+            except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+                if attempt == MAX_RETRIES:
+                    raise
+                logger.warning("%s: Verbindung verloren (%s) — Versuch %d/%d in 60 s",
+                               period, str(exc).strip().splitlines()[0], attempt, MAX_RETRIES)
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                time.sleep(60)
+                conn = reconnect()
         total.update(st)
         matched = st["exact"] + st["fallback"] + st["fuzzy"]
         before = st["unresolved_before"]
@@ -515,6 +591,10 @@ def main():
     parser.add_argument("--period", type=str, help="Nur diese Periode (YYYY-MM)")
     parser.add_argument("--since", type=str, help="Ab Periode (YYYY-MM, Default 2008-04)")
     parser.add_argument("--until", type=str, help="Bis Periode (YYYY-MM, Default Vormonat)")
+    parser.add_argument("--ratings-parquet", type=str,
+                        help="Ratinglisten lokal statt aus rating_history lesen "
+                             "(z. B. frontend/player_history_cache.parquet); fehlende "
+                             "Perioden weiter aus der DB")
     parser.add_argument("--pause", type=float, default=2.0,
                         help="Sekunden Pause zwischen Perioden (Autovacuum/Worker Luft lassen)")
     parser.add_argument("--dry-run", action="store_true", help="Count only, don't write")
@@ -554,16 +634,14 @@ def main():
     )
     args = parser.parse_args()
 
-    conn = psycopg2.connect(
-        get_database_url("ingest"),
-        options="-c statement_timeout=900000",  # 15 min, see scraper/db.py
-    )
+    conn = connect()
     try:
         resolve_opponents(
             conn,
             periods_to_process(args.period, args.since, args.until),
             dry_run=args.dry_run,
             pause=args.pause,
+            ratings_parquet=args.ratings_parquet,
             fuzzy=args.fuzzy,
             fed_fallback_tolerance=args.fed_fallback_tolerance,
             exact_tolerance=args.exact_tolerance,

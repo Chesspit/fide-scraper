@@ -3,6 +3,7 @@ from datetime import date
 
 import psycopg2
 import psycopg2.extras
+from psycopg2.extensions import TRANSACTION_STATUS_IDLE
 
 from core.db import connect
 from core.periods import is_valid_fide_period
@@ -63,13 +64,23 @@ def get_connection():
 
 
 def _is_connection_broken(conn) -> bool:
-    """True if the connection is closed or in an unrecoverable state."""
+    """True if the connection is closed or in an unrecoverable state.
+
+    Der Ping öffnet (ohne autocommit) eine Transaktion. War die Verbindung vorher
+    ohne offene Transaktion, wird sie danach sofort wieder geschlossen — sonst
+    hielt jeder untätige Worker-Thread stundenlang eine Transaktion offen, und
+    Autovacuum konnte keine toten Zeilen mehr entfernen (10.11.2026: 9 Sitzungen
+    „idle in transaction" seit dem Worker-Start, 4,4 Mio tote Zeilen in game_results).
+    """
     if conn is None or conn.closed:
         return True
     try:
+        was_idle = conn.get_transaction_status() == TRANSACTION_STATUS_IDLE
         with conn.cursor() as cur:
             cur.execute("SELECT 1")
             cur.fetchone()
+        if was_idle:
+            conn.rollback()
         return False
     except (psycopg2.OperationalError, psycopg2.InterfaceError):
         return True

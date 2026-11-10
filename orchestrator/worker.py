@@ -256,6 +256,15 @@ def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
 # HTTP fetch with proxy and profile-based retry
 # ---------------------------------------------------------------------------
 
+# Text, den FIDE für eine echt leere Periode liefert. Nur dieser Text belegt no_data.
+NO_RECORDS_MARKER = "No records found"
+
+
+def is_confirmed_no_data(html: str | None) -> bool:
+    """True nur, wenn FIDE ausdrücklich „No records found" meldet (ohne Partientabelle)."""
+    return bool(html) and NO_RECORDS_MARKER in html and "calc_table" not in html
+
+
 def _proxy_label(proxies: dict | None) -> str:
     """'host:port' from a proxy dict for logging, credentials stripped."""
     if not proxies:
@@ -354,10 +363,24 @@ def _fetch(
                 time.sleep(backoff)
                 continue
 
-            if "calc_table" not in resp.text and "No records found" not in resp.text:
-                logger.warning("Unerwartetes Antwortformat fide_id=%s period=%s (%d Bytes): weder "
-                               "calc_table noch 'No records found' im Body — Format-Änderung bei FIDE?",
-                               fide_id, period_str, len(resp.content))
+            if "calc_table" not in resp.text and NO_RECORDS_MARKER not in resp.text:
+                # Weder Partien noch "No records found": Fehlerseite, Captcha, Proxy-
+                # Zwischenseite oder Format-Änderung bei FIDE. Wie ein leerer 200er als
+                # Fehlschlag werten — früher wurde das als no_data gespeichert und
+                # erzeugte stillen Datenverlust (Audit 02.11.2026: 2.369 falsche no_data).
+                if attempt == max_retries:
+                    logger.error("Unerwartetes Antwortformat fide_id=%s period=%s (%d Bytes) nach "
+                                 "%d Versuchen: weder calc_table noch '%s' im Body — als "
+                                 "Fehlschlag gewertet", fide_id, period_str, len(resp.content),
+                                 max_retries, NO_RECORDS_MARKER)
+                    return None, 0
+                backoff = 4 ** (attempt - 1)
+                logger.warning("Unerwartetes Antwortformat fide_id=%s period=%s (%d Bytes, attempt "
+                               "%d/%d) proxy=%s — retrying in %ds", fide_id, period_str,
+                               len(resp.content), attempt, max_retries, _proxy_label(proxies),
+                               backoff)
+                time.sleep(backoff)
+                continue
 
             return resp.text, len(resp.content)
 
@@ -558,17 +581,20 @@ def scrape_group(
         else:
             _consecutive_failures = 0
 
-        if not html or not html.strip():
+        games, k_factor, own_rating = parse_calculations(html, fide_id, period_str)
+        if games:
+            pg_conn = save_period(pg_conn, fide_id, period_str, games, k_factor, own_rating)
+            records_found += len(games)
+        elif is_confirmed_no_data(html):
             pg_conn = save_period_no_data(pg_conn, fide_id, period_str)
             logger.debug("  → no data fide_id=%s period=%s", fide_id, period_str)
         else:
-            games, k_factor, own_rating = parse_calculations(html, fide_id, period_str)
-            if not games:
-                pg_conn = save_period_no_data(pg_conn, fide_id, period_str)
-                logger.debug("  → no games parsed fide_id=%s period=%s", fide_id, period_str)
-            else:
-                pg_conn = save_period(pg_conn, fide_id, period_str, games, k_factor, own_rating)
-                records_found += len(games)
+            # Antwort hatte calc_table, der Parser fand aber keine Partie: kein Beleg
+            # für eine leere Periode. Offen lassen statt no_data zu schreiben.
+            logger.error("Keine Partien geparst, aber auch kein '%s' — fide_id=%s period=%s "
+                         "bleibt offen (Parser/Format prüfen)", NO_RECORDS_MARKER,
+                         fide_id, period_str)
+            _failed_combos += 1
 
         # State alle 200 Combos schreiben (~10 Min bei Normalgeschwindigkeit)
         if _combo_idx % 200 == 0:

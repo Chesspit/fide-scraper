@@ -14,8 +14,8 @@ from orchestrator.proxy_manager import ProxyManager
 
 class _Resp:
     status_code = 200
-    text = "<html>ok</html>"
-    content = b"<html>ok</html>"
+    text = "<html>No records found for this period</html>"
+    content = b"<html>No records found for this period</html>"
     headers: dict = {}
 
     def raise_for_status(self):
@@ -149,3 +149,60 @@ class TestPlanSwitch:
 
         assert html is None
         assert len(seen) == 2, "nach abgelehntem Fallback nicht weiter probieren"
+
+
+# ---------------------------------------------------------------------------
+# no_data nur mit Beleg: unerwartete Antworten sind Fehlschläge, kein no_data
+# ---------------------------------------------------------------------------
+
+class _BodyResp(_Resp):
+    def __init__(self, text: str):
+        self.text = text
+        self.content = text.encode()
+
+
+class TestUnexpectedFormat:
+    def _serve(self, monkeypatch, bodies: list[str]) -> list:
+        calls = []
+
+        def fake_get(url, headers=None, timeout=None, proxies=None):
+            calls.append(url)
+            return _BodyResp(bodies[min(len(calls), len(bodies)) - 1])
+
+        monkeypatch.setattr(worker.requests, "get", fake_get)
+        monkeypatch.setattr(worker.time, "sleep", lambda s: None)
+        return calls
+
+    def test_unexpected_body_is_failure_after_retries(self, monkeypatch):
+        calls = self._serve(monkeypatch, ["<html>Service temporarily unavailable</html>"])
+        html, nbytes = worker._fetch(123, "2026-06-01",
+                                     {"max_retries": 3, "use_proxy": False}, None)
+        assert html is None and nbytes == 0
+        assert len(calls) == 3
+
+    def test_unexpected_then_valid_retries(self, monkeypatch):
+        calls = self._serve(monkeypatch, ["<html>captcha</html>",
+                                          "<table class=\"calc_table\"></table>"])
+        html, _ = worker._fetch(123, "2026-06-01",
+                                {"max_retries": 3, "use_proxy": False}, None)
+        assert "calc_table" in html
+        assert len(calls) == 2
+
+    def test_no_records_is_returned(self, monkeypatch):
+        self._serve(monkeypatch, ["No records found"])
+        html, _ = worker._fetch(123, "2026-06-01",
+                                {"max_retries": 1, "use_proxy": False}, None)
+        assert html == "No records found"
+
+
+class TestConfirmedNoData:
+    @pytest.mark.parametrize("html,expected", [
+        ("<div>No records found</div>", True),
+        ("<table class=calc_table></table>", False),          # Tabelle ohne geparste Partie
+        ("<table class=calc_table>No records found</table>", False),
+        ("<html>Service unavailable</html>", False),
+        ("", False),
+        (None, False),
+    ])
+    def test_only_explicit_marker_counts(self, html, expected):
+        assert worker.is_confirmed_no_data(html) is expected

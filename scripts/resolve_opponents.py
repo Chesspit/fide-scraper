@@ -455,9 +455,35 @@ def periods_to_process(period: str | None, since: str | None, until: str | None)
     return out
 
 
+def pending_periods(conn) -> list[date]:
+    """Perioden mit noch nicht angereicherten Partien (Teilindex aus Migration 027)."""
+    with conn.cursor() as cur:
+        # Loose index scan: je Periode ein Indexzugriff statt DISTINCT über alle Zeilen.
+        cur.execute(
+            """
+            WITH RECURSIVE p AS (
+                (SELECT period FROM game_results
+                 WHERE opponent_match_quality IS NULL ORDER BY period LIMIT 1)
+                UNION ALL
+                SELECT (SELECT g.period FROM game_results g
+                        WHERE g.opponent_match_quality IS NULL AND g.period > p.period
+                        ORDER BY g.period LIMIT 1)
+                FROM p WHERE p.period IS NOT NULL
+            )
+            SELECT period FROM p WHERE period IS NOT NULL
+            """
+        )
+        out = [r[0] for r in cur.fetchall()]
+    conn.rollback()
+    return out
+
+
 def resolve_period(conn, matcher: Matcher, period: date, dry_run: bool,
-                   ratings_source=None) -> Counter:
-    """Eine Periode: offene Gegner zuordnen und alle Anreicherungsspalten schreiben."""
+                   ratings_source=None, pending_only: bool = False) -> Counter:
+    """Eine Periode: offene Gegner zuordnen und alle Anreicherungsspalten schreiben.
+
+    pending_only: nur Partien ohne opponent_match_quality neu zuordnen (neu gescrapte);
+    bereits als unresolved markierte Partien bleiben unangetastet."""
     stats: Counter = Counter()
     with conn.cursor() as cur:
         cur.execute(
@@ -468,7 +494,7 @@ def resolve_period(conn, matcher: Matcher, period: date, dry_run: bool,
             LEFT JOIN rating_history rh ON rh.fide_id = g.fide_id AND rh.period = g.period
             LEFT JOIN rating_history pv ON pv.fide_id = g.fide_id AND pv.period = %s
             WHERE g.period = %s AND g.opponent_fide_id IS NULL
-            """,
+            """ + ("  AND g.opponent_match_quality IS NULL" if pending_only else ""),
             (previous_period(period), period),
         )
         rows = cur.fetchall()
@@ -503,7 +529,9 @@ def resolve_period(conn, matcher: Matcher, period: date, dry_run: bool,
     # Bitmap-Scan über die ganze Periode — bei k Häppchen k-faches Lesen.
     ids = sorted(r[0] for r in rows)
     bounds = [ids[j] for j in range(WRITE_CHUNK_ROWS, len(ids), WRITE_CHUNK_ROWS)]
-    lows = [0] + bounds
+    # Im pending-Modus sind die offenen Partien neu und haben hohe ids: ab der
+    # kleinsten offenen id starten, statt die ganze Periode zu durchsuchen.
+    lows = [ids[0] if pending_only and ids else 0] + bounds
     highs = [b - 1 for b in bounds] + [2**63 - 1]
     with conn.cursor() as cur:
         cur.execute("CREATE TEMP TABLE IF NOT EXISTS _resolved "
@@ -540,7 +568,8 @@ MAX_RETRIES = 5
 
 
 def resolve_opponents(conn, periods: list[date], dry_run: bool, pause: float,
-                      ratings_parquet: str | None = None, reconnect=connect, **matcher_kw):
+                      ratings_parquet: str | None = None, reconnect=connect,
+                      pending_only: bool = False, **matcher_kw):
     matcher = Matcher(conn, **matcher_kw)
     ratings_source = ParquetRatings(ratings_parquet) if ratings_parquet else None
     total: Counter = Counter()
@@ -548,7 +577,8 @@ def resolve_opponents(conn, periods: list[date], dry_run: bool, pause: float,
         t0 = time.monotonic()
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                st = resolve_period(conn, matcher, period, dry_run, ratings_source)
+                st = resolve_period(conn, matcher, period, dry_run, ratings_source,
+                                    pending_only)
                 break
             except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
                 if attempt == MAX_RETRIES:
@@ -598,6 +628,10 @@ def main():
     parser.add_argument("--period", type=str, help="Nur diese Periode (YYYY-MM)")
     parser.add_argument("--since", type=str, help="Ab Periode (YYYY-MM, Default 2008-04)")
     parser.add_argument("--until", type=str, help="Bis Periode (YYYY-MM, Default Vormonat)")
+    parser.add_argument("--pending", action="store_true",
+                        help="Nur Perioden mit noch nicht angereicherten Partien "
+                             "(opponent_match_quality IS NULL), und dort nur diese Partien. "
+                             "Für den täglichen Lauf in monthly_update.sh")
     parser.add_argument("--ratings-parquet", type=str,
                         help="Ratinglisten lokal statt aus rating_history lesen "
                              "(z. B. frontend/player_history_cache.parquet); fehlende "
@@ -641,11 +675,20 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.pending and (args.period or args.since or args.until):
+        parser.error("--pending schließt --period/--since/--until aus")
+
     conn = connect()
     try:
+        periods = (pending_periods(conn) if args.pending
+                   else periods_to_process(args.period, args.since, args.until))
+        if not periods:
+            print("Keine Perioden mit offenen Partien.")
+            return
         resolve_opponents(
             conn,
-            periods_to_process(args.period, args.since, args.until),
+            periods,
+            pending_only=args.pending,
             dry_run=args.dry_run,
             pause=args.pause,
             ratings_parquet=args.ratings_parquet,

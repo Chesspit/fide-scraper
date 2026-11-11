@@ -50,7 +50,7 @@ fide-scraper/
 │   │                             Kachelbilder per build_story_covers.py (assets/analysen/*.png, im Git)
 ├── notebooks/                 ← Block 3: marimo (NN_*.py) + noch nicht überführte .ipynb, _setup.py
 ├── deploy/infomaniak/         ← Produktions-Stack (Compose, bootstrap.sh, memory_watch.sh); Runbook docs/umzug_infomaniak.md
-├── migrations/                ← 001_initial.sql … 024_scrape_periods_period_index.sql (022 vorbereitet, s. docs/db_rollen.md)
+├── migrations/                ← 001_initial.sql … 027_game_results_pending_enrich_index.sql (022 vorbereitet, s. docs/db_rollen.md)
 ├── scripts/
 │   ├── monthly_update.sh      ← FIDE-Liste laden + importieren + VPS-Requeue + Audit (täglich per launchd)
 │   ├── import_rating_snapshots.py, backfill.py, resolve_opponents.py   ← Block 1
@@ -229,12 +229,16 @@ neue Liste nicht an einem festen Kalendertag.
 5. **Nur nach Import:** Datenprüfung ab 2020 (`FIDE_AUDIT_SINCE`), Einzeiler ins Log, Bericht nach
    `~/backups/fide-scraper/audit/audit_<datum>.md`
 
+Unabhängig vom Import läuft **jeden Tag** vor Schritt 4 `resolve_opponents.py --pending`: reichert
+neu gescrapte Partien an (Gegner-ID, Geschlecht, Turniertyp, Erwartungswert), Log
+`~/backups/fide-scraper/resolve/pending.log`, abschaltbar mit `FIDE_RESOLVE_PENDING=0`. Braucht den
+Teilindex aus Migration 027, sonst ist schon die Periodensuche ein Full Scan.
+
 Ohne Schritt 4 werden neue Spieler nie nachgezogen. Log: `~/backups/fide-scraper/monthly.log`.
 
 **Anhalten:** Existiert auf dem VPS `~/HOLD_FIDE_MONTHLY_UPDATE`, endet jeder Lauf sofort (kein
-Download/Import/Requeue); VPS nicht erreichbar ⇒ Lauf ebenfalls übersprungen. ⚠️ **Seit 30.10.2026
-gesetzt:** November-Update erst nach explizitem OK des Users (Vier-Blöcke-Umbau geht vor).
-Aufheben: `ssh pit@179.237.106.106 'rm ~/HOLD_FIDE_MONTHLY_UPDATE'`.
+Download/Import/Requeue); VPS nicht erreichbar ⇒ Lauf ebenfalls übersprungen. Der HOLD vom 30.10.2026 ist seit 10.11.2026
+aufgehoben. Aufheben: `ssh pit@179.237.106.106 'rm ~/HOLD_FIDE_MONTHLY_UPDATE'`.
 
 ⚠️ **Der launchd-Job gehört auf genau EIN Gerät** (aktuell: Mac Mini). Der Lock liegt unter
 `/tmp` und wirkt nur lokal — zwei Rechner mit demselben Job würden sich gegenseitig nicht

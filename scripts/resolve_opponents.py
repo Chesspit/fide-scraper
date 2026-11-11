@@ -432,7 +432,7 @@ FROM (
     LEFT JOIN players p ON p.fide_id = COALESCE(g.opponent_fide_id, m.opponent_fide_id)
     LEFT JOIN rating_history rh ON rh.fide_id = g.fide_id AND rh.period = g.period
     WHERE g.period = %(period)s
-      AND g.fide_id %% %(k)s = %(i)s
+      AND g.id BETWEEN %(lo)s AND %(hi)s
       AND (m.id IS NOT NULL
            OR g.opponent_match_quality IS NULL
            OR g.tournament_type IS NULL)
@@ -498,7 +498,13 @@ def resolve_period(conn, matcher: Matcher, period: date, dry_run: bool,
     # Worker, und ein Tunnelabriss kostet höchstens ein Häppchen. Bereits geschriebene
     # Häppchen fallen beim Wiederholen aus der Auswahl (opponent_fide_id bzw.
     # opponent_match_quality gesetzt), das ist also idempotent.
-    chunks = max(1, -(-len(rows) // WRITE_CHUNK_ROWS))
+    # Häppchen nach id-Bereichen (Grenzen aus den gelesenen ids): jede Zeile der
+    # Periode wird nur einmal gelesen. Vorher filterte fide_id % k nach einem
+    # Bitmap-Scan über die ganze Periode — bei k Häppchen k-faches Lesen.
+    ids = sorted(r[0] for r in rows)
+    bounds = [ids[j] for j in range(WRITE_CHUNK_ROWS, len(ids), WRITE_CHUNK_ROWS)]
+    lows = [0] + bounds
+    highs = [b - 1 for b in bounds] + [2**63 - 1]
     with conn.cursor() as cur:
         cur.execute("CREATE TEMP TABLE IF NOT EXISTS _resolved "
                     "(id bigint PRIMARY KEY, opponent_fide_id integer)")
@@ -508,8 +514,8 @@ def resolve_period(conn, matcher: Matcher, period: date, dry_run: bool,
             cur.copy_expert("COPY _resolved (id, opponent_fide_id) FROM STDIN", buf)
             cur.execute("ANALYZE _resolved")
         conn.commit()
-        for i in range(chunks):
-            cur.execute(_ENRICH_SQL, {"period": period, "k": chunks, "i": i})
+        for lo, hi in zip(lows, highs):
+            cur.execute(_ENRICH_SQL, {"period": period, "lo": lo, "hi": hi})
             stats["rows_written"] += cur.rowcount
             conn.commit()
     return stats
@@ -524,7 +530,8 @@ def connect():
     COMMIT keine Sitzung mit Zeilensperren zurücklässt (Vorfall 10.11.2026)."""
     return psycopg2.connect(
         get_database_url("ingest"),
-        options="-c statement_timeout=900000 -c idle_in_transaction_session_timeout=120000",
+        options="-c statement_timeout=900000 -c idle_in_transaction_session_timeout=120000"
+                " -c jit=off",
         keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=6,
     )
 

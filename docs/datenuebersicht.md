@@ -71,12 +71,12 @@ Eine Zeile = eine Einzelpartie. Kernquelle aller Analysen.
 | `period` | DATE | Ratingperiode (erster des Monats) |
 | `game_index` | INTEGER | Laufende Nummer innerhalb (fide_id, period) — UNIQUE-Constraint |
 | `opponent_name` | TEXT | Name des Gegners |
-| `opponent_fide_id` | INTEGER | FIDE-ID des Gegners (per `resolve_opponents` aufgelöst; ~97,5 % befüllt) |
+| `opponent_fide_id` | INTEGER | FIDE-ID des Gegners (per `scripts/resolve_opponents.py` aufgelöst; Stand 11.11.2026: 93–96 % für 2008–2011, 97–99 % ab 2012) |
 | `opponent_title` | TEXT | Offener Titel des Gegners |
 | `opponent_women_title` | TEXT | Frauentitel des Gegners |
 | `opponent_rating` | INTEGER | Rating des Gegners zur Spielzeit |
 | `opponent_federation` | CHAR(3) | Föderationscode des Gegners |
-| `opponent_sex` | CHAR(1) | `M` oder `F` (98,1 % befüllt) |
+| `opponent_sex` | CHAR(1) | `M` oder `F` aus `players.sex`, sonst `F` bei Frauentitel (Stand 11.11.2026: 94–99 % je Jahr) |
 | `result` | TEXT | `1` = Sieg, `0.5` = Remis, `0` = Niederlage |
 | `rating_change` | NUMERIC(5,2) | Ungewichtete Ratingänderung |
 | `rating_change_weighted` | NUMERIC(5,2) | K-Faktor × rating_change |
@@ -88,7 +88,7 @@ Eine Zeile = eine Einzelpartie. Kernquelle aller Analysen.
 | `tournament_end_date` | DATE | Turnierended |
 | `expected_score` | NUMERIC | Elo-Erwartungswert |
 | `over_performance` | NUMERIC | result − expected_score |
-| `opponent_match_quality` | TEXT | `ok` \| `wide_gap` \| `unresolved` |
+| `opponent_match_quality` | TEXT | `ok` \| `wide_gap` \| `unresolved` — ⚠️ `wide_gap` vergleicht mit dem *heutigen* `players.std_rating` (0 bei Inaktiven) und ist für alte Perioden kaum aussagekräftig (2020–2023: 36–44 %) |
 
 ---
 

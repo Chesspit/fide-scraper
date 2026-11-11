@@ -11,13 +11,20 @@ Two-stage matching strategy:
    RUS→FID, etc.). Requires the candidate's rating at the time of play to be within
    `--fed-fallback-tolerance` (default 100) of the game's opponent_rating.
 
+3. **Fuzzy (opt-in, --fuzzy)** — rapidfuzz on names, rating-bounded.
+
 Period-accurate rating disambiguation:
-    When multiple candidates share the same normalized name, we compare each
-    candidate's `rating_history.published_rating` at the snapshot period closest
-    to the game's period against the game's `opponent_rating`. This eliminates
-    rating drift and cuts false matches dramatically vs. the old approach that
-    compared against `players.std_rating` (current April-2026 rating). Falls
-    back to `players.std_rating` when rating_history has no entry.
+    Candidates are compared by their `rating_history.published_rating` on the
+    previous list (fallback: list P, then `players.std_rating`).
+
+Periode für Periode (seit 11/2026): je Periode die offenen Partien lesen, zuordnen,
+und mit EINEM UPDATE opponent_fide_id plus die abgeleiteten Spalten schreiben
+(opponent_sex, opponent_match_quality, expected_score/over_performance,
+tournament_type; Regeln wie Migration 007/009, Turniertyp per fn_tournament_type
+aus Migration 026). Commit je Periode → abbrechbar und wiederaufnehmbar.
+
+    python scripts/resolve_opponents.py --since 2020-01 --fuzzy
+    python scripts/resolve_opponents.py --period 2026-06 --fuzzy --dry-run
 
 Name normalization (lowercase, drop commas, collapse whitespace) handles the
 FIDE-TXT convention differences that plague Indian names: calc-HTML writes
@@ -25,15 +32,15 @@ FIDE-TXT convention differences that plague Indian names: calc-HTML writes
 """
 
 import argparse
+import io
 import logging
 import re
 import sys
-from bisect import bisect_left
-from collections import defaultdict
+import time
+from collections import Counter, defaultdict
 from datetime import date
 
 import psycopg2
-import psycopg2.extras
 
 try:
     from rapidfuzz import fuzz as _fuzz
@@ -42,6 +49,9 @@ except ImportError:
 
 
 from core.config import get_database_url
+from core.elo import diff_cap
+from core.periods import (is_valid_fide_period, last_complete_period, parse_period,
+                          previous_period)
 
 logger = logging.getLogger(__name__)
 
@@ -91,128 +101,121 @@ def build_candidate_maps(conn) -> tuple[dict, dict]:
     return by_name_fed, by_name
 
 
-_LARGE_ID_SET_THRESHOLD = 500_000
+def load_period_ratings(conn, period: date) -> dict[int, int]:
+    """published_rating der Kandidaten, wie es zur Zeit der Partien in `period` galt.
 
-
-def build_rating_history_index(conn, fide_ids: set[int]) -> dict[int, tuple[list, list]]:
-    """Load rating_history.published_rating for the given fide_ids.
-
-    Returns `{fide_id: (sorted_periods, ratings_parallel)}`. The two lists are
-    aligned by index and sorted by period ascending, so we can use bisect_left
-    to find the closest snapshot period for any game period in O(log n).
-
-    For very large `fide_ids` sets (e.g. fuzzy mode passes ~1.78M IDs), the
-    `ANY(%s)` filter forces Postgres to deserialize a huge array and build a
-    hash join — that caused the 2026-04-20 CPU spike. Above
-    `_LARGE_ID_SET_THRESHOLD` we full-scan instead and filter in Python.
+    Die Berechnungsseite für Periode P zeigt das Gegner-Rating zur Turnierzeit, also
+    meist das der Vorliste. Geladen werden Vorliste und Liste P (Index aus Migration
+    023); die Vorliste gewinnt, Liste P füllt nur Lücken (z. B. Erstbewertungen).
+    Früher wurde die ganze rating_history (61 Mio Zeilen) in den Speicher geladen.
     """
-    if not fide_ids:
-        return {}
-
-    use_sql_filter = len(fide_ids) <= _LARGE_ID_SET_THRESHOLD
-    logger.info(
-        "  rating_history load: %d target fide_ids → %s",
-        len(fide_ids),
-        "ANY() filter" if use_sql_filter else "full scan + Python filter",
-    )
-
-    by_fid: dict[int, list] = defaultdict(list)
-    with conn.cursor(name="rh_stream") as cur:
-        cur.itersize = 50000
-        if use_sql_filter:
-            cur.execute(
-                """
-                SELECT fide_id, period, published_rating
-                FROM rating_history
-                WHERE published_rating IS NOT NULL
-                  AND fide_id = ANY(%s)
-                """,
-                (list(fide_ids),),
-            )
-            for fide_id, period, rating in cur:
-                by_fid[fide_id].append((period, rating))
-        else:
-            cur.execute(
-                """
-                SELECT fide_id, period, published_rating
-                FROM rating_history
-                WHERE published_rating IS NOT NULL
-                """
-            )
-            for fide_id, period, rating in cur:
-                if fide_id in fide_ids:
-                    by_fid[fide_id].append((period, rating))
-
-    result: dict[int, tuple[list, list]] = {}
-    for fide_id, entries in by_fid.items():
-        entries.sort()
-        periods = [e[0] for e in entries]
-        ratings = [e[1] for e in entries]
-        result[fide_id] = (periods, ratings)
-    return result
+    ratings: dict[int, int] = {}
+    with conn.cursor(name="rh_period") as cur:
+        cur.itersize = 100_000
+        cur.execute(
+            """
+            SELECT fide_id, published_rating
+            FROM rating_history
+            WHERE period IN (%s, %s) AND published_rating > 0
+            ORDER BY (period = %s) DESC
+            """,
+            (period, previous_period(period), period),
+        )
+        for fide_id, rating in cur:
+            ratings[fide_id] = rating
+    return ratings
 
 
-def rating_at_period(
-    rh_index: dict[int, tuple[list, list]],
-    fide_id: int,
-    game_period: date,
-    current_rating: int | None,
-) -> int | None:
-    """Return the candidate's rating at the snapshot period closest to game_period.
+class ParquetRatings:
+    """Ratinglisten aus einem lokalen Parquet (fide_id, period, rating), z. B.
+    frontend/player_history_cache.parquet. Erspart je Periode ~1 Mio Zeilen
+    rating_history-I/O auf dem VPS (dort ~50 s je Periode, 3 GB RAM)."""
 
-    Uses binary search over the sorted snapshot periods for this fide_id. Falls
-    back to the player's current std_rating when no rating_history entry exists.
+    def __init__(self, path: str):
+        import pandas as pd
+        df = pd.read_parquet(path, columns=["fide_id", "period", "rating"])
+        df = df[df["rating"] > 0]
+        df["period"] = df["period"].dt.date
+        self.by_period = {
+            p: (g["fide_id"].to_numpy(), g["rating"].to_numpy())
+            for p, g in df.groupby("period", sort=False)
+        }
+        logger.info("  Parquet-Ratings: %d Perioden (%s … %s)", len(self.by_period),
+                    min(self.by_period), max(self.by_period))
+
+    def load(self, conn, period: date) -> dict[int, int]:
+        prev = previous_period(period)
+        if period not in self.by_period or prev not in self.by_period:
+            return load_period_ratings(conn, period)
+        ratings: dict[int, int] = {}
+        for p in (period, prev):            # Vorliste zuletzt → gewinnt
+            ids, vals = self.by_period[p]
+            ratings.update(zip(ids.tolist(), vals.tolist()))
+        return ratings
+
+
+def make_rating_fn(period_ratings: dict[int, int]):
+    """rating_fn(fide_id, std_rating) → Rating zur Periode, sonst heutiges std_rating.
+
+    Mit period_only=True nur das Rating aus den Listen der Periode (oder None) —
+    für Prüfungen, bei denen das heutige Rating irreführen würde.
     """
-    entry = rh_index.get(fide_id)
-    if not entry:
-        return current_rating
-    periods, ratings = entry
-    if not periods:
-        return current_rating
-
-    idx = bisect_left(periods, game_period)
-    # Compare idx-1 and idx, pick the closer one
-    best = None
-    best_gap = None
-    for probe in (idx - 1, idx):
-        if 0 <= probe < len(periods):
-            gap = abs((periods[probe] - game_period).days)
-            if best_gap is None or gap < best_gap:
-                best = ratings[probe]
-                best_gap = gap
-    return best if best is not None else current_rating
+    def rating_fn(fide_id: int, std_rating: int | None, period_only: bool = False) -> int | None:
+        r = period_ratings.get(fide_id)
+        if r is not None or period_only:
+            return r
+        return std_rating if std_rating else None
+    return rating_fn
 
 
-def pick_closest_period_aware(
-    cands: list[tuple],
-    opp_rating: int | None,
-    game_period: date,
-    rh_index: dict[int, tuple[list, list]],
-    max_diff: int | None = None,
-) -> tuple[int | None, float]:
-    """From candidates [(fide_id, std_rating, ...)], pick the one whose
-    period-accurate rating is closest to `opp_rating`.
+def make_gap(opp_rating: int | None, ro=None, cap: int | None = None):
+    """gap(r) → Abstand zwischen Kandidaten-Rating r und dem Gegner-Rating der Partie.
 
-    For each candidate, looks up the rating_history snapshot nearest to
-    game_period and uses that for the comparison. Falls back to std_rating
-    when no rating_history entry exists.
-
-    Returns (fide_id, diff). If `max_diff` is set and the best diff exceeds
-    it, returns (None, diff).
+    FIDE zeigt das Gegner-Rating nach der 400-Punkte-Regel gekappt (eigenes Rating
+    ± 400). Steht der Wert genau auf der Kappungsgrenze, ist jedes Rating jenseits davon
+    ebenso plausibel (Beispiel: eigenes Rating 2307, angezeigt 1907, echter Gegner 1404).
+    ro: eigenes Rating oder mehrere Kandidaten dafür (Vorliste, Ro der Zusammenfassung —
+    sie weichen ab, wenn mehrere Turniere in der Periode liegen). None, wenn die Partie
+    kein Gegner-Rating hat.
     """
     if opp_rating is None:
+        return None
+    owns = [x for x in (ro if isinstance(ro, (list, tuple)) else [ro]) if x]
+    lower = upper = False
+    if cap:
+        lower = any(abs(opp_rating - (o - cap)) <= 1 for o in owns)  # Gegner war schwächer
+        upper = any(abs(opp_rating - (o + cap)) <= 1 for o in owns)  # Gegner war stärker
+
+    def gap(r: int) -> int:
+        if lower and r < opp_rating:
+            return 0
+        if upper and r > opp_rating:
+            return 0
+        return abs(r - opp_rating)
+    return gap
+
+
+def pick_closest(
+    cands: list[tuple],
+    gap,
+    rating_fn,
+    max_diff: int | None = None,
+) -> tuple[int | None, float]:
+    """Aus Kandidaten [(fide_id, std_rating, ...)] den mit dem kleinsten Abstand
+    (gap, siehe make_gap) zum Gegner-Rating der Partie wählen.
+    (fide_id, diff); bei diff > max_diff (None, diff)."""
+    if gap is None:
         return None, float("inf")
 
     best_id = None
     best_diff = float("inf")
     for cand in cands:
-        fide_id, std_rating = cand[0], cand[1]
-        rating_then = rating_at_period(rh_index, fide_id, game_period, std_rating)
+        rating_then = rating_fn(cand[0], cand[1])
         if rating_then is None:
             continue
-        diff = abs(rating_then - opp_rating)
+        diff = gap(rating_then)
         if diff < best_diff:
-            best_id = fide_id
+            best_id = cand[0]
             best_diff = diff
     if best_id is not None and max_diff is not None and best_diff > max_diff:
         return None, best_diff
@@ -235,13 +238,13 @@ def build_token_index(by_name: dict, min_token_len: int = 3) -> dict[str, set]:
 
 def fuzzy_match(
     opp_norm: str,
-    opp_rating: int | None,
-    game_period: date,
+    gap,
+    rating_fn,
     token_index: dict,
     by_name: dict,
-    rh_index: dict,
     score_threshold: int,
     rating_tolerance: int,
+    surname: str = "",
 ) -> tuple[int | None, int, float, str | None]:
     """Stage-3 fuzzy match. Returns (fide_id, score, rating_diff, matched_name).
 
@@ -258,7 +261,7 @@ def fuzzy_match(
     """
     if _fuzz is None:
         return None, 0, -1.0, None
-    if opp_rating is None:
+    if gap is None:
         return None, 0, -1.0, None
 
     tokens = [t for t in opp_norm.split() if len(t) >= 3]
@@ -294,16 +297,23 @@ def fuzzy_match(
     best_diff: float = float("inf")
     best_name = None
 
+    surname_tokens = [t for t in surname.split() if len(t) >= 3]
     for name in cand_names:
+        # Der Kandidat muss mindestens ein Nachnamens-Token (oder dessen Anfang)
+        # enthalten: verhindert „Tello Chavez, Isaac Valent" → „Valent, Ivan".
+        if surname_tokens and not any(
+                ct.startswith(st) or st.startswith(ct)
+                for st in surname_tokens for ct in name.split() if len(ct) >= 3):
+            continue
         score = _fuzz.WRatio(opp_norm, name)
         if score < score_threshold:
             continue
         for cand in by_name[name]:
-            fide_id, std_rating = cand[0], cand[1]
-            rating_then = rating_at_period(rh_index, fide_id, game_period, std_rating)
+            fide_id = cand[0]
+            rating_then = rating_fn(fide_id, cand[1])
             if rating_then is None:
                 continue
-            diff = abs(rating_then - opp_rating)
+            diff = gap(rating_then)
             if diff > rating_tolerance:
                 continue
             # Prefer higher score; tie-break on lower rating diff
@@ -316,200 +326,295 @@ def fuzzy_match(
     return best_id, best_score, best_diff if best_id is not None else -1.0, best_name
 
 
-def resolve_opponents(
-    conn,
-    period: str | None = None,
-    dry_run: bool = False,
-    fed_fallback_tolerance: int = 100,
-    exact_tolerance: int | None = None,
-    fuzzy: bool = False,
-    fuzzy_threshold: int = 88,
-    fuzzy_rating_tolerance: int = 100,
-):
-    where_clause = "WHERE gr.opponent_fide_id IS NULL"
-    params: list = []
-    if period:
-        where_clause += " AND gr.period = %s"
-        params.append(period)
+class Matcher:
+    """Spielerliste einmal laden, dann Partien Periode für Periode zuordnen."""
 
-    with conn.cursor() as cur:
-        cur.execute(
-            f"SELECT COUNT(*) FROM game_results gr {where_clause}", params
-        )
-        total_unresolved = cur.fetchone()[0]
+    def __init__(self, conn, fuzzy: bool, fed_fallback_tolerance: int, exact_tolerance: int | None,
+                 fuzzy_threshold: int, fuzzy_rating_tolerance: int):
+        self.fuzzy = fuzzy
+        self.fed_fallback_tolerance = fed_fallback_tolerance
+        self.exact_tolerance = exact_tolerance
+        self.fuzzy_threshold = fuzzy_threshold
+        self.fuzzy_rating_tolerance = fuzzy_rating_tolerance
 
-    logger.info("Unresolved game_results: %d", total_unresolved)
-    if total_unresolved == 0:
-        return
+        logger.info("Loading players table and building normalized candidate maps...")
+        self.by_name_fed, self.by_name = build_candidate_maps(conn)
+        logger.info("  %d (name, fed) buckets, %d name-only buckets",
+                    len(self.by_name_fed), len(self.by_name))
+        self.token_index: dict = {}
+        if fuzzy:
+            if _fuzz is None:
+                logger.error("--fuzzy requested but rapidfuzz is not installed")
+                sys.exit(1)
+            logger.info("Building token-inverted index for fuzzy stage...")
+            self.token_index = build_token_index(self.by_name)
+            logger.info("  %d indexed tokens (len>=3)", len(self.token_index))
 
-    logger.info("Loading players table and building normalized candidate maps...")
-    by_name_fed, by_name = build_candidate_maps(conn)
-    logger.info(
-        "  %d (name, fed) buckets, %d name-only buckets",
-        len(by_name_fed),
-        len(by_name),
-    )
+    def match(self, opp_name, opp_fed, opp_rating, rating_fn,
+              ro=None, cap: int | None = None) -> tuple[int | None, str]:
+        """→ (fide_id, Stufe) mit Stufe exact | fallback | fuzzy | ambiguous | none.
 
-    # Collect fide_ids we might need period-accurate ratings for:
-    # every candidate in any bucket a normalization could hit.
-    relevant_fids: set[int] = set()
-    for cands in by_name_fed.values():
-        if len(cands) > 1:
-            relevant_fids.update(c[0] for c in cands)
-    for cands in by_name.values():
-        relevant_fids.update(c[0] for c in cands)
-
-    # For fuzzy stage we may touch ANY fide_id in by_name, so expand the set.
-    if fuzzy:
-        for cands in by_name.values():
-            relevant_fids.update(c[0] for c in cands)
-
-    logger.info("Loading rating_history for %d candidate fide_ids...", len(relevant_fids))
-    rh_index = build_rating_history_index(conn, relevant_fids)
-    logger.info("  %d fide_ids have rating_history entries", len(rh_index))
-
-    token_index: dict = {}
-    if fuzzy:
-        if _fuzz is None:
-            logger.error("--fuzzy requested but rapidfuzz is not installed")
-            sys.exit(1)
-        logger.info("Building token-inverted index for fuzzy stage...")
-        token_index = build_token_index(by_name)
-        logger.info("  %d indexed tokens (len>=3)", len(token_index))
-
-    logger.info("Fetching unresolved game_results...")
-    with conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT gr.id, gr.opponent_name, gr.opponent_federation, gr.opponent_rating, gr.period
-            FROM game_results gr
-            {where_clause}
-            """,
-            params,
-        )
-        unresolved = cur.fetchall()
-
-    resolved_exact = 0
-    resolved_fallback = 0
-    resolved_fuzzy = 0
-    unresolvable = 0
-    not_found = 0
-    updates: list[tuple[int, int]] = []
-
-    wide_match_samples: list[tuple] = []
-    fallback_samples: list[tuple] = []
-    fuzzy_samples: list[tuple] = []
-    no_match_samples: list[tuple] = []
-
-    for row_id, opp_name, opp_fed, opp_rating, game_period in unresolved:
+        ro = eigenes Rating des gescrapten Spielers (Wert oder Tupel aus Vorliste und
+        Ro), cap = 400-Punkte-Regel der Partie; beide nur für die Kappung (make_gap).
+        """
         norm = normalize_name(opp_name)
+        gap = make_gap(opp_rating, ro, cap)
 
-        # Stage 1: exact (name + federation)
-        cands = by_name_fed.get((norm, opp_fed), [])
+        # Stufe 1: Name + Föderation
+        cands = self.by_name_fed.get((norm, opp_fed), [])
         if cands:
             if len(cands) == 1:
-                updates.append((cands[0][0], row_id))
-                resolved_exact += 1
-                continue
+                # Einziger Namensträger der Föderation: nur übernehmen, wenn das Rating
+                # passt oder sich nicht prüfen lässt. Sonst ist es ein Namensvetter und der
+                # Gesuchte hat die Föderation gewechselt (Fedoseev RUS→SLO) → Stufe 2.
+                fid, std = cands[0][0], cands[0][1]
+                r = rating_fn(fid, std)
+                if gap is None or r is None or gap(r) <= self.exact_tolerance:
+                    return fid, "exact"
+            else:
+                best_id, _ = pick_closest(cands, gap, rating_fn,
+                                          max_diff=self.exact_tolerance)
+                if best_id is not None:
+                    return best_id, "exact"
 
-            best_id, best_diff = pick_closest_period_aware(
-                cands, opp_rating, game_period, rh_index, max_diff=exact_tolerance
-            )
-            if best_id is not None:
-                updates.append((best_id, row_id))
-                resolved_exact += 1
-                if best_diff > 200 and len(wide_match_samples) < 10:
-                    wide_match_samples.append(
-                        (opp_name, opp_fed, opp_rating, len(cands), best_diff)
-                    )
-                continue
-            unresolvable += 1
-            continue
-
-        # Stage 2: fed-fallback (name only, rating-bounded, period-aware)
-        cands_any_fed = by_name.get(norm, [])
+        # Stufe 2: nur Name (Föderationswechsel), Rating-begrenzt
+        cands_any_fed = self.by_name.get(norm, [])
         if cands_any_fed:
-            best_id, best_diff = pick_closest_period_aware(
-                cands_any_fed, opp_rating, game_period, rh_index,
-                max_diff=fed_fallback_tolerance,
-            )
+            best_id, _ = pick_closest(cands_any_fed, gap, rating_fn,
+                                      max_diff=self.fed_fallback_tolerance)
             if best_id is not None:
-                updates.append((best_id, row_id))
-                resolved_fallback += 1
-                if len(fallback_samples) < 15:
-                    matched_fed = next(
-                        (fed for fid, _, fed in cands_any_fed if fid == best_id), None
-                    )
-                    fallback_samples.append(
-                        (opp_name, opp_fed, opp_rating, matched_fed, best_diff)
-                    )
-                continue
+                return best_id, "fallback"
 
-        # Stage 3: fuzzy (opt-in) — handles field-order swap, extra surname
-        # tokens, transliteration. Guarded tightly by period-accurate rating.
-        if fuzzy:
-            fz_id, fz_score, fz_diff, fz_name = fuzzy_match(
-                norm, opp_rating, game_period, token_index, by_name, rh_index,
-                score_threshold=fuzzy_threshold,
-                rating_tolerance=fuzzy_rating_tolerance,
+        # Stufe 3: unscharf (Feldtausch, Zusatznamen, Transliteration), Rating-begrenzt.
+        # Nicht, wenn es exakte Namensträger gab, die nur am Rating scheiterten: dann
+        # fände die Unschärfe bloß einen fremden Namen mit passendem Rating (Nikhil, Gopal).
+        if self.fuzzy and not cands and not cands_any_fed:
+            fz_id, _, _, _ = fuzzy_match(
+                norm, gap, rating_fn, self.token_index, self.by_name,
+                surname=normalize_name((opp_name or "").split(",")[0]),
+                score_threshold=self.fuzzy_threshold,
+                rating_tolerance=self.fuzzy_rating_tolerance,
             )
             if fz_id is not None:
-                updates.append((fz_id, row_id))
-                resolved_fuzzy += 1
-                if len(fuzzy_samples) < 20:
-                    fuzzy_samples.append(
-                        (opp_name, opp_fed, opp_rating, fz_name, fz_score, fz_diff)
-                    )
-                continue
+                return fz_id, "fuzzy"
 
-        not_found += 1
-        if len(no_match_samples) < 15:
-            no_match_samples.append((opp_name, opp_fed, opp_rating))
+        return None, ("ambiguous" if cands or cands_any_fed else "none")
 
-    if not dry_run and updates:
-        logger.info("Applying %d updates...", len(updates))
-        with conn:
-            with conn.cursor() as cur:
-                psycopg2.extras.execute_batch(
-                    cur,
-                    "UPDATE game_results SET opponent_fide_id = %s WHERE id = %s",
-                    updates,
-                    page_size=1000,
-                )
 
-    action = "Would update" if dry_run else "Updated"
-    total_resolved = resolved_exact + resolved_fallback + resolved_fuzzy
-    pct = total_resolved / total_unresolved * 100 if total_unresolved else 0
-    print(f"\nResults:")
-    print(f"  Total unresolved:      {total_unresolved}")
-    print(f"  {action} (exact):      {resolved_exact}")
-    print(f"  {action} (fed-fallback): {resolved_fallback} (tolerance ±{fed_fallback_tolerance})")
-    if fuzzy:
-        print(f"  {action} (fuzzy):      {resolved_fuzzy} (score≥{fuzzy_threshold}, ±{fuzzy_rating_tolerance})")
-    print(f"  {action} (total):      {total_resolved} ({pct:.1f}%)")
-    print(f"  Unresolvable:          {unresolvable}")
-    print(f"  Not found:             {not_found}")
+# Ein UPDATE je Periode setzt alle abgeleiteten Spalten auf einmal (eine neue
+# Zeilenversion statt fünf). Regeln wie Migration 007/009:
+#   opponent_sex           players.sex, sonst 'F' bei Frauentitel
+#   opponent_match_quality ok / wide_gap (|Gegner-Rating − players.std_rating| > 200) / unresolved
+#   expected_score         logistische Erwartung gegen Ro (rating_history.std_rating)
+#   tournament_type        fn_tournament_type (Migration 026)
+# Nur Zeilen mit neuer Zuordnung oder fehlender Anreicherung werden angefasst,
+# ein zweiter Lauf ist daher billig.
+_ENRICH_SQL = """
+UPDATE game_results gr
+SET opponent_fide_id       = n.new_fid,
+    opponent_sex           = COALESCE(n.sex, CASE WHEN gr.opponent_women_title IS NOT NULL
+                                                  THEN 'F' END),
+    opponent_match_quality = CASE
+        WHEN n.new_fid IS NULL THEN 'unresolved'
+        WHEN ABS(gr.opponent_rating - n.opp_std_rating) > 200 THEN 'wide_gap'
+        ELSE 'ok' END,
+    expected_score         = ROUND(1.0 / (1.0 + POWER(10.0,
+                                 (gr.opponent_rating - n.ro) / 400.0)), 4),
+    over_performance       = ROUND(CAST(gr.result AS NUMERIC) - 1.0 / (1.0 + POWER(10.0,
+                                 (gr.opponent_rating - n.ro) / 400.0)), 4),
+    tournament_type        = fn_tournament_type(gr.tournament_name)
+FROM (
+    SELECT g.id,
+           COALESCE(g.opponent_fide_id, m.opponent_fide_id) AS new_fid,
+           p.sex, p.std_rating AS opp_std_rating, rh.std_rating AS ro
+    FROM game_results g
+    LEFT JOIN _resolved m ON m.id = g.id
+    LEFT JOIN players p ON p.fide_id = COALESCE(g.opponent_fide_id, m.opponent_fide_id)
+    LEFT JOIN rating_history rh ON rh.fide_id = g.fide_id AND rh.period = g.period
+    WHERE g.period = %(period)s
+      AND g.id BETWEEN %(lo)s AND %(hi)s
+      AND (m.id IS NOT NULL
+           OR g.opponent_match_quality IS NULL
+           OR g.tournament_type IS NULL)
+) n
+WHERE gr.id = n.id
+  AND gr.period = %(period)s
+"""
 
-    if wide_match_samples:
-        print("\n  Sample wide-gap exact matches (rating diff > 200, review if suspicious):")
-        for name, fed, rating, n, diff in wide_match_samples:
-            print(f"    {name} ({fed}, {rating}) — {n} candidates, best diff={diff}")
 
-    if fallback_samples:
-        print("\n  Sample fed-fallback matches (candidate federation differs):")
-        for name, fed, rating, matched_fed, diff in fallback_samples:
-            print(f"    {name} ({fed}→{matched_fed}, {rating}) — diff={diff}")
+def periods_to_process(period: str | None, since: str | None, until: str | None) -> list[date]:
+    if period:
+        return [parse_period(period)]
+    start = parse_period(since) if since else date(2008, 4, 1)
+    end = parse_period(until) if until else last_complete_period()
+    out, y, m = [], start.year, start.month
+    while date(y, m, 1) <= end:
+        if is_valid_fide_period(date(y, m, 1)):
+            out.append(date(y, m, 1))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
 
-    if fuzzy_samples:
-        print("\n  Sample fuzzy matches (opp_name → matched_name, score, rating diff):")
-        for name, fed, rating, matched, score, diff in fuzzy_samples:
-            print(f"    {name} ({fed}, {rating}) → {matched} — score={score:.0f}, diff={diff:.0f}")
 
-    if no_match_samples:
-        print("\n  Sample no-match:")
-        for name, fed, rating in no_match_samples:
-            print(f"    {name} ({fed}, {rating})")
+def pending_periods(conn) -> list[date]:
+    """Perioden mit noch nicht angereicherten Partien (Teilindex aus Migration 027)."""
+    with conn.cursor() as cur:
+        # Loose index scan: je Periode ein Indexzugriff statt DISTINCT über alle Zeilen.
+        cur.execute(
+            """
+            WITH RECURSIVE p AS (
+                (SELECT period FROM game_results
+                 WHERE opponent_match_quality IS NULL ORDER BY period LIMIT 1)
+                UNION ALL
+                SELECT (SELECT g.period FROM game_results g
+                        WHERE g.opponent_match_quality IS NULL AND g.period > p.period
+                        ORDER BY g.period LIMIT 1)
+                FROM p WHERE p.period IS NOT NULL
+            )
+            SELECT period FROM p WHERE period IS NOT NULL
+            """
+        )
+        out = [r[0] for r in cur.fetchall()]
+    conn.rollback()
+    return out
 
+
+def resolve_period(conn, matcher: Matcher, period: date, dry_run: bool,
+                   ratings_source=None, pending_only: bool = False) -> Counter:
+    """Eine Periode: offene Gegner zuordnen und alle Anreicherungsspalten schreiben.
+
+    pending_only: nur Partien ohne opponent_match_quality neu zuordnen (neu gescrapte);
+    bereits als unresolved markierte Partien bleiben unangetastet."""
+    stats: Counter = Counter()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT g.id, g.opponent_name, g.opponent_federation, g.opponent_rating,
+                   rh.std_rating, pv.published_rating, g.tournament_start_date
+            FROM game_results g
+            LEFT JOIN rating_history rh ON rh.fide_id = g.fide_id AND rh.period = g.period
+            LEFT JOIN rating_history pv ON pv.fide_id = g.fide_id AND pv.period = %s
+            WHERE g.period = %s AND g.opponent_fide_id IS NULL
+            """ + ("  AND g.opponent_match_quality IS NULL" if pending_only else ""),
+            (previous_period(period), period),
+        )
+        rows = cur.fetchall()
+    # Lesetransaktion sofort beenden: das Zuordnen dauert bei 250k Partien Minuten,
+    # und eine offene Transaktion würde idle_in_transaction_session_timeout auslösen.
+    conn.rollback()
+    stats["unresolved_before"] = len(rows)
+
+    updates: list[tuple[int, int]] = []
+    if rows:
+        loader = ratings_source.load if ratings_source else load_period_ratings
+        rating_fn = make_rating_fn(loader(conn, period))
+        conn.rollback()
+        for row_id, opp_name, opp_fed, opp_rating, ro, own_prev, t_start in rows:
+            cap = diff_cap(t_start or period)
+            fid, stage = matcher.match(opp_name, opp_fed, opp_rating, rating_fn,
+                                       (own_prev, ro), cap)
+            stats[stage] += 1
+            if fid is not None:
+                updates.append((row_id, fid))
+
+    if dry_run:
+        conn.rollback()
+        return stats
+
+    # In Häppchen schreiben (je ~50k Zeilen, eigener Commit): kürzere Sperren für den
+    # Worker, und ein Tunnelabriss kostet höchstens ein Häppchen. Bereits geschriebene
+    # Häppchen fallen beim Wiederholen aus der Auswahl (opponent_fide_id bzw.
+    # opponent_match_quality gesetzt), das ist also idempotent.
+    # Häppchen nach id-Bereichen (Grenzen aus den gelesenen ids): jede Zeile der
+    # Periode wird nur einmal gelesen. Vorher filterte fide_id % k nach einem
+    # Bitmap-Scan über die ganze Periode — bei k Häppchen k-faches Lesen.
+    ids = sorted(r[0] for r in rows)
+    bounds = [ids[j] for j in range(WRITE_CHUNK_ROWS, len(ids), WRITE_CHUNK_ROWS)]
+    # Im pending-Modus sind die offenen Partien neu und haben hohe ids: ab der
+    # kleinsten offenen id starten, statt die ganze Periode zu durchsuchen.
+    lows = [ids[0] if pending_only and ids else 0] + bounds
+    highs = [b - 1 for b in bounds] + [2**63 - 1]
+    with conn.cursor() as cur:
+        cur.execute("CREATE TEMP TABLE IF NOT EXISTS _resolved "
+                    "(id bigint PRIMARY KEY, opponent_fide_id integer)")
+        cur.execute("TRUNCATE _resolved")
+        if updates:
+            buf = io.StringIO("".join(f"{i}\t{f}\n" for i, f in updates))
+            cur.copy_expert("COPY _resolved (id, opponent_fide_id) FROM STDIN", buf)
+            cur.execute("ANALYZE _resolved")
+        conn.commit()
+        for lo, hi in zip(lows, highs):
+            cur.execute(_ENRICH_SQL, {"period": period, "lo": lo, "hi": hi})
+            stats["rows_written"] += cur.rowcount
+            conn.commit()
+    return stats
+
+
+WRITE_CHUNK_ROWS = 50_000
+
+
+def connect():
+    """Verbindung mit Sicherheitsnetzen: statement_timeout gegen Runaway-Queries,
+    idle_in_transaction_session_timeout, damit ein Tunnelabriss zwischen UPDATE und
+    COMMIT keine Sitzung mit Zeilensperren zurücklässt (Vorfall 10.11.2026)."""
+    return psycopg2.connect(
+        get_database_url("ingest"),
+        options="-c statement_timeout=900000 -c idle_in_transaction_session_timeout=120000"
+                " -c jit=off",
+        keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=6,
+    )
+
+
+MAX_RETRIES = 5
+
+
+def resolve_opponents(conn, periods: list[date], dry_run: bool, pause: float,
+                      ratings_parquet: str | None = None, reconnect=connect,
+                      pending_only: bool = False, **matcher_kw):
+    matcher = Matcher(conn, **matcher_kw)
+    ratings_source = ParquetRatings(ratings_parquet) if ratings_parquet else None
+    total: Counter = Counter()
+    for i, period in enumerate(periods, 1):
+        t0 = time.monotonic()
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                st = resolve_period(conn, matcher, period, dry_run, ratings_source,
+                                    pending_only)
+                break
+            except (psycopg2.OperationalError, psycopg2.InterfaceError) as exc:
+                if attempt == MAX_RETRIES:
+                    raise
+                logger.warning("%s: Verbindung verloren (%s) — Versuch %d/%d in 60 s",
+                               period, str(exc).strip().splitlines()[0], attempt, MAX_RETRIES)
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                time.sleep(60)
+                conn = reconnect()
+        total.update(st)
+        matched = st["exact"] + st["fallback"] + st["fuzzy"]
+        before = st["unresolved_before"]
+        logger.info(
+            "[%d/%d] %s: %d offen, %d zugeordnet (%.1f %%; exact %d, fallback %d, fuzzy %d), "
+            "%d mehrdeutig, %d ohne Treffer, %d Zeilen geschrieben, %.0f s",
+            i, len(periods), period, before, matched,
+            100 * matched / before if before else 0.0,
+            st["exact"], st["fallback"], st["fuzzy"], st["ambiguous"], st["none"],
+            st["rows_written"], time.monotonic() - t0,
+        )
+        if pause and not dry_run and i < len(periods):
+            time.sleep(pause)
+
+    matched = total["exact"] + total["fallback"] + total["fuzzy"]
+    before = total["unresolved_before"]
+    print(f"\n{'Dry-run' if dry_run else 'Fertig'}: {len(periods)} Perioden")
+    print(f"  offen vorher:   {before}")
+    print(f"  zugeordnet:     {matched} ({100 * matched / before if before else 0:.1f} %)"
+          f"  exact {total['exact']}, fallback {total['fallback']}, fuzzy {total['fuzzy']}")
+    print(f"  mehrdeutig:     {total['ambiguous']}")
+    print(f"  ohne Treffer:   {total['none']}")
+    if not dry_run:
+        print(f"  Zeilen geschrieben (inkl. Anreicherung): {total['rows_written']}")
 
 def main():
     logging.basicConfig(
@@ -520,7 +625,19 @@ def main():
     parser = argparse.ArgumentParser(
         description="Resolve opponent FIDE IDs via name+federation lookup"
     )
-    parser.add_argument("--period", type=str, help="Only resolve for this period (YYYY-MM-01)")
+    parser.add_argument("--period", type=str, help="Nur diese Periode (YYYY-MM)")
+    parser.add_argument("--since", type=str, help="Ab Periode (YYYY-MM, Default 2008-04)")
+    parser.add_argument("--until", type=str, help="Bis Periode (YYYY-MM, Default Vormonat)")
+    parser.add_argument("--pending", action="store_true",
+                        help="Nur Perioden mit noch nicht angereicherten Partien "
+                             "(opponent_match_quality IS NULL), und dort nur diese Partien. "
+                             "Für den täglichen Lauf in monthly_update.sh")
+    parser.add_argument("--ratings-parquet", type=str,
+                        help="Ratinglisten lokal statt aus rating_history lesen "
+                             "(z. B. frontend/player_history_cache.parquet); fehlende "
+                             "Perioden weiter aus der DB")
+    parser.add_argument("--pause", type=float, default=2.0,
+                        help="Sekunden Pause zwischen Perioden (Autovacuum/Worker Luft lassen)")
     parser.add_argument("--dry-run", action="store_true", help="Count only, don't write")
     parser.add_argument(
         "--fed-fallback-tolerance",
@@ -532,9 +649,9 @@ def main():
     parser.add_argument(
         "--exact-tolerance",
         type=int,
-        default=300,
-        help="Max |rating diff| for exact (name+fed) matches with multiple candidates. "
-             "Default 300 (period-accurate, guards against zero-rating namesake collisions).",
+        default=200,
+        help="Max |rating diff| for exact (name+fed) matches, period-accurate. "
+             "Default 200; a single candidate is only checked when a rating is known.",
     )
     parser.add_argument(
         "--fuzzy",
@@ -558,18 +675,26 @@ def main():
     )
     args = parser.parse_args()
 
-    conn = psycopg2.connect(
-        get_database_url("ingest"),
-        options="-c statement_timeout=900000",  # 15 min, see scraper/db.py
-    )
+    if args.pending and (args.period or args.since or args.until):
+        parser.error("--pending schließt --period/--since/--until aus")
+
+    conn = connect()
     try:
+        periods = (pending_periods(conn) if args.pending
+                   else periods_to_process(args.period, args.since, args.until))
+        if not periods:
+            print("Keine Perioden mit offenen Partien.")
+            return
         resolve_opponents(
             conn,
-            period=args.period,
+            periods,
+            pending_only=args.pending,
             dry_run=args.dry_run,
+            pause=args.pause,
+            ratings_parquet=args.ratings_parquet,
+            fuzzy=args.fuzzy,
             fed_fallback_tolerance=args.fed_fallback_tolerance,
             exact_tolerance=args.exact_tolerance,
-            fuzzy=args.fuzzy,
             fuzzy_threshold=args.fuzzy_threshold,
             fuzzy_rating_tolerance=args.fuzzy_rating_tolerance,
         )

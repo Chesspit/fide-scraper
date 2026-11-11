@@ -298,6 +298,28 @@ for PERIOD in $PERIODS; do
     esac
 done
 
+# --- Täglich: neu gescrapte Partien anreichern -------------------------------
+# Gegner-FIDE-ID, Geschlecht, Turniertyp, Erwartungswert (scripts/resolve_opponents.py
+# --pending). Läuft jeden Tag, unabhängig vom Import: die VPS-Threads scrapen
+# laufend nach. Nur Partien ohne opponent_match_quality (Teilindex, Migration 027);
+# ohne offene Partien ein No-Op. Fehler brechen den Monatslauf nicht ab.
+# Abschalten: FIDE_RESOLVE_PENDING=0.
+if [ "${FIDE_RESOLVE_PENDING:-1}" = "1" ]; then
+    RESOLVE_DIR="$HOME/backups/fide-scraper/resolve"
+    mkdir -p "$RESOLVE_DIR"
+    RESOLVE_ARGS=(--pending --fuzzy --pause 1)
+    RATINGS_PARQUET="$SCRIPT_DIR/frontend/player_history_cache.parquet"
+    [ -f "$RATINGS_PARQUET" ] && RESOLVE_ARGS+=(--ratings-parquet "$RATINGS_PARQUET")
+    echo ""
+    echo "$(date): === Anreicherung neuer Partien (resolve_opponents --pending) ==="
+    if DATABASE_URL="$DB_URL" "$PY" "$SCRIPT_DIR/scripts/resolve_opponents.py" \
+        "${RESOLVE_ARGS[@]}" >>"$RESOLVE_DIR/pending.log" 2>&1; then
+        echo "$(date): $(tail -n 8 "$RESOLVE_DIR/pending.log" | grep -E 'Fertig|Keine Perioden|zugeordnet' | tr '\n' ' ')"
+    else
+        echo "$(date): WARNUNG: Anreicherung fehlgeschlagen — siehe $RESOLVE_DIR/pending.log"
+    fi
+fi
+
 # --- Schritte 3+4: nur wenn wirklich etwas Neues dazugekommen ist -------------
 if [ "$ANY_IMPORTED" = "0" ]; then
     echo ""

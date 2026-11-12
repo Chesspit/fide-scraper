@@ -88,7 +88,7 @@ Eine Zeile = eine Einzelpartie. Kernquelle aller Analysen.
 | `tournament_end_date` | DATE | Turnierended |
 | `expected_score` | NUMERIC | Elo-Erwartungswert |
 | `over_performance` | NUMERIC | result − expected_score |
-| `opponent_match_quality` | TEXT | `ok` \| `wide_gap` \| `unresolved` — ⚠️ `wide_gap` vergleicht mit dem *heutigen* `players.std_rating` (0 bei Inaktiven) und ist für alte Perioden kaum aussagekräftig (2020–2023: 36–44 %) |
+| `opponent_match_quality` | TEXT | `ok` \| `wide_gap` \| `unresolved` — `wide_gap`: Gegner-Rating der Partie weicht > 200 vom Listenrating des zugeordneten Gegners zur Partie ab (Vorliste, sonst Liste der Periode; Kappungsfälle ±400 zählen als `ok`), `fn_match_quality` aus Migration 028. Bis 11/2026 Vergleich mit dem *heutigen* `players.std_rating` (2020–2023: 36–44 % zu Unrecht geflaggt); nach der Umstellung je Periode nur noch einige Dutzend Partien. Neu bewerten: `resolve_opponents.py --requalify` |
 
 ---
 

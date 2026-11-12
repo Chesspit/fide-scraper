@@ -404,7 +404,8 @@ class Matcher:
 # Ein UPDATE je Periode setzt alle abgeleiteten Spalten auf einmal (eine neue
 # Zeilenversion statt fünf). Regeln wie Migration 007/009:
 #   opponent_sex           players.sex, sonst 'F' bei Frauentitel
-#   opponent_match_quality ok / wide_gap (|Gegner-Rating − players.std_rating| > 200) / unresolved
+#   opponent_match_quality fn_match_quality (Migration 028): Gegner-Rating der Partie gegen
+#                          das Listenrating des Gegners zur Partie (Vorliste, sonst Liste P)
 #   expected_score         logistische Erwartung gegen Ro (rating_history.std_rating)
 #   tournament_type        fn_tournament_type (Migration 026)
 # Nur Zeilen mit neuer Zuordnung oder fehlender Anreicherung werden angefasst,
@@ -414,10 +415,8 @@ UPDATE game_results gr
 SET opponent_fide_id       = n.new_fid,
     opponent_sex           = COALESCE(n.sex, CASE WHEN gr.opponent_women_title IS NOT NULL
                                                   THEN 'F' END),
-    opponent_match_quality = CASE
-        WHEN n.new_fid IS NULL THEN 'unresolved'
-        WHEN ABS(gr.opponent_rating - n.opp_std_rating) > 200 THEN 'wide_gap'
-        ELSE 'ok' END,
+    opponent_match_quality = fn_match_quality(n.new_fid, gr.opponent_rating,
+                                              n.opp_period_rating, n.ro, n.own_prev),
     expected_score         = ROUND(1.0 / (1.0 + POWER(10.0,
                                  (gr.opponent_rating - n.ro) / 400.0)), 4),
     over_performance       = ROUND(CAST(gr.result AS NUMERIC) - 1.0 / (1.0 + POWER(10.0,
@@ -426,11 +425,15 @@ SET opponent_fide_id       = n.new_fid,
 FROM (
     SELECT g.id,
            COALESCE(g.opponent_fide_id, m.opponent_fide_id) AS new_fid,
-           p.sex, p.std_rating AS opp_std_rating, rh.std_rating AS ro
+           p.sex, rh.std_rating AS ro, own.published_rating AS own_prev,
+           COALESCE(NULLIF(opv.published_rating, 0), opc.published_rating) AS opp_period_rating
     FROM game_results g
     LEFT JOIN _resolved m ON m.id = g.id
     LEFT JOIN players p ON p.fide_id = COALESCE(g.opponent_fide_id, m.opponent_fide_id)
     LEFT JOIN rating_history rh ON rh.fide_id = g.fide_id AND rh.period = g.period
+    LEFT JOIN rating_history own ON own.fide_id = g.fide_id AND own.period = %(prev)s
+    LEFT JOIN rating_history opv ON opv.fide_id = p.fide_id AND opv.period = %(prev)s
+    LEFT JOIN rating_history opc ON opc.fide_id = p.fide_id AND opc.period = %(period)s
     WHERE g.period = %(period)s
       AND g.id BETWEEN %(lo)s AND %(hi)s
       AND (m.id IS NOT NULL
@@ -440,6 +443,50 @@ FROM (
 WHERE gr.id = n.id
   AND gr.period = %(period)s
 """
+
+
+# Nur opponent_match_quality neu bewerten (z. B. nach Regeländerung, Migration 028).
+# Schreibt nur Zeilen, deren Wert sich ändert — ein zweiter Lauf schreibt nichts.
+_REQUALIFY_SQL = """
+UPDATE game_results gr
+SET opponent_match_quality = n.q
+FROM (
+    SELECT g.id,
+           fn_match_quality(g.opponent_fide_id, g.opponent_rating,
+                            COALESCE(NULLIF(opv.published_rating, 0), opc.published_rating),
+                            rh.std_rating, own.published_rating) AS q
+    FROM game_results g
+    LEFT JOIN rating_history rh  ON rh.fide_id = g.fide_id AND rh.period = g.period
+    LEFT JOIN rating_history own ON own.fide_id = g.fide_id AND own.period = %(prev)s
+    LEFT JOIN rating_history opv ON opv.fide_id = g.opponent_fide_id AND opv.period = %(prev)s
+    LEFT JOIN rating_history opc ON opc.fide_id = g.opponent_fide_id AND opc.period = %(period)s
+    WHERE g.period = %(period)s
+      AND g.opponent_fide_id IS NOT NULL
+) n
+WHERE gr.id = n.id
+  AND gr.period = %(period)s
+  AND gr.opponent_match_quality IS DISTINCT FROM n.q
+"""
+
+
+def requalify(conn, periods: list[date], dry_run: bool, pause: float) -> None:
+    """opponent_match_quality für zugeordnete Partien nach fn_match_quality neu setzen."""
+    total = 0
+    for i, period in enumerate(periods, 1):
+        t0 = time.monotonic()
+        with conn.cursor() as cur:
+            cur.execute(_REQUALIFY_SQL, {"period": period, "prev": previous_period(period)})
+            n = cur.rowcount
+        if dry_run:
+            conn.rollback()
+        else:
+            conn.commit()
+        total += n
+        logger.info("[%d/%d] %s: %d Zeilen %s, %.0f s", i, len(periods), period, n,
+                    "würden geändert" if dry_run else "geändert", time.monotonic() - t0)
+        if pause and not dry_run and i < len(periods):
+            time.sleep(pause)
+    print(f"\n{'Dry-run' if dry_run else 'Fertig'}: {len(periods)} Perioden, {total} Zeilen")
 
 
 def periods_to_process(period: str | None, since: str | None, until: str | None) -> list[date]:
@@ -543,7 +590,8 @@ def resolve_period(conn, matcher: Matcher, period: date, dry_run: bool,
             cur.execute("ANALYZE _resolved")
         conn.commit()
         for lo, hi in zip(lows, highs):
-            cur.execute(_ENRICH_SQL, {"period": period, "lo": lo, "hi": hi})
+            cur.execute(_ENRICH_SQL, {"period": period, "prev": previous_period(period),
+                                      "lo": lo, "hi": hi})
             stats["rows_written"] += cur.rowcount
             conn.commit()
     return stats
@@ -632,6 +680,9 @@ def main():
                         help="Nur Perioden mit noch nicht angereicherten Partien "
                              "(opponent_match_quality IS NULL), und dort nur diese Partien. "
                              "Für den täglichen Lauf in monthly_update.sh")
+    parser.add_argument("--requalify", action="store_true",
+                        help="Keine Zuordnung, nur opponent_match_quality nach "
+                             "fn_match_quality (Migration 028) neu setzen")
     parser.add_argument("--ratings-parquet", type=str,
                         help="Ratinglisten lokal statt aus rating_history lesen "
                              "(z. B. frontend/player_history_cache.parquet); fehlende "
@@ -677,6 +728,8 @@ def main():
 
     if args.pending and (args.period or args.since or args.until):
         parser.error("--pending schließt --period/--since/--until aus")
+    if args.pending and args.requalify:
+        parser.error("--pending und --requalify schließen sich aus")
 
     conn = connect()
     try:
@@ -684,6 +737,9 @@ def main():
                    else periods_to_process(args.period, args.since, args.until))
         if not periods:
             print("Keine Perioden mit offenen Partien.")
+            return
+        if args.requalify:
+            requalify(conn, periods, args.dry_run, args.pause)
             return
         resolve_opponents(
             conn,

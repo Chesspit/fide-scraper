@@ -461,6 +461,7 @@ FROM (
     LEFT JOIN rating_history opv ON opv.fide_id = g.opponent_fide_id AND opv.period = %(prev)s
     LEFT JOIN rating_history opc ON opc.fide_id = g.opponent_fide_id AND opc.period = %(period)s
     WHERE g.period = %(period)s
+      AND g.id BETWEEN %(lo)s AND %(hi)s
       AND g.opponent_fide_id IS NOT NULL
 ) n
 WHERE gr.id = n.id
@@ -474,13 +475,24 @@ def requalify(conn, periods: list[date], dry_run: bool, pause: float) -> None:
     total = 0
     for i, period in enumerate(periods, 1):
         t0 = time.monotonic()
+        n = 0
+        # Häppchen nach id-Bereichen wie in resolve_period: große Perioden (2023-12)
+        # sprengten in einem Statement das 15-min-statement_timeout.
         with conn.cursor() as cur:
-            cur.execute(_REQUALIFY_SQL, {"period": period, "prev": previous_period(period)})
-            n = cur.rowcount
-        if dry_run:
+            cur.execute("SELECT id FROM game_results WHERE period = %s "
+                        "AND opponent_fide_id IS NOT NULL ORDER BY id", (period,))
+            ids = [r[0] for r in cur.fetchall()]
             conn.rollback()
-        else:
-            conn.commit()
+            for j in range(0, len(ids), WRITE_CHUNK_ROWS):
+                chunk = ids[j:j + WRITE_CHUNK_ROWS]
+                cur.execute(_REQUALIFY_SQL, {"period": period,
+                                             "prev": previous_period(period),
+                                             "lo": chunk[0], "hi": chunk[-1]})
+                n += cur.rowcount
+                if dry_run:
+                    conn.rollback()
+                else:
+                    conn.commit()
         total += n
         logger.info("[%d/%d] %s: %d Zeilen %s, %.0f s", i, len(periods), period, n,
                     "würden geändert" if dry_run else "geändert", time.monotonic() - t0)

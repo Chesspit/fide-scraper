@@ -296,8 +296,8 @@ Ergebnis der QC-Prüfung pro (Spieler, Zeitfenster).
 |---|---|---|---|
 | `opponent_sex` | 007 | 98,1 % | Geschlecht des Gegners (M/F) |
 | `tournament_type` | 007/008 | 100 % | `open`\|`women`\|`team`\|`women_team`\|`closed`\|`knockout` |
-| `expected_score` | 009 | 99,2 % | Elo-Erwartungswert |
-| `over_performance` | 009 | 99,2 % | result − expected_score |
+| `expected_score` | 009, 029 | 99,2 % | FIDE-Erwartungswert (`result − rating_change`) |
+| `over_performance` | 009, 029 | 99,2 % | result − expected_score |
 | `opponent_match_quality` | 009, 028 | 100 % | `ok`\|`wide_gap`\|`unresolved` |
 
 ### 5.2b Angereicherte Spalten in `scrape_periods`

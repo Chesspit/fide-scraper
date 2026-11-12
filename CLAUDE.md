@@ -50,7 +50,7 @@ fide-scraper/
 │   │                             Kachelbilder per build_story_covers.py (assets/analysen/*.png, im Git)
 ├── notebooks/                 ← Block 3: marimo (NN_*.py) + noch nicht überführte .ipynb, _setup.py
 ├── deploy/infomaniak/         ← Produktions-Stack (Compose, bootstrap.sh, memory_watch.sh); Runbook docs/umzug_infomaniak.md
-├── migrations/                ← 001_initial.sql … 028_fn_match_quality.sql (022 vorbereitet, s. docs/db_rollen.md)
+├── migrations/                ← 001_initial.sql … 029_fn_game_expected.sql (022 vorbereitet, s. docs/db_rollen.md)
 ├── scripts/
 │   ├── monthly_update.sh      ← FIDE-Liste laden + importieren + VPS-Requeue + Audit (täglich per launchd)
 │   ├── import_rating_snapshots.py, backfill.py, resolve_opponents.py   ← Block 1

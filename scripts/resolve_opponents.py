@@ -406,7 +406,8 @@ class Matcher:
 #   opponent_sex           players.sex, sonst 'F' bei Frauentitel
 #   opponent_match_quality fn_match_quality (Migration 028): Gegner-Rating der Partie gegen
 #                          das Listenrating des Gegners zur Partie (Vorliste, sonst Liste P)
-#   expected_score         logistische Erwartung gegen Ro (rating_history.std_rating)
+#   expected_score         fn_game_expected (Migration 029): Ergebnis − rating_change,
+#                          sonst FIDE-Tabelle gegen Ro; NULL ohne Ro (Erstbewertung)
 #   tournament_type        fn_tournament_type (Migration 026)
 # Nur Zeilen mit neuer Zuordnung oder fehlender Anreicherung werden angefasst,
 # ein zweiter Lauf ist daher billig.
@@ -417,10 +418,12 @@ SET opponent_fide_id       = n.new_fid,
                                                   THEN 'F' END),
     opponent_match_quality = fn_match_quality(n.new_fid, gr.opponent_rating,
                                               n.opp_period_rating, n.ro, n.own_prev),
-    expected_score         = ROUND(1.0 / (1.0 + POWER(10.0,
-                                 (gr.opponent_rating - n.ro) / 400.0)), 4),
-    over_performance       = ROUND(CAST(gr.result AS NUMERIC) - 1.0 / (1.0 + POWER(10.0,
-                                 (gr.opponent_rating - n.ro) / 400.0)), 4),
+    expected_score         = fn_game_expected(gr.result, gr.rating_change, n.ro,
+                                 gr.opponent_rating,
+                                 COALESCE(gr.tournament_start_date, gr.period)),
+    over_performance       = gr.result::numeric - fn_game_expected(gr.result,
+                                 gr.rating_change, n.ro, gr.opponent_rating,
+                                 COALESCE(gr.tournament_start_date, gr.period)),
     tournament_type        = fn_tournament_type(gr.tournament_name)
 FROM (
     SELECT g.id,
@@ -470,8 +473,38 @@ WHERE gr.id = n.id
 """
 
 
-def requalify(conn, periods: list[date], dry_run: bool, pause: float) -> None:
-    """opponent_match_quality für zugeordnete Partien nach fn_match_quality neu setzen."""
+# expected_score/over_performance nach fn_game_expected (Migration 029) neu setzen.
+# over_performance nur, wo expected_score gesetzt ist (sonst wäre result::numeric für
+# Sonderergebnisse ungültig). Schreibt nur Zeilen, deren Werte sich ändern.
+_RECOMPUTE_EXPECTED_SQL = """
+UPDATE game_results gr
+SET expected_score   = n.e,
+    over_performance = CASE WHEN n.e IS NULL THEN NULL ELSE gr.result::numeric - n.e END
+FROM (
+    SELECT g.id,
+           fn_game_expected(g.result, g.rating_change, rh.std_rating, g.opponent_rating,
+                            COALESCE(g.tournament_start_date, g.period)) AS e
+    FROM game_results g
+    LEFT JOIN rating_history rh ON rh.fide_id = g.fide_id AND rh.period = g.period
+    WHERE g.period = %(period)s
+      AND g.id BETWEEN %(lo)s AND %(hi)s
+) n
+WHERE gr.id = n.id
+  AND gr.period = %(period)s
+  AND (gr.expected_score IS DISTINCT FROM n.e
+       OR gr.over_performance IS DISTINCT FROM
+          CASE WHEN n.e IS NULL THEN NULL ELSE gr.result::numeric - n.e END)
+"""
+
+
+def requalify(conn, periods: list[date], dry_run: bool, pause: float,
+              sql: str = _REQUALIFY_SQL,
+              id_filter: str = "AND opponent_fide_id IS NOT NULL") -> None:
+    """Abgeleitete Spalten periodenweise in id-Häppchen neu setzen.
+
+    Standard: opponent_match_quality nach fn_match_quality (nur zugeordnete Partien).
+    Mit sql=_RECOMPUTE_EXPECTED_SQL, id_filter="": expected_score/over_performance.
+    """
     total = 0
     for i, period in enumerate(periods, 1):
         t0 = time.monotonic()
@@ -479,13 +512,13 @@ def requalify(conn, periods: list[date], dry_run: bool, pause: float) -> None:
         # Häppchen nach id-Bereichen wie in resolve_period: große Perioden (2023-12)
         # sprengten in einem Statement das 15-min-statement_timeout.
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM game_results WHERE period = %s "
-                        "AND opponent_fide_id IS NOT NULL ORDER BY id", (period,))
+            cur.execute(f"SELECT id FROM game_results WHERE period = %s {id_filter} "
+                        "ORDER BY id", (period,))
             ids = [r[0] for r in cur.fetchall()]
             conn.rollback()
             for j in range(0, len(ids), WRITE_CHUNK_ROWS):
                 chunk = ids[j:j + WRITE_CHUNK_ROWS]
-                cur.execute(_REQUALIFY_SQL, {"period": period,
+                cur.execute(sql, {"period": period,
                                              "prev": previous_period(period),
                                              "lo": chunk[0], "hi": chunk[-1]})
                 n += cur.rowcount
@@ -695,6 +728,9 @@ def main():
     parser.add_argument("--requalify", action="store_true",
                         help="Keine Zuordnung, nur opponent_match_quality nach "
                              "fn_match_quality (Migration 028) neu setzen")
+    parser.add_argument("--recompute-expected", action="store_true",
+                        help="Keine Zuordnung, nur expected_score/over_performance nach "
+                             "fn_game_expected (Migration 029) neu setzen")
     parser.add_argument("--ratings-parquet", type=str,
                         help="Ratinglisten lokal statt aus rating_history lesen "
                              "(z. B. frontend/player_history_cache.parquet); fehlende "
@@ -740,8 +776,8 @@ def main():
 
     if args.pending and (args.period or args.since or args.until):
         parser.error("--pending schließt --period/--since/--until aus")
-    if args.pending and args.requalify:
-        parser.error("--pending und --requalify schließen sich aus")
+    if sum([args.pending, args.requalify, args.recompute_expected]) > 1:
+        parser.error("--pending, --requalify und --recompute-expected schließen sich aus")
 
     conn = connect()
     try:
@@ -752,6 +788,10 @@ def main():
             return
         if args.requalify:
             requalify(conn, periods, args.dry_run, args.pause)
+            return
+        if args.recompute_expected:
+            requalify(conn, periods, args.dry_run, args.pause,
+                      sql=_RECOMPUTE_EXPECTED_SQL, id_filter="")
             return
         resolve_opponents(
             conn,

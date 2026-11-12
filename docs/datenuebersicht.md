@@ -86,7 +86,7 @@ Eine Zeile = eine Einzelpartie. Kernquelle aller Analysen.
 | `tournament_location` | TEXT | Ort |
 | `tournament_start_date` | DATE | Turnierbeginn |
 | `tournament_end_date` | DATE | Turnierended |
-| `expected_score` | NUMERIC | Elo-Erwartungswert |
+| `expected_score` | NUMERIC | FIDE-Erwartungswert (NULL bei Erstbewertung) |
 | `over_performance` | NUMERIC | result − expected_score |
 | `opponent_match_quality` | TEXT | `ok` \| `wide_gap` \| `unresolved` — `wide_gap`: Gegner-Rating der Partie weicht > 200 vom Listenrating des zugeordneten Gegners zur Partie ab (Vorliste, sonst Liste der Periode; Kappungsfälle ±400 zählen als `ok`), `fn_match_quality` aus Migration 028. Bis 11/2026 Vergleich mit dem *heutigen* `players.std_rating` (2020–2023: 36–44 % zu Unrecht geflaggt); nach der Umstellung je Periode nur noch einige Dutzend Partien. Neu bewerten: `resolve_opponents.py --requalify` |
 
@@ -147,8 +147,8 @@ Bekannte nicht-spielbasierte FIDE-Ratinganpassungen.
 
 | Kennzahl | Formel |
 |---|---|
-| `expected_score` | `1 / (1 + 10^((opp_rating − own_rating) / 400))` |
-| `over_performance` | `result − expected_score` |
+| `expected_score` | `fn_game_expected` (Migration 029): `result − rating_change` (exakt nach FIDE, auch bei mehreren Turnieren je Periode); ohne `rating_change` FIDE-Tabelle gegen Ro mit 400-Punkte-Regel; NULL ohne Ro (Erstbewertung). Bis 11/2026 logistische Formel `1 / (1 + 10^((opp − Ro) / 400))`. Neu berechnen: `resolve_opponents.py --recompute-expected` |
+| `over_performance` | `result − expected_score` (= `rating_change`, wo vorhanden) |
 | `avg_opponent_diff` | `AVG(opponent_rating − own_rating)` |
 | `normalized_volatility` | `AVG(ABS(rating_change)) / k_factor` |
 | `no_data_rate` | `no_data / (ok + no_data)` |

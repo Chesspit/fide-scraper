@@ -15,6 +15,7 @@ build/
 data/*.txt
 data/*.zip
 data/*.pdf
+data/revisions/
 players_list_foa*.txt
 players_list_foa*.zip
 

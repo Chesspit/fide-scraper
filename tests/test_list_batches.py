@@ -117,3 +117,81 @@ def test_balance_by_region_stays_in_region():
     assert all(THREAD_REGION[t] == "Europa" for t in europe)
     assert len(europe) == 4                       # auf vier Europa-Threads verteilt
     assert THREAD_REGION[groups[4]["thread_affinity"]] == "Asien"
+
+
+def test_list_tier_of_strong_dach_rest():
+    from orchestrator.monthly_refresh_tiers import list_tier_of
+    assert list_tier_of(2300, "IND") == "GAP1"
+    assert list_tier_of(2450, "GER") == "GAP1"      # stark schlägt DACH
+    assert list_tier_of(2299, "SUI") == "GAP2"
+    assert list_tier_of(1500, " AUT") == "GAP2"
+    assert list_tier_of(1500, "IND") == "GAP3"
+    assert list_tier_of(1500, None) == "GAP3"
+
+
+def test_period_priority_strong_then_dach_then_rest():
+    from orchestrator.generate_list_batches import assign_priorities
+
+    class Cur:
+        def execute(self, *_a):
+            pass
+
+        def fetchone(self):
+            return (100,)
+
+    groups = [
+        {"year": 2026, "tier_rank": 2, "elo_min": 2000},   # Rest, hohes Band
+        {"year": 2026, "tier_rank": 1, "elo_min": 0},      # DACH, tiefes Band
+        {"year": 2026, "tier_rank": 0, "elo_min": 2300},   # stark
+        {"year": 2026, "tier_rank": 1, "elo_min": 1800},   # DACH, hohes Band
+    ]
+    assign_priorities(Cur(), groups)
+    order = [(g["tier_rank"], g["elo_min"]) for g in sorted(groups, key=lambda g: g["priority"])]
+    assert order == [(0, 2300), (1, 1800), (1, 0), (2, 2000)]
+
+
+def test_build_bands_respects_tier_bounds():
+    from orchestrator.generate_list_batches import build_bands
+    bands = build_bands([(2299, 900), (1800, 900), (1200, 900)], set(), target=1000,
+                        floor=0, ceil=2299)
+    assert bands[0]["elo_max"] == 2299 and bands[-1]["elo_min"] == 0
+
+
+def test_vorlauf_periods_six_months_before_across_year():
+    from orchestrator.list_population import vorlauf_periods
+    assert vorlauf_periods("2026-11-01") == [
+        "2026-05-01", "2026-06-01", "2026-07-01", "2026-08-01", "2026-09-01", "2026-10-01"]
+    assert vorlauf_periods("2026-02-01", months=3) == ["2025-11-01", "2025-12-01", "2026-01-01"]
+    # vor 2012-08 nur gültige FIDE-Perioden (2011: zweimonatlich)
+    assert vorlauf_periods("2011-07-01", months=4) == ["2011-03-01", "2011-05-01"]
+
+
+def test_scrape_group_vorlauf_fetches_months_before_first_rating(data_db, conn, monkeypatch):
+    from orchestrator.list_population import UPDATE_ONLY_VORLAUF
+    data_db.insert_player(1, federation="ESP", std_rating=1500, active=True)   # Neuling
+    data_db.insert_rating(1, LATEST, published_rating=1500, num_games=5)
+    data_db.insert_player(2, federation="ESP", std_rating=1600, active=True)   # kein Neuling
+    data_db.insert_rating(2, LATEST, published_rating=1600, num_games=4)
+    data_db.insert_rating(2, "2026-05-01", published_rating=1580, num_games=2)
+    seen = {}
+
+    class Stop(Exception):
+        pass
+
+    def fake_write_state(**kw):
+        seen.update(kw)
+        raise Stop
+
+    monkeypatch.setattr(worker, "write_state", fake_write_state)
+    group = Group(id=1, federation="GAP4", continent="GLOBAL", year=2026, elo_min=0,
+                  elo_max=9999, player_count=1, priority=1, update_only=UPDATE_ONLY_VORLAUF,
+                  only_period=date(2026, 10, 1))
+    with pytest.raises(Stop):
+        worker.scrape_group(group, conn, proxy_manager=None, profile={}, qm=None)
+
+    assert seen["combos_total"] == 6          # 2026-04 … 2026-09, nur Spieler 1
+
+
+def test_period_priority_vorlauf_last():
+    from orchestrator.generate_list_batches import ALL_PERIOD_TIERS
+    assert ALL_PERIOD_TIERS == ("GAP1", "GAP2", "GAP3", "GAP4")

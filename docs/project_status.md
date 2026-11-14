@@ -789,6 +789,9 @@ Status: ✅ **Umgesetzt 30.10.2026** — `monthly_update.sh` Schritt 4 legt stat
 für jede neu importierte Periode an (`generate_list_batches.py --period`, Regel aus
 `orchestrator/list_population.py`). P0-Gruppen bleiben pausiert/obsolet. Erster Echtlauf mit der
 November-Liste; die ist per VPS-Sperre `~/HOLD_FIDE_MONTHLY_UPDATE` bis zum OK des Users zurückgestellt.
+*Nachtrag 13.11.2026:* Liste 2026-11 am 07.11. importiert, Listen-Gruppen angelegt (39 GAP-Gruppen,
+`only_period=2026-11-01`), Sperre seit 10.11. aufgehoben. Die 13 noch offenen GAP-Gruppen am 13.11. von
+`dc_update_1` auf elf andere Threads verteilt (Stand: `docs/scraping_status.md`).
 Ersetzt bei Umsetzung auch die Zeile „Reaktivierte Spieler erfassen" oben.
 
 *Befund.* Das P0-Tier (eingeführt 01.09.2026, Commit `7bd302d`, monatlich automatisiert mit `7e96819`)

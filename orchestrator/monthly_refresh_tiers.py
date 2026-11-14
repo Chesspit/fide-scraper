@@ -105,3 +105,40 @@ NEW_ENTRANT_TARGET_MAX = 300
 # aufzurollen hätte das ganze Jahr geprüft (~10× so viele Abrufe).
 # Batches erzeugt orchestrator/generate_period_repair_batches.py.
 GAP_TIER = "GAP"
+
+# ── Listen-Perioden-Gruppen in drei Stufen (14.11.2026) ──
+#
+# Ersetzt P1/P2/P3 im Monatslauf: generate_list_batches.py --period legt die
+# Soll-Kombos des neuen Monats in drei Stufen an, Priorität in dieser
+# Reihenfolge. Band = published_rating der Periode (list_population.py).
+# Sentinel → (Bezeichnung, SQL auf players p, elo_floor, elo_ceil).
+# Der Alt-Sentinel "GAP" (alle Föderationen, ein Topf) bleibt für bestehende
+# Gruppen gültig.
+DACH_FEDERATIONS: tuple[str, ...] = ("GER", "SUI", "AUT")
+_DACH_SQL = ", ".join(f"'{f}'" for f in DACH_FEDERATIONS)
+LIST_PERIOD_TIERS: dict[str, tuple[str, str, int, int]] = {
+    "GAP1": ("stark (Elo ≥ 2300)", "TRUE", 2300, 9999),
+    "GAP2": ("DACH < 2300", f"p.federation IN ({_DACH_SQL})", 0, 2299),
+    "GAP3": ("Rest < 2300", f"COALESCE(p.federation, '') NOT IN ({_DACH_SQL})", 0, 2299),
+}
+
+
+def list_tier_of(band: int, federation: str | None) -> str:
+    """Python-Zwilling zu LIST_PERIOD_TIERS (Generator); Worker nutzt das SQL."""
+    if band >= 2300:
+        return "GAP1"
+    return "GAP2" if (federation or "").strip() in DACH_FEDERATIONS else "GAP3"
+
+
+# Vierte Stufe, niedrigste Priorität: Neulinge-Vorlauf (update_only = 4, siehe
+# list_population.newcomer_sql) — die Monate vor dem Erstrating, die keine
+# Liste kennt. Läuft auf LIST_REST_POOL.
+VORLAUF_TIER = "GAP4"
+
+# Stufen 1+2 auf den Update-Thread (klein, sofort dran), Stufe 3 verteilt auf
+# die Backfill-Threads (wie die Handverteilung vom 13.11.2026).
+LIST_PRIORITY_TIERS: tuple[str, ...] = ("GAP1", "GAP2")
+LIST_REST_POOL: list[str] = [
+    "dc_uk", "dc_es", "dc_de", "dc_dach", "dc_ae", "dc_us", "dc_mx",
+    "dc_newplayers_1", "dc_in", "dc_hk", "dc_newplayers_2",
+]

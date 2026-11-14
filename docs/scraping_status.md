@@ -1,12 +1,37 @@
 # Scraping-Status
 
-Stand: 2026-10-30 (Live-Abfrage Orchestrator-Queue + `rating_history`/`scrape_periods`)
+Stand: 2026-11-13 (Live-Abfrage Orchestrator-Queue + `rating_history`/`scrape_periods`)
 Raspberry Pi: **vom User abgeschaltet (seit 2026-07-22)** — kein Thema mehr, siehe Abschnitt unten.
 ✅ **Backup:** läuft seit dem Umzug auf Infomaniak (VPS-Cron 03:45 + Mac-Pull). Hostinger am 20.10. komplett abgebaut.
 
 ---
 
-## Queue-Stand (Live 2026-10-30) — Backfill abgeschlossen ✅
+## November-Update (Live 2026-11-13, ~19:50 MEZ)
+
+Liste 2026-11 am 07.11. importiert (neueste Liste in `rating_history`), Sperre
+`~/HOLD_FIDE_MONTHLY_UPDATE` seit 10.11. aufgehoben. Der tägliche Monatslauf überspringt den Import
+seither und reichert nur neue Partien an (`resolve_opponents --pending`, 13.11.: 98,9 % zugeordnet).
+
+| | |
+|---|---:|
+| Soll 2026-11 (Kombos mit `num_games > 0`) | 70.706 |
+| davon gescrapt (`ok` 46.724, `no_data` 35) | 46.759 |
+| offen | 23.947 |
+| GAP-Gruppen 2026-11 (`only_period`) | 39: 26 done, 13 offen |
+| P3-Monatsrefresh (`update_only=1`) | 40 done, 13 offen + 1 läuft |
+
+Bis 13.11. lief alles auf `dc_update_1` (~35–45 Saves/h), die 13 offenen GAP-Gruppen standen hinter
+den 14 P3-Gruppen. **13.11. ~19:45 MEZ** auf elf andere Threads verteilt (`notes`-Suffix
+`| 13.11. dc_update_1→<thread>`): dc_in 26452+26483, dc_hk 26456+26486, dc_ae 26457, dc_dach 26460,
+dc_us 26462, dc_mx 26463, dc_newplayers_1 26467, dc_newplayers_2 26471, dc_uk 26473, dc_de 26479,
+dc_es 26481. MX, NP-1, ES, UK, DACH und US starteten sofort, die übrigen mit ihrer Aktivzeit.
+`dc_update_1` behält die P3-Gruppen.
+
+---
+
+## Historie — Stand 2026-10-30
+
+### Queue-Stand (Live 2026-10-30) — Backfill abgeschlossen ✅
 
 **12.307 done, 0 pending, 0 running, 0 failed, 14.030 skipped.** Letzter Lauf 29.10. 18:19 UTC;
 seit 20.10. 1.519 Läufe, alle `success` (~150–235/Tag, getragen von den Listen-Gruppen).
@@ -23,7 +48,7 @@ DB: **20.598.239 Partien** (18.10.: 17,7 Mio), neueste Liste 2026-10-01. VPS: Pl
 
 **Nächster Schritt:** November-Liste → `monthly_update.sh` (Mac Mini) importiert und requeued automatisch.
 
-### Abdeckung gegen die offizielle Liste (Live 2026-10-30)
+#### Abdeckung gegen die offizielle Liste (Live 2026-10-30)
 
 Maßstab wie `audit_data.py` Ebene 1 (Soll = `rating_history.num_games > 0`, Ist = `ok`/`no_data`):
 

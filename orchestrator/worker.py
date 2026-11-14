@@ -37,8 +37,11 @@ from orchestrator.state_io import (
     write_state,
 )
 from core.periods import latest_list_period, valid_periods_for_year
-from orchestrator.list_population import UPDATE_ONLY_LIST, population_sql, soll_combos
-from orchestrator.monthly_refresh_tiers import TIER_FILTERS
+from orchestrator.list_population import (
+    UPDATE_ONLY_LIST, UPDATE_ONLY_VORLAUF, newcomer_params, newcomer_sql, population_sql,
+    soll_combos, vorlauf_periods,
+)
+from orchestrator.monthly_refresh_tiers import LIST_PERIOD_TIERS, TIER_FILTERS
 from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.proxy_manager import ProxyManager, is_proxy_auth_failure
 from orchestrator.queue_manager import AUTO_RETRY_MAX, Group, QueueManager, get_device_id
@@ -191,7 +194,9 @@ def get_fide_ids(pg_conn, federation: str, elo_min: int, elo_max: int,
     active-/std_rating-Filter, Band über das published_rating im Zeitraum.
     """
     if list_based:
-        if federation in TIER_FILTERS:
+        if federation in LIST_PERIOD_TIERS:
+            fed_filter, fed_params = LIST_PERIOD_TIERS[federation][1], ()
+        elif federation in TIER_FILTERS:
             fed_filter, fed_params = "TRUE", ()
         else:
             fed_filter, fed_params = "p.federation = %s", (federation,)
@@ -437,7 +442,18 @@ def scrape_group(
     """
     only_period = group.only_period.isoformat() if group.only_period else None
     list_based = group.update_only == UPDATE_ONLY_LIST
-    if list_based:
+    vorlauf = group.update_only == UPDATE_ONLY_VORLAUF
+    if vorlauf:
+        # Neulinge-Vorlauf (GAP4): Neulinge der Liste only_period, die Monate davor.
+        if not only_period:
+            logger.warning("Vorlauf-Gruppe %d ohne only_period — übersprungen", group.id)
+            return 0, pg_conn, 0.0
+        with pg_conn.cursor() as cur:
+            cur.execute(newcomer_sql() + " ORDER BY 1",
+                        newcomer_params(only_period, latest_list_period(cur)))
+            fide_ids = [fid for fid, band, *_ in cur.fetchall()
+                        if group.elo_min <= band <= group.elo_max]
+    elif list_based:
         list_periods = [only_period] if only_period else valid_periods_for_year(group.year)
         if not list_periods:
             return 0, pg_conn, 0.0
@@ -454,7 +470,10 @@ def scrape_group(
                     group.federation, group.year, group.elo_min, group.elo_max)
         return 0, pg_conn, 0.0
 
-    periods = [only_period] if only_period else valid_periods_for_year(group.year)
+    if vorlauf:
+        periods = vorlauf_periods(only_period)
+    else:
+        periods = [only_period] if only_period else valid_periods_for_year(group.year)
     if not periods:
         return 0, pg_conn, 0.0
 

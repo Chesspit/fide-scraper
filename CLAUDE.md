@@ -73,7 +73,7 @@ fide-scraper/
 | DB lokal | `postgresql://fide:<DB_PASSWORD>@localhost:5434/fidedb` (Passwort nur in `.env`, Server-Wert in `/opt/fide-scraper/.env`) |
 | Tunnel starten | `bash scripts/tunnel.sh` |
 | Orchestrator-Dashboard | https://scelo.chesspit.net (BasicAuth) — Steuerung, Queue, Tabs „Abdeckung" und „QC" |
-| Analyse-Frontend | https://elo.chesspit.net (gleiche BasicAuth) — ELO-Einsichten, Top 100, ARPAD. Nach dem Umbau-Deploy: `internelo.chesspit.net` (BasicAuth, alle Seiten) und `elo.chesspit.net` öffentlich (`frontend-public`, Compose-Profil `public`, erst nach OK des Users) |
+| Analyse-Frontend | https://internelo.chesspit.net und https://elo.chesspit.net (gleiche BasicAuth) — beide auf den internen Container (`EDITION=intern`, alle Seiten, seit Umbau-Deploy 01.11.). `elo.chesspit.net` öffentlich ohne Passwort erst mit `frontend-public` (Compose-Profil `public`) nach OK des Users |
 
 DB-Container heißt `fide-db` (Port 5432 nur auf `127.0.0.1`), Diagnosen also
 `docker compose -f /opt/fide-scraper/deploy/infomaniak/docker-compose.yml logs …` bzw. `docker exec fide-db psql -U fide -d fidedb`.
@@ -218,14 +218,28 @@ solange der Backfill läuft, ist das der Normalzustand.
 ## Monatslauf (automatisch)
 
 `scripts/monthly_update.sh` läuft **täglich** per launchd auf dem Mac
-(`scripts/net.chesspit.fide-monthly-update.plist`), nicht monatlich: FIDE veröffentlicht die
-neue Liste nicht an einem festen Kalendertag.
+(`scripts/net.chesspit.fide-monthly-update.plist`), weil die Anreicherung (s. unten) täglich Arbeit hat.
+Die **Liste** prüft er seit 14.11.2026 nur am **2., 14. und 28.** (`FIDE_LIST_CHECK_DAYS`, erzwingen mit
+`FIDE_FORCE_LIST_CHECK=1`): neue Liste da? Und: hat FIDE die neueste importierte Liste nachträglich
+verändert? Bei Änderung ⚠️-Warnung + Kopie unter `data/revisions/`; am **14. und 28.**
+(`FIDE_REVISION_APPLY_DAYS`) korrigiert direkt danach `scripts/apply_list_revision.py`: Liste per `--force`
+neu einspielen, nur Kombos mit geänderter Partienzahl bzw. Neuzugänge löschen (CSV-Sicherung unter
+`~/backups/fide-scraper/revisions/`) und per GAP-Gruppe neu scrapen, Rating-Änderungen ohne Scraping.
+**Sperre:** nur wenn keine P1–P3-Gruppe und keine Gruppe mit `only_period` = Periode (außer GAP4) mehr offen ist, sonst
+verschoben auf den nächsten Korrekturtag. Erstbefund 14.11.: Nov-Liste revidiert (188 Kombos neu zu scrapen).
 
 1. Fehlende Perioden der letzten 3 Monate ermitteln (`FIDE_LOOKBACK_MONTHS`, älteste zuerst)
 2. Liste von `ratings.fide.com/download/standard_<mmm><yy>frl.zip` laden (404 = noch nicht da → Exit 0)
 3. Importieren
-4. **Nur wenn wirklich importiert wurde:** P1/P2/P3-Refresh requeuen + Listen-Gruppen für die neue
-   Periode anlegen (`generate_list_batches.py --period`, im `worker`-Container; ersetzt seit 30.10.2026 P0)
+4. **Nur wenn wirklich importiert wurde:** Listen-Gruppen für die neue Periode anlegen
+   (`generate_list_batches.py --period`, im `worker`-Container) in drei Stufen, Priorität in dieser Reihenfolge:
+   `GAP1` stark (Elo ≥ 2300) → `GAP2` DACH < 2300 → `GAP3` Rest → `GAP4` Neulinge-Vorlauf; GAP1+2 auf
+   `dc_update_1`, GAP3+4 verteilt auf die Backfill-Threads (`LIST_PERIOD_TIERS`/`LIST_REST_POOL` in
+   `orchestrator/monthly_refresh_tiers.py`). **GAP4** (`update_only = 4`, `list_population.newcomer_sql`) holt für
+   jeden, der in der neuen Liste erstmals mit Rating steht, die 6 Monate davor — dort spielt er schon gewertete
+   Partien, hat aber keinen Listeneintrag, die Listen-Gruppen finden sie also nie (Nov. 2026: ~3.800 Kombos mit
+   ~9.200 Partien, bis dahin von P3 nebenbei geholt). Einzelne Stufen nachholen: `--tiers GAP4`.
+   Ersetzt seit 30.10.2026 P0 und seit 14.11.2026 den P1/P2/P3-Requeue (fand im Nov. nur noch 8.606 Partien in 105 h)
 5. **Nur nach Import:** Datenprüfung ab 2020 (`FIDE_AUDIT_SINCE`), Einzeiler ins Log, Bericht nach
    `~/backups/fide-scraper/audit/audit_<datum>.md`
 

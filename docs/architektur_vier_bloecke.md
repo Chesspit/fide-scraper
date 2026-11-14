@@ -1,6 +1,6 @@
 # Architektur: vier Blöcke in einem Repo
 
-Stand: 2026-10-30 · Kurzfassung und Entscheidungen: `docs/ideen_verbesserungen.md` Abschnitt G
+Stand: 2026-11-13 (Phasenstatus; Konzept 2026-10-30) · Kurzfassung und Entscheidungen: `docs/ideen_verbesserungen.md` Abschnitt G
 
 Das Projekt wird logisch in vier Blöcke auf einer gemeinsamen DB gegliedert. Es bleibt **ein
 Repo** (eine DB, ein Schema, ein Compose-Stack, ein Entwickler). Die Ordner `scraper/`,
@@ -113,6 +113,12 @@ Testbasis (18.10.2026, Wegwerf-PG via `pgserver`, siehe CLAUDE.md-Gotchas): **25
 Der Umbau wird **vorgezogen**, das November-Update wartet: Sperre `~/HOLD_FIDE_MONTHLY_UPDATE` auf
 dem VPS, Import erst nach explizitem OK des Users. Damit ist das Deploy-Fenster für die Phasen 2/3
 frei. Der P0-Fix ist erledigt (`monthly_update.sh` Schritt 4 = Listen-Gruppen, 30.10.).
+**Stand 13.11.2026:** Branch `umbau/vier-bloecke` ist als PR #1 in `master` gemergt und am
+01.11.2026 deployt (VPS `git pull` 22:35 UTC, Dashboard/Frontend neu gebaut, Worker zuletzt
+10.11. mit PR #14). Die Sperre `~/HOLD_FIDE_MONTHLY_UPDATE` ist seit 10.11. aufgehoben, die
+November-Liste seit 07.11. importiert. Offen bleiben nur 2a (DB-Rollen), die öffentliche Edition
+(Phase 5) und die übrigen Notebooks (Phase 6).
+
 Hinweis für Phase 3: `orchestrator/audit.py` importiert seit 30.10. `list_population.latest_list_period`
 (Regel „steht in der neuesten Liste") — gehört nach `core/`.
 
@@ -120,12 +126,12 @@ Hinweis für Phase 3: `orchestrator/audit.py` importiert seit 30.10. `list_popul
 |---|---|---|---|
 | **0 Konsens + Altlast** | Abschnitt G in `ideen_verbesserungen.md`; tote Deploy-Dateien geprüft und entfernt (Root-`docker-compose.yml`, `docker-compose.vps.yml`, `scraper/Dockerfile`). Bleibt: `profiles_pi.yaml` (Pi). `orchestrator/docker-compose.yml` nach dem Hostinger-Rückbau am 20.10. gelöscht | keins | ✅ 18.10. |
 | **1 Packaging** | `pyproject.toml`, `pip install -e . --no-deps` in der lokalen `.venv`; Abhängigkeiten bleiben in den `requirements.txt`. Docker-Teil (`pip install -e .` in den Images) kommt mit Phase 2 | keins | ✅ 18.10. (lokal) |
-| **2 `core/`** | `core/config.py`, `core/db.py`, `core/periods.py`, `core/elo.py`; Importe in einem Commit umstellen; Dockerfiles: `COPY core/` + `pyproject.toml`, `pip install -e .`; `test_elo_bands` gegen `core.elo` | mittel: Worker-Rebuild, danach Worker-Log und Saves prüfen | ✅ Code 30.10. (Branch `umbau/vier-bloecke`), Deploy offen |
-| **2a DB-Rollen** | `fide_ingest` / `fide_qc` / `fide_reader` anlegen, Rechte vergeben, `.env` lokal + VPS, Dienste nacheinander umstellen | mittel: Rechte auf der Produktiv-DB | 🟡 vorbereitet: Migration 022 + `docs/db_rollen.md`, nicht angewendet |
-| **3 `qc/`** | `audit.py`, `integrity.py`, `coverage.py` aus `orchestrator/` sowie Logik aus `quality_check.py`/`reconcile_ratings.py` nach `qc/`; Skripte in `scripts/` werden dünne CLIs; Abdeckungs-Tab importiert `qc.coverage`; Pfad in `monthly_update.sh` | mittel: Dashboard-Rebuild, Abdeckungs-Tab + nächster Monatslauf als Test | ✅ Code 30.10., Deploy offen |
+| **2 `core/`** | `core/config.py`, `core/db.py`, `core/periods.py`, `core/elo.py`; Importe in einem Commit umstellen; Dockerfiles: `COPY core/` + `pyproject.toml`, `pip install -e .`; `test_elo_bands` gegen `core.elo` | mittel: Worker-Rebuild, danach Worker-Log und Saves prüfen | ✅ Code 30.10., Deploy ✅ 01.11. (PR #1) |
+| **2a DB-Rollen** | `fide_ingest` / `fide_qc` / `fide_reader` anlegen, Rechte vergeben, `.env` lokal + VPS, Dienste nacheinander umstellen | mittel: Rechte auf der Produktiv-DB | 🟡 vorbereitet: Migration 022 + `docs/db_rollen.md`, nicht angewendet (13.11.: VPS-`.env` ohne `DATABASE_URL_<ROLLE>`) |
+| **3 `qc/`** | `audit.py`, `integrity.py`, `coverage.py` aus `orchestrator/` sowie Logik aus `quality_check.py`/`reconcile_ratings.py` nach `qc/`; Skripte in `scripts/` werden dünne CLIs; Abdeckungs-Tab importiert `qc.coverage`; Pfad in `monthly_update.sh` | mittel: Dashboard-Rebuild, Abdeckungs-Tab + nächster Monatslauf als Test | ✅ Code 30.10., Deploy ✅ 01.11. (PR #1) |
 | **4 Block 1 aufräumen** | `generate_groups` von `scripts.seed_players` lösen; Orchestrator-Image ohne `scripts/`; System-A-Skripte nach `scripts/legacy/` | gering | ✅ Code 30.10. (`check_proxy_pool.py` → `orchestrator/`) |
-| **3b QC-Oberfläche** | QC-Bereich im Orchestrator-Dashboard: QC-Seiten aus dem Frontend dorthin, `frontend/data_qc.py` → `qc/`; Tabelle für gespeicherte Audit-Läufe (Migration) + Schreiben aus `audit_data.py`; Ansicht mit Trends, Drill-down Föderation/Periode, Stichproben; Live-Einzelabfrage Spieler × Periode | mittel: Dashboard-Rebuild, Migration | ✅ Code 30.10. (Tab „QC", Migration 021), Deploy offen |
-| **5 Frontend** | Zwei Editionen per `EDITION=public/intern` (Seitenaufteilung Abschnitt 0); Compose: zwei Frontend-Services, Router `elo` (ohne BasicAuth, Traefik-Rate-Limit) und `internelo` (BasicAuth); Rolle `fide_reader`. ⚠️ `elo.chesspit.net` ohne Passwort = Veröffentlichung, Deploy nur mit OK des Users; DNS-Eintrag `internelo` legt der User an | gering (Code), Deploy mit OK | ✅ Code 30.10. (`frontend-public` im Compose-Profil `public`) |
+| **3b QC-Oberfläche** | QC-Bereich im Orchestrator-Dashboard: QC-Seiten aus dem Frontend dorthin, `frontend/data_qc.py` → `qc/`; Tabelle für gespeicherte Audit-Läufe (Migration) + Schreiben aus `audit_data.py`; Ansicht mit Trends, Drill-down Föderation/Periode, Stichproben; Live-Einzelabfrage Spieler × Periode | mittel: Dashboard-Rebuild, Migration | ✅ Code 30.10. (Tab „QC", Migration 021), Deploy ✅ 01.11. (PR #1) |
+| **5 Frontend** | Zwei Editionen per `EDITION=public/intern` (Seitenaufteilung Abschnitt 0); Compose: zwei Frontend-Services, Router `elo` (ohne BasicAuth, Traefik-Rate-Limit) und `internelo` (BasicAuth); Rolle `fide_reader`. ⚠️ `elo.chesspit.net` ohne Passwort = Veröffentlichung, Deploy nur mit OK des Users; DNS-Eintrag `internelo` legt der User an | gering (Code), Deploy mit OK | ✅ Code 30.10.; intern deployt 01.11. (`EDITION=intern`, BasicAuth, antwortet auf `internelo` **und** `elo`); `frontend-public` (Profil `public`) nicht gestartet — wartet auf OK des Users |
 | **6 Analysen** | marimo einführen: `notebooks/_setup.py` nutzt `core`; Notebooks 14/15 (dann übrige) nach marimo überführen, `.ipynb` als Archiv behalten; Export-Skripte nach `scripts/analysis/`; Notebooks 08/10/11 über `qc/`. ⚠️ Alte Generatoren nicht mehr laufen lassen (löschen Ergebnisse) | keins (lokal) | 🟡 08/10/11 (über `qc/window_detail.py`) und 14/15 nach marimo, Export-Skripte verschoben; 07.11. lokal gegen `.ipynb` geprüft, deren `.ipynb` + Generatoren gelöscht; übrige nach Bedarf |
 | **7 Grenzen absichern** | pytest, der verbotene Import-Richtungen meldet; CLAUDE.md-Dateistruktur aktualisieren | keins | ✅ 30.10. (`tests/test_import_boundaries.py`) |
 | **8 optional** | getrennte Repos/Images, nur falls ein Block eigene Releases oder Mitarbeiter bekommt | – | – |

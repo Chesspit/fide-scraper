@@ -13,8 +13,14 @@ Zwei Modi:
                       Kontinent zurück. Danach Lastausgleich nur innerhalb
                       derselben Zeitzonen-Region (THREAD_REGION). Zeitraum je
                       Jahr bis zum Vormonat (worker.valid_periods_for_year).
-  --period 2026-10-01 Eine Periode, föderationsübergreifend (Sentinel 'GAP'),
-                      verteilt auf --threads (Default dc_update_1).
+  --period 2026-10-01 Eine Periode, föderationsübergreifend, in drei Stufen
+                      (monthly_refresh_tiers.LIST_PERIOD_TIERS, seit 14.11.2026):
+                      GAP1 stark (Elo ≥ 2300) → GAP2 DACH → GAP3 Rest →
+                      GAP4 Neulinge-Vorlauf (die 6 Monate vor dem Erstrating,
+                      update_only = 4). Priorität in dieser Reihenfolge.
+                      GAP1+GAP2 auf --threads (Default dc_update_1), GAP3+GAP4
+                      auf --rest-threads (Default LIST_REST_POOL).
+                      --tiers GAP4 legt nur einzelne Stufen an (Nachholen).
 
 Anlass (2026-10-21): Entscheidung vom 17.09., Inaktive nicht nachzuladen,
 aufgehoben — ~547k offene Kombos seit 2020, dazu ~45k für 2026-10.
@@ -33,8 +39,13 @@ from datetime import date
 from orchestrator.generate_groups import federation_continent
 from orchestrator.generate_monthly_refresh_batches import _assign_thread_affinity
 from core.periods import latest_list_period, valid_periods_for_year
-from orchestrator.list_population import UPDATE_ONLY_LIST, population_sql
-from orchestrator.monthly_refresh_tiers import DC_UPDATE_POOL, GAP_TIER, TIER_CONTINENT
+from orchestrator.list_population import (
+    UPDATE_ONLY_LIST, UPDATE_ONLY_VORLAUF, newcomer_params, newcomer_sql, population_sql,
+)
+from orchestrator.monthly_refresh_tiers import (
+    DC_UPDATE_POOL, LIST_PERIOD_TIERS, LIST_PRIORITY_TIERS, LIST_REST_POOL, TIER_CONTINENT,
+    VORLAUF_TIER, list_tier_of,
+)
 from orchestrator.setup_db import connect
 
 # Kombos statt Spieler als Maß: bei ~260-330 Kombos/h/Thread ≈ 5-8 Std./Gruppe,
@@ -83,7 +94,8 @@ def federation_threads(cur) -> dict[str, str]:
 
 
 def build_bands(players: list[tuple[int, int]], taken: set[int],
-                target: int = TARGET_COMBOS) -> list[dict]:
+                target: int = TARGET_COMBOS,
+                floor: int = ELO_FLOOR, ceil: int = ELO_CEIL) -> list[dict]:
     """Zusammenhängende Bänder von oben nach unten, je ~target Kombos.
 
     players: [(band_rating, offen)]. Gleiche Ratings bleiben in einem Band.
@@ -108,9 +120,9 @@ def build_bands(players: list[tuple[int, int]], taken: set[int],
         chunks.append(current)
 
     bands = []
-    elo_max = ELO_CEIL
+    elo_max = ceil
     for i, chunk in enumerate(chunks):
-        candidate = ELO_FLOOR if i == len(chunks) - 1 else min(chunk[-1], elo_max)
+        candidate = floor if i == len(chunks) - 1 else min(chunk[-1], elo_max)
         while candidate in taken:
             candidate -= 1
         taken.add(candidate)
@@ -168,21 +180,47 @@ def build_year_groups(cur, years: list[int], latest: date) -> list[dict]:
     return groups
 
 
-def build_period_groups(cur, period: date, pool: list[str], latest: date) -> list[dict]:
+ALL_PERIOD_TIERS = (*LIST_PERIOD_TIERS, VORLAUF_TIER)
+
+
+def build_period_groups(cur, period: date, pool: list[str], latest: date,
+                        rest_pool: list[str] | None = None,
+                        tiers: tuple[str, ...] = ALL_PERIOD_TIERS) -> list[dict]:
+    """Stufen GAP1–GAP3 (LIST_PERIOD_TIERS) + GAP4 (Vorlauf); tier_rank = Priorität."""
     iso = period.isoformat()
-    players = [(band, offen) for _f, band, offen, _fed in load_population(cur, iso, iso, latest)]
-    bands = build_bands(players, existing_elo_mins(cur, GAP_TIER, period.year))
-    groups = [{"federation": GAP_TIER, "continent": TIER_CONTINENT, "year": period.year,
-               "only_period": period, **b} for b in bands]
-    _assign_thread_affinity(groups, pool=pool)
+    by_tier: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    if any(t in LIST_PERIOD_TIERS for t in tiers):
+        for _f, band, offen, fed in load_population(cur, iso, iso, latest):
+            by_tier[list_tier_of(band, fed)].append((band, offen))
+    if VORLAUF_TIER in tiers:
+        cur.execute(newcomer_sql(), newcomer_params(iso, latest))
+        by_tier[VORLAUF_TIER] = [(band, offen) for _f, band, offen, _fed in cur.fetchall()]
+    bounds = {t: (floor, ceil) for t, (_l, _s, floor, ceil) in LIST_PERIOD_TIERS.items()}
+    bounds[VORLAUF_TIER] = (ELO_FLOOR, ELO_CEIL)
+    groups = []
+    for rank, tier in enumerate(ALL_PERIOD_TIERS):
+        if tier not in tiers or not by_tier[tier]:
+            continue
+        floor, ceil = bounds[tier]
+        bands = build_bands(by_tier[tier], existing_elo_mins(cur, tier, period.year),
+                            floor=floor, ceil=ceil)
+        update_only = UPDATE_ONLY_VORLAUF if tier == VORLAUF_TIER else UPDATE_ONLY_LIST
+        tier_groups = [{"federation": tier, "continent": TIER_CONTINENT, "year": period.year,
+                        "only_period": period, "tier_rank": rank, "update_only": update_only,
+                        **b} for b in bands]
+        tier_pool = pool if tier in LIST_PRIORITY_TIERS else (rest_pool or pool)
+        _assign_thread_affinity(tier_groups, pool=tier_pool)
+        groups += tier_groups
     return groups
 
 
 def assign_priorities(cur, groups: list[dict]) -> None:
-    """Hinter alles Bestehende; neuestes Jahr und höchstes Band zuerst."""
+    """Hinter alles Bestehende; neuestes Jahr, dann Stufe (stark → DACH → Rest → Vorlauf),
+    dann höchstes Band zuerst."""
     cur.execute("SELECT COALESCE(MAX(priority), 0) FROM scrape_groups")
     base = cur.fetchone()[0]
-    for rank, g in enumerate(sorted(groups, key=lambda g: (-g["year"], -g["elo_min"])), start=1):
+    order = sorted(groups, key=lambda g: (-g["year"], g.get("tier_rank", 0), -g["elo_min"]))
+    for rank, g in enumerate(order, start=1):
         g["priority"] = base + rank
 
 
@@ -196,7 +234,8 @@ def insert_groups(cur, groups: list[dict], note: str) -> tuple[int, int]:
                VALUES (%s,%s,%s,%s,%s,%s,'pending',%s,%s,%s,%s,%s)
                ON CONFLICT (federation, year, elo_min) DO NOTHING""",
             (g["federation"], g["continent"], g["year"], g["elo_min"], g["elo_max"],
-             g["player_count"], g["priority"], g["thread_affinity"], UPDATE_ONLY_LIST,
+             g["player_count"], g["priority"], g["thread_affinity"],
+             g.get("update_only", UPDATE_ONLY_LIST),
              g["only_period"], f"{note}: {g['combos']} Kombos"),
         )
         if cur.rowcount:
@@ -231,7 +270,11 @@ def main() -> int:
     mode.add_argument("--years", help="Jahresbereich, z. B. 2020-2026")
     mode.add_argument("--period", help="Einzelne Periode YYYY-MM-01")
     parser.add_argument("--threads", default=",".join(DC_UPDATE_POOL),
-                        help="Thread-Pool für --period (Default: %(default)s)")
+                        help="--period: Threads für stark + DACH (Default: %(default)s)")
+    parser.add_argument("--rest-threads", default=",".join(LIST_REST_POOL),
+                        help="--period: Threads für Rest + Vorlauf (Default: %(default)s)")
+    parser.add_argument("--tiers", default=",".join(ALL_PERIOD_TIERS),
+                        help="--period: nur diese Stufen anlegen (Default: %(default)s)")
     parser.add_argument("--dry-run", action="store_true", help="Nur anzeigen, nicht schreiben")
     args = parser.parse_args()
 
@@ -243,7 +286,12 @@ def main() -> int:
             if period.day != 1:
                 parser.error("--period muss ein Monatserster sein")
             pool = [t.strip() for t in args.threads.split(",") if t.strip()]
-            groups = build_period_groups(cur, period, pool, latest)
+            rest_pool = [t.strip() for t in args.rest_threads.split(",") if t.strip()]
+            tiers = tuple(t.strip() for t in args.tiers.split(",") if t.strip())
+            unknown = set(tiers) - set(ALL_PERIOD_TIERS)
+            if unknown:
+                parser.error(f"--tiers: unbekannt {sorted(unknown)}")
+            groups = build_period_groups(cur, period, pool, latest, rest_pool, tiers)
             label = f"Liste {period:%Y-%m}"
         else:
             groups = build_year_groups(cur, parse_years(args.years), latest)

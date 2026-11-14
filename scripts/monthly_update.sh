@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Monatliches FIDE-Update: Rating-Liste herunterladen, TXT-Snapshot importieren,
-# dann P1/P2/P3-Monatsrefresh und Listen-Gruppen für die neue Periode auf dem
-# VPS-Orchestrator anstoßen, zuletzt die Datenprüfung (scripts/audit_data.py)
+# dann Listen-Gruppen für die neue Periode (stark → DACH → Rest) auf dem
+# VPS-Orchestrator anlegen, zuletzt die Datenprüfung (scripts/audit_data.py)
 # als Bericht ablegen.
 #
 # ANHALTEN: Liegt auf dem VPS die Datei $FIDE_HOLD_FILE (Default
@@ -12,15 +12,25 @@
 # Ist der VPS nicht erreichbar, wird der Lauf ebenfalls übersprungen (die
 # VPS-Schritte gingen ohnehin nicht) und am nächsten Tag wiederholt.
 #
-# Läuft komplett ohne Mac Mini / MacBook Pro — das eigentliche Nachscrapen
-# übernehmen die dc_update_1/2/3-Threads auf dem VPS (siehe
-# orchestrator/generate_monthly_refresh_batches.py / reset_monthly_refresh.py).
+# Das eigentliche Nachscrapen übernehmen die Threads auf dem VPS
+# (orchestrator/generate_list_batches.py --period, siehe Schritt 4).
 #
-# TÄGLICH LAUFEN LASSEN, nicht monatlich: FIDE veröffentlicht die neue Liste
-# nicht an einem festen Kalendertag. Ist sie noch nicht da, endet das Skript
-# sauber mit Exit 0 (No-Op) und versucht es am nächsten Tag erneut. Der Import
-# selbst ist idempotent (period_already_imported() in import_rating_snapshots.py),
-# ein Doppellauf schadet also nicht.
+# Der launchd-Job läuft TÄGLICH, weil die Anreicherung neu gescrapter Partien
+# (resolve_opponents --pending) jeden Tag Arbeit hat. Die LISTE wird aber nur an
+# den Tagen FIDE_LIST_CHECK_DAYS geprüft (Default "2 14 28", seit 14.11.2026):
+#   - neue Liste da? → laden + importieren + VPS-Requeue + Datenprüfung
+#   - neueste importierte Liste bei FIDE verändert? → neu laden und mit der
+#     lokalen Kopie vergleichen. Bei Abweichung Warnung + Kopie unter
+#     data/revisions/. An den Korrekturtagen FIDE_REVISION_APPLY_DAYS (Default
+#     "14 28") direkt danach scripts/apply_list_revision.py: Liste neu
+#     einspielen, nur Kombos mit geänderter Partienzahl/Neuzugänge neu scrapen
+#     (GAP-Gruppe). Gesperrt, solange P1–P3- oder Gruppen dieser Periode offen
+#     sind — dann verschoben auf den nächsten Korrekturtag. Am 2. nur Warnung.
+#     Sofort korrigieren: FIDE_FORCE_LIST_CHECK=1 FIDE_FORCE_REVISION_APPLY=1
+# An allen anderen Tagen wird die Liste übersprungen. Erzwingen:
+#   FIDE_FORCE_LIST_CHECK=1 bash scripts/monthly_update.sh
+# Ein explizit angegebener Monat ($1) prüft immer. Der Import selbst ist
+# idempotent (period_already_imported() in import_rating_snapshots.py).
 # Automatisierung: scripts/net.chesspit.fide-monthly-update.plist (launchd, Mac).
 #
 # Ohne Argument werden die letzten FIDE_LOOKBACK_MONTHS Monate (Default 3)
@@ -86,28 +96,24 @@ case "$HOLD_REASON" in
         exit 0 ;;
 esac
 
-# --- Schritte 3+4 (Definition): VPS-Orchestrator — Refresh-Gruppen requeuen ---
-# Schritt 3 setzt NUR die P1/P2/P3-Gruppen zurück (federation-Sentinel, siehe
-# orchestrator/monthly_refresh_tiers.py). Schritt 4 legt für jede neu
-# importierte Periode Listen-Gruppen an (orchestrator/generate_list_batches.py
-# --period): jede Kombo mit Partien laut Liste ohne scrape_periods-Zeile, ohne
-# active-Filter — erfasst Neuzugänge und Reaktivierte. Ersetzt seit 30.10.2026
-# das P0-Tier (reset_new_entrant_refresh.py), das bei Neuzugängen nur no_data
-# lieferte (docs/project_status.md, Session 2026-10-01). Läuft im worker-
-# Container, weil nur dessen Image die Listen-Gruppen kennt.
-# Bereits gescrapte Perioden überspringt der Worker idempotent (scrape_periods).
-# $1 = Leerzeichen-getrennte Perioden (YYYY-MM-01), für die Schritt 4 läuft.
+# --- Schritt 4 (Definition): VPS-Orchestrator — Listen-Gruppen anlegen ------
+# Für jede neu importierte Periode legt generate_list_batches.py --period die
+# Soll-Kombos (Partien laut Liste, noch ohne scrape_periods-Zeile) in drei
+# Stufen an, Priorität in dieser Reihenfolge: GAP1 stark (Elo ≥ 2300) → GAP2
+# DACH → GAP3 Rest (orchestrator/monthly_refresh_tiers.LIST_PERIOD_TIERS).
+# Stufen 1+2 laufen auf dc_update_1, der Rest verteilt auf die Backfill-Threads.
+# Erfasst Neuzugänge, Reaktivierte und Inaktive (kein active-Filter).
+# Seit 14.11.2026 OHNE den früheren P1/P2/P3-Requeue (reset_monthly_refresh.py):
+# der prüfte das ganze Jahr aller schon gescrapten Spieler und fand im November
+# 2026 nur noch 8.606 Partien in 105 h, weil die Listen-Gruppen dieselben
+# Kombos zuerst holen. Läuft im worker-Container (nur dessen Image kennt die
+# Listen-Gruppen). Bereits gescrapte Kombos überspringt der Worker idempotent.
+# $1 = Leerzeichen-getrennte Perioden (YYYY-MM-01).
 run_vps_resets() {
     local ok=0 period
-    echo ""
-    echo "$(date): === Schritt 3/4: VPS-Orchestrator — P1/P2/P3-Monatsrefresh requeuen ==="
-    ssh "$FIDE_VPS" \
-        "cd $FIDE_VPS_COMPOSE_DIR && docker compose exec -T dashboard python3 orchestrator/reset_monthly_refresh.py" \
-        || { echo "$(date): WARNUNG: reset_monthly_refresh.py fehlgeschlagen."; ok=1; }
-
     for period in $1; do
         echo ""
-        echo "$(date): === Schritt 4/4: VPS-Orchestrator — Listen-Gruppen für $period ==="
+        echo "$(date): === Schritt 4: VPS-Orchestrator — Listen-Gruppen für $period ==="
         ssh "$FIDE_VPS" \
             "cd $FIDE_VPS_COMPOSE_DIR && docker compose exec -T worker python3 orchestrator/generate_list_batches.py --period $period" \
             || { echo "$(date): WARNUNG: generate_list_batches.py --period $period fehlgeschlagen."; ok=1; }
@@ -115,6 +121,25 @@ run_vps_resets() {
 
     return $ok
 }
+
+# GAP-Gruppe für eine korrigierte Liste (nur die neu zu scrapenden Kombos).
+# Scheitert SSH, merkt sich ein Marker die Periode für den nächsten Lauf —
+# ohne Gruppe blieben die gelöschten Kombos ungescrapt.
+PENDING_REVISION_MARKER="$SCRIPT_DIR/data/.pending_revision_gap"
+run_revision_gap() {
+    echo "$(date): [$1] GAP-Gruppe für die korrigierten Kombos anlegen"
+    if ssh "$FIDE_VPS" \
+        "cd $FIDE_VPS_COMPOSE_DIR && docker compose exec -T worker python3 orchestrator/generate_list_batches.py --period $1"; then
+        rm -f "$PENDING_REVISION_MARKER"
+    else
+        echo "$1" > "$PENDING_REVISION_MARKER"
+        echo "$(date): [$1] WARNUNG: GAP-Gruppe nicht angelegt — vorgemerkt ($PENDING_REVISION_MARKER)."
+    fi
+}
+if [ -f "$PENDING_REVISION_MARKER" ]; then
+    echo "$(date): Offene GAP-Gruppe einer Listen-Korrektur gefunden — hole sie nach."
+    run_revision_gap "$(cat "$PENDING_REVISION_MARKER")"
+fi
 
 # Offener Reset aus einem früheren Lauf (SSH war z.B. unterwegs nicht erreichbar)?
 # Zuerst nachholen — sonst liegt ein importierter Monat da, den niemand nachscrapt.
@@ -286,17 +311,99 @@ process_period() {
     return 0
 }
 
-# --- Schritte 1+2: je Periode suchen/laden/importieren ------------------------
+# Prüft, ob FIDE die Liste einer schon importierten Periode verändert hat:
+# neu laden, den TXT-Inhalt mit der lokalen Datei vergleichen (ZIP-Bytes allein
+# taugen nicht, Zeitstempel im Archiv können sich ohne Inhaltsänderung ändern).
+# Am Korrekturtag danach apply_list_revision.py (s. Kopf).
+check_list_revision() {
+    local period="$1" local_file target_name tmpdir url http local_txt new_txt changed revdir revfile rc d apply
+    local_file=$(find_import_file "$period")
+    if [ -z "$local_file" ]; then
+        echo "$(date): [$period] Änderungsprüfung: keine lokale Kopie in data/ — übersprungen."
+        return 0
+    fi
+    target_name=$(target_filename "$period")
+    url="$FIDE_DOWNLOAD_BASE/$target_name"
+    tmpdir=$(mktemp -d)
+    http=$(curl -sS -L --max-time 900 --retry 3 --retry-delay 5 \
+                -o "$tmpdir/$target_name" -w '%{http_code}' "$url" 2>/dev/null)
+    if [ "$http" != "200" ] || [ "$(head -c 2 "$tmpdir/$target_name" 2>/dev/null)" != "PK" ]; then
+        echo "$(date): [$period] Änderungsprüfung: Download fehlgeschlagen (HTTP $http) — übersprungen."
+        rm -rf "$tmpdir"
+        return 0
+    fi
+    local_txt="$tmpdir/local.txt"
+    new_txt="$tmpdir/new.txt"
+    case "$local_file" in
+        *.zip) unzip -p "$local_file" > "$local_txt" ;;
+        *)     cp "$local_file" "$local_txt" ;;
+    esac
+    unzip -p "$tmpdir/$target_name" > "$new_txt"
+    if cmp -s "$local_txt" "$new_txt"; then
+        echo "$(date): [$period] Änderungsprüfung: Liste bei FIDE unverändert."
+    else
+        changed=$(diff "$local_txt" "$new_txt" | grep -c '^>')
+        revdir="$SCRIPT_DIR/data/revisions"
+        mkdir -p "$revdir"
+        # Unterordner, damit find_import_file (nur data/*.zip) die Revision nicht
+        # versehentlich als Importdatei nimmt.
+        revfile="$revdir/${target_name%.zip}_$(date +%Y-%m-%d).zip"
+        cp "$tmpdir/$target_name" "$revfile"
+        echo "$(date): [$period] ⚠️  WARNUNG: Liste bei FIDE VERÄNDERT — $changed neue/geänderte Zeilen."
+        echo "$(date): [$period] Neue Fassung: $revfile"
+
+        apply=0
+        [ "${FIDE_FORCE_REVISION_APPLY:-0}" = "1" ] && apply=1
+        for d in ${FIDE_REVISION_APPLY_DAYS:-14 28}; do [ "$d" = "$TODAY_DAY" ] && apply=1; done
+        if [ "$apply" = "0" ]; then
+            echo "$(date): [$period] Heute kein Korrekturtag (${FIDE_REVISION_APPLY_DAYS:-14 28}) — nur gemeldet."
+        else
+            echo "$(date): [$period] === Korrektur der Liste (apply_list_revision.py) ==="
+            DATABASE_URL="$DB_URL" "$PY" "$SCRIPT_DIR/scripts/apply_list_revision.py" \
+                --period "$period" --old "$local_file" --new "$revfile" \
+                | sed "s/^/$(date): [$period]   /"
+            rc=${PIPESTATUS[0]}
+            case $rc in
+                0) run_revision_gap "$period" ;;
+                3) echo "$(date): [$period] Korrektur verschoben — Monatsprozesse noch nicht abgeschlossen." ;;
+                4) ;;
+                *) echo "$(date): [$period] FEHLER: Korrektur fehlgeschlagen (Exit $rc)."; HAD_ERROR=1 ;;
+            esac
+        fi
+    fi
+    rm -rf "$tmpdir"
+    return 0
+}
+
+# --- Schritte 1+2: nur an Prüftagen je Periode suchen/laden/importieren -------
 ANY_IMPORTED=0
 IMPORTED_PERIODS=""
 HAD_ERROR=0
-for PERIOD in $PERIODS; do
-    process_period "$PERIOD"
-    case $? in
-        0) ANY_IMPORTED=1; IMPORTED_PERIODS="$IMPORTED_PERIODS $PERIOD" ;;
-        2) HAD_ERROR=1 ;;
-    esac
-done
+LIST_CHECK_DAYS="${FIDE_LIST_CHECK_DAYS:-2 14 28}"
+TODAY_DAY=$(date +%-d)
+LIST_CHECK=0
+[ -n "${1:-}" ] && LIST_CHECK=1
+[ "${FIDE_FORCE_LIST_CHECK:-0}" = "1" ] && LIST_CHECK=1
+for d in $LIST_CHECK_DAYS; do [ "$d" = "$TODAY_DAY" ] && LIST_CHECK=1; done
+
+if [ "$LIST_CHECK" = "0" ]; then
+    echo "$(date): Heute kein Listen-Prüftag (Prüftage: $LIST_CHECK_DAYS) — Liste übersprungen."
+else
+    LATEST_OLD=""   # neueste Periode, die schon VOR diesem Lauf importiert war
+    for PERIOD in $PERIODS; do
+        process_period "$PERIOD"
+        case $? in
+            0) ANY_IMPORTED=1; IMPORTED_PERIODS="$IMPORTED_PERIODS $PERIOD" ;;
+            1) period_is_imported "$PERIOD" && LATEST_OLD="$PERIOD" ;;
+            2) HAD_ERROR=1 ;;
+        esac
+    done
+    # Nur die zuletzt veröffentlichte Liste prüfen; eine gerade frisch geladene
+    # ist per Definition aktuell.
+    if [ -n "$LATEST_OLD" ] && [ -z "$IMPORTED_PERIODS" ]; then
+        check_list_revision "$LATEST_OLD"
+    fi
+fi
 
 # --- Täglich: neu gescrapte Partien anreichern -------------------------------
 # Gegner-FIDE-ID, Geschlecht, Turniertyp, Erwartungswert (scripts/resolve_opponents.py
@@ -320,7 +427,7 @@ if [ "${FIDE_RESOLVE_PENDING:-1}" = "1" ]; then
     fi
 fi
 
-# --- Schritte 3+4: nur wenn wirklich etwas Neues dazugekommen ist -------------
+# --- Schritt 4: nur wenn wirklich etwas Neues dazugekommen ist ---------------
 if [ "$ANY_IMPORTED" = "0" ]; then
     echo ""
     echo "$(date): Keine neue Periode importiert — VPS-Requeue wird übersprungen."

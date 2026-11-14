@@ -71,3 +71,85 @@ def soll_combos(cur, fide_ids: list[int], periods: list[str]) -> set[tuple[int, 
         (fide_ids, periods),
     )
     return {(r[0], r[1].isoformat()) for r in cur.fetchall()}
+
+
+# ── Neulinge-Vorlauf (update_only = 4, Stufe GAP4, 14.11.2026) ──
+#
+# Wer in Periode P zum ersten Mal mit Rating in der Liste steht, hat die Partien
+# für dieses Erstrating meist in den Monaten davor gespielt — dort hat er keinen
+# Listeneintrag, die Listen-Gruppen (Soll = num_games > 0) holen sie also nie.
+# Auswertung Nov. 2026: 3.765 von 49.782 solcher Abrufe hatten Partien, davon
+# 88 % in den 6 Monaten vor dem Erstrating. Bis 14.11. holte das P3 nebenbei.
+UPDATE_ONLY_VORLAUF = 4
+VORLAUF_MONTHS = 6
+
+
+def vorlauf_periods(period: str, months: int = VORLAUF_MONTHS) -> list[str]:
+    """Die gültigen FIDE-Perioden der `months` Monate vor `period`, älteste zuerst."""
+    from datetime import date
+
+    from core.periods import is_valid_fide_period
+
+    d = date.fromisoformat(period)
+    out = []
+    y, m = d.year, d.month
+    for _ in range(months):
+        y, m = (y, m - 1) if m > 1 else (y - 1, 12)
+        p = date(y, m, 1)
+        if is_valid_fide_period(p):
+            out.append(p.isoformat())
+    return sorted(out)
+
+
+def newcomer_sql() -> str:
+    """SQL für (fide_id, band_rating, offene Vorlauf-Kombos, Föderation).
+
+    Neuling = published_rating > 0 in P, aber in keiner früheren Liste mit
+    Rating. Band = Rating in P. Offen = Vorlauf-Monate ohne scrape_periods-Eintrag.
+    Parameter: siehe newcomer_params().
+    """
+    # Zweistufig, gemessen 14.11.2026: die volle Historienprüfung für alle
+    # ~570k Spieler der Liste dauerte > 5 Min. Erst Kandidaten = in P mit
+    # Rating, in der Vorperiode nicht (~4.400 im Nov.), dann nur für diese die
+    # Historie per LIMIT-1-Lookup. Beide Perioden einzeln materialisiert und per
+    # Hash abgeglichen (4,5 s) — als NOT EXISTS verschätzte sich der Planer
+    # (> 4 Min.).
+    return f"""
+        WITH cur_p AS MATERIALIZED (
+            SELECT fide_id, published_rating FROM rating_history
+            WHERE period = %s AND published_rating > 0
+        ),
+        prev_p AS MATERIALIZED (
+            SELECT fide_id FROM rating_history
+            WHERE period = %s AND published_rating > 0
+        ),
+        cand AS MATERIALIZED (
+            SELECT cur_p.fide_id, cur_p.published_rating
+            FROM cur_p LEFT JOIN prev_p USING (fide_id)
+            WHERE prev_p.fide_id IS NULL
+        ),
+        nc AS MATERIALIZED (
+            SELECT c.fide_id, c.published_rating
+            FROM cand c
+            WHERE (SELECT 1 FROM rating_history e
+                   WHERE e.fide_id = c.fide_id AND e.period < %s
+                     AND e.published_rating > 0 LIMIT 1) IS NULL
+              AND {in_latest_list_sql("c")}
+        )
+        SELECT nc.fide_id,
+               nc.published_rating AS band_rating,
+               count(*) FILTER (WHERE sp.fide_id IS NULL) AS offen,
+               p.federation
+        FROM nc
+        JOIN players p ON p.fide_id = nc.fide_id
+        CROSS JOIN unnest(%s::date[]) AS v(period)
+        LEFT JOIN scrape_periods sp ON sp.fide_id = nc.fide_id AND sp.period = v.period
+        GROUP BY nc.fide_id, nc.published_rating, p.federation
+        HAVING count(*) FILTER (WHERE sp.fide_id IS NULL) > 0
+    """
+
+
+def newcomer_params(period: str, latest) -> tuple:
+    vorlauf = vorlauf_periods(period)
+    previous = vorlauf[-1] if vorlauf else period
+    return (period, previous, period, latest, vorlauf)

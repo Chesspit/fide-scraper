@@ -60,3 +60,8 @@ __marimo__/
 
 # Kachelbilder der Analysen-Übersicht (frontend/build_story_covers.py) gehören ins Repo
 !frontend/assets/analysen/*.png
+
+# Lokale Bestandsaufnahme + Review (enthalten Betriebsdetails und offene Findings; Entscheid Pit 14.11.2026: nicht ins öffentliche Repo)
+docs/architektur.html
+docs/ARCHITEKTUR.md
+docs/review.md

@@ -6,8 +6,12 @@
 # (der Mac Mini fährt nachts komplett runter statt zu schlafen, daher greift
 # ein reines StartCalendarInterval nicht zuverlässig) + 09:30 als Fallback.
 #
-# Zieht /home/pit/backups/fide-scraper/ vom VPS (Dumps + backup.log) und
-# rotiert lokal knapper als der VPS (Mac-Platte ist kleiner): die VPS-Seite
+# Zieht /home/pit/backups/fide-scraper/ vom VPS (Dumps + backup.log + config/ mit
+# .env-Kopie und Thread-Einstellungen, Review F-04) und zusätzlich die
+# Parquet-Caches des Frontends direkt aus dem Checkout (einzige vollständige
+# Kopie liegt auf dem VPS; Entscheid Pit 14.11.2026: direkt per rsync, ohne
+# zweite Kopie auf dem Server). Die Dumps werden
+# lokal knapper rotiert als auf dem VPS (Mac-Platte ist kleiner): die VPS-Seite
 # ist das primäre Backup, diese Kopie schützt gegen Totalverlust des VPS.
 set -euo pipefail
 
@@ -15,7 +19,10 @@ set -euo pipefail
 VPS="$FIDE_VPS"
 DEST="$HOME/backups/fide-scraper/vps"
 LOG="$HOME/backups/fide-scraper/pull.log"
-RETENTION_DAYS_PG=5        # ~4,3 GB bei 854-MB-Dumps
+RETENTION_DAYS_PG=5        # ~9 GB bei 1,7-GB-Dumps (Nov. 2026)
+# Checkout auf dem VPS: FIDE_VPS_COMPOSE_DIR ist <repo>/deploy/infomaniak
+VPS_REPO="${FIDE_VPS_COMPOSE_DIR%/deploy/*}"
+PARQUET_DEST="$DEST/parquet"
 RETENTION_DAYS_SQLITE=30
 KEEP_MIN=2                 # diese jeweils neuesten Dateien nie löschen, egal wie alt
                            # (schützt vor Totalverlust nach Urlaub/langem Mac-Aus, falls
@@ -52,7 +59,22 @@ if rsync -az --timeout=300 "${VPS}:/home/pit/backups/fide-scraper/" "$DEST/"; th
         log "WARNUNG: neuester fidedb-Dump älter als 2 Tage — Backup auf dem VPS prüfen (backup.log)"
         exit 1
     fi
-    log "Pull OK: ${N_PG} fidedb-Dumps lokal, $(du -sh "$DEST" | cut -f1) gesamt"
+    # config/ enthält die .env des Servers — nur für diesen Benutzer lesbar halten.
+    [ -d "$DEST/config" ] && chmod -R go-rwx "$DEST/config"
+
+    # Parquet-Caches: eine aktuelle Fassung, rsync überträgt nur Geändertes.
+    # Ein Fehler hier ist kein Backup-Ausfall (die Dumps sind da) → nur warnen.
+    mkdir -p "$PARQUET_DEST"
+    if rsync -az --timeout=300 --include='*.parquet' --exclude='*' \
+            "${VPS}:${VPS_REPO}/frontend/" "$PARQUET_DEST/"; then
+        PARQUET_INFO="$(find "$PARQUET_DEST" -name '*.parquet' | wc -l | tr -d ' ') Parquet-Caches"
+    else
+        PARQUET_INFO="Parquet-Caches NICHT aktualisiert"
+        log "WARNUNG: rsync der Parquet-Caches fehlgeschlagen (${VPS}:${VPS_REPO}/frontend/)"
+    fi
+    [ -f "$DEST/config/env" ] || log "WARNUNG: config/env fehlt im Backup — backup_fide_vps.sh auf dem VPS aktuell?"
+
+    log "Pull OK: ${N_PG} fidedb-Dumps lokal, ${PARQUET_INFO}, $(du -sh "$DEST" | cut -f1) gesamt"
 else
     log "FEHLER: rsync vom VPS fehlgeschlagen (Exit $?)"
     exit 1

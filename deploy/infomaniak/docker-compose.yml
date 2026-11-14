@@ -69,6 +69,7 @@ services:
       -c max_worker_processes=16
       -c timescaledb.max_background_workers=8
       -c log_connections=on
+      -c temp_file_limit=8GB
     volumes:
       - fide_pgdata:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro
@@ -99,6 +100,11 @@ services:
       - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-}
       - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
       - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=http
+      # Nur abgewiesene Anfragen protokollieren (401 falsches Passwort, 429
+      # Rate-Limit …) — macht Durchprobieren sichtbar, ohne jeden Dash-Callback
+      # ins Log zu schreiben. Landet in "docker compose logs traefik".
+      - --accesslog=true
+      - --accesslog.filters.statuscodes=400-499
     ports:
       - "80:80"
       - "443:443"
@@ -134,7 +140,17 @@ services:
       - "traefik.http.routers.orchestrator.rule=Host(`${DASHBOARD_HOST:-scelo.chesspit.net}`)"
       - "traefik.http.routers.orchestrator.entrypoints=https"
       - "traefik.http.routers.orchestrator.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.orchestrator.middlewares=fide-auth"
+      # Eigener Zugang für die Steuerung (Review F-03): wer das Passwort der
+      # Analyse-Seiten kennt, soll damit nicht das Scraping steuern können.
+      # Ohne BASICAUTH_USERS_SCELO gilt weiter das gemeinsame Passwort.
+      # Reihenfolge: erst Rate-Limit, dann Passwortprüfung (bcrypt kostet CPU).
+      - "traefik.http.routers.orchestrator.middlewares=scelo-ratelimit,scelo-auth"
+      - "traefik.http.middlewares.scelo-auth.basicauth.users=${BASICAUTH_USERS_SCELO:-${BASICAUTH_USERS}}"
+      # je Client-IP; das Dashboard pollt selbst (10 Intervalle, 10–300 s)
+      - "traefik.http.middlewares.scelo-ratelimit.ratelimit.average=${SCELO_RATELIMIT_AVERAGE:-10}"
+      - "traefik.http.middlewares.scelo-ratelimit.ratelimit.period=1s"
+      - "traefik.http.middlewares.scelo-ratelimit.ratelimit.burst=${SCELO_RATELIMIT_BURST:-50}"
+      # fide-auth (Analyse-Seiten) bleibt hier definiert, weil BASICAUTH_USERS Pflicht ist
       - "traefik.http.middlewares.fide-auth.basicauth.users=${BASICAUTH_USERS:?BASICAUTH_USERS fehlt in .env}"
       - "traefik.http.services.orchestrator.loadbalancer.server.port=8050"
     mem_limit: 768m

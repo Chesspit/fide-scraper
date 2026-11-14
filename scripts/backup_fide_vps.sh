@@ -6,6 +6,14 @@
 # "orchestrator": scrape_groups/scrape_runs) — die frühere separate
 # SQLite-Sicherung von scraper.db entfällt.
 #
+# Zusätzlich (Review F-04, Entscheid Pit 14.11.2026: unverschlüsselt, Rechte 600):
+# die Betriebskonfiguration, die sonst nur auf dem VPS liegt → $BACKUP_DIR/config/
+#   env                    Kopie von /opt/fide-scraper/.env (Secrets!)
+#   runtime_settings.json  Thread-Schalter/Aktivzeiten aus dem Volume orchestrator_data
+#   proxy_fallback_active  Marker „Proxy läuft auf Plan 2" (nur wenn vorhanden)
+# Der Mac-Pull (pull_backup_macmini.sh) nimmt den Ordner per rsync mit.
+# Ein Fehler hier bricht das Backup NICHT ab — der DB-Dump ist das Wichtigste.
+#
 # Muster analog /home/pit/backups/tunnelbliq/backup_db_vps.sh.
 # Deploy: scp scripts/backup_fide_vps.sh pit@VPS:/home/pit/backups/fide-scraper/
 # Cron:   45 3 * * * /home/pit/backups/fide-scraper/backup_fide_vps.sh
@@ -20,8 +28,10 @@
 #   Nur die Queue wiederherstellen: pg_restore --schema=orchestrator …
 set -euo pipefail
 
-BACKUP_DIR="/home/pit/backups/fide-scraper"
-KEEP_DUMPS=3               # fidedb-Dumps sind groß (~900 MB) — nur die letzten 3
+BACKUP_DIR="${FIDE_BACKUP_DIR:-/home/pit/backups/fide-scraper}"
+REPO_DIR="${FIDE_REPO_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+WORKER_CONTAINER="${FIDE_WORKER_CONTAINER:-infomaniak-worker-1}"
+KEEP_DUMPS=3               # fidedb-Dumps sind groß (~1,7 GB, Nov. 2026) — nur die letzten 3
                            # behalten; Langzeit-Historie liegt offsite (Mac-Mini-Pull)
 LOG="${BACKUP_DIR}/backup.log"
 
@@ -54,3 +64,44 @@ fi
 ls -1t "$BACKUP_DIR"/fidedb_*.dump 2>/dev/null | tail -n +$((KEEP_DUMPS + 1)) | xargs -r rm -f
 # Alte scraper.db-Sicherungen (vor Review #5) laufen über die Zeit aus:
 find "$BACKUP_DIR" -name 'scraperdb_*.db' -mtime +30 -delete
+
+# ── Betriebskonfiguration (Review F-04) ──────────────────────────────────
+# Je eine aktuelle Kopie, jede Nacht überschrieben. Fehler nur loggen.
+CONFIG_DIR="${BACKUP_DIR}/config"
+umask 077
+mkdir -p "$CONFIG_DIR" && chmod 700 "$CONFIG_DIR"
+CONFIG_OK=""
+CONFIG_MISSING=""
+
+if [ -f "${REPO_DIR}/.env" ] && cp "${REPO_DIR}/.env" "${CONFIG_DIR}/env.tmp" \
+        && mv "${CONFIG_DIR}/env.tmp" "${CONFIG_DIR}/env"; then
+    chmod 600 "${CONFIG_DIR}/env"
+    CONFIG_OK="$CONFIG_OK env"
+else
+    rm -f "${CONFIG_DIR}/env.tmp"
+    CONFIG_MISSING="$CONFIG_MISSING env"
+fi
+
+# Dateien aus dem Volume orchestrator_data (im Worker-Container unter /data).
+# docker cp geht auch bei gestopptem Container. Der Proxy-Marker ist optional.
+for f in runtime_settings.json proxy_fallback_active; do
+    if docker cp "${WORKER_CONTAINER}:/data/${f}" "${CONFIG_DIR}/${f}.tmp" 2>/dev/null; then
+        mv "${CONFIG_DIR}/${f}.tmp" "${CONFIG_DIR}/${f}"
+        chmod 600 "${CONFIG_DIR}/${f}"
+        CONFIG_OK="$CONFIG_OK $f"
+    else
+        rm -f "${CONFIG_DIR}/${f}.tmp"
+        # Kein Marker heißt „Plan 1 aktiv": die alte Kopie wäre dann irreführend.
+        if [ "$f" = "proxy_fallback_active" ]; then
+            rm -f "${CONFIG_DIR}/${f}"
+        else
+            CONFIG_MISSING="$CONFIG_MISSING $f"
+        fi
+    fi
+done
+
+if [ -n "$CONFIG_MISSING" ]; then
+    log "WARNUNG: Konfiguration unvollständig gesichert — fehlt:${CONFIG_MISSING} (gesichert:${CONFIG_OK:- nichts})"
+else
+    log "config OK:${CONFIG_OK}"
+fi

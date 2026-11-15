@@ -1,47 +1,46 @@
 """Shared fixtures — PG-Testdatenbank für die Orchestrator-Queue (Review #5).
 
 Die Queue liegt seit Review #5 in PostgreSQL (Schema "orchestrator"); die
-Queue-/Store-Tests brauchen deshalb eine erreichbare PG-Instanz statt der
-früheren Wegwerf-SQLite. DSN-Auflösung:
+Queue-/Store-/Audit-Tests brauchen deshalb eine erreichbare PG-Instanz.
 
-  1. ORCH_TEST_DATABASE_URL (explizit gesetzt)
-  2. aus DATABASE_URL (.env) abgeleitet: gleiche Instanz, Datenbank
-     'fide_orch_test' (wird bei Bedarf automatisch angelegt)
+Die Test-DB kommt AUSSCHLIESSLICH aus ORCH_TEST_DATABASE_URL (Wegwerf-PG).
+Es gibt bewusst keinen Rückgriff auf DATABASE_URL mehr: die zeigt über die
+.env bei offenem Tunnel auf die Produktiv-DB (Review F-25; Vorfall 30.10.2026,
+siehe tests/test_db.py). Ohne die Variable werden die DB-Tests übersprungen —
+die übrigen Tests (Parser, Fetcher, …) laufen weiter.
 
-Ist keine PG erreichbar (z.B. SSH-Tunnel down), werden die Queue-Tests
-geskippt — die übrigen Tests (Parser, Fetcher, …) laufen weiter.
+Lokal z. B.:
+  docker run -d --name fide-test-pg -e POSTGRES_PASSWORD=test -e POSTGRES_HOST_AUTH_METHOD=trust -p 127.0.0.1:55432:5432 postgres:16
+  export ORCH_TEST_DATABASE_URL=postgresql://postgres:test@localhost:55432/fide_orch_test
+In der CI setzt .github/workflows/tests.yml die Variable.
 """
 
 import os
 
 import psycopg2
+import psycopg2.extensions
 import pytest
 
 
 def _resolve_test_dsn() -> str | None:
-    dsn = os.environ.get("ORCH_TEST_DATABASE_URL")
-    if dsn:
-        return dsn
-    try:
-        from core.config import get_database_url
-        base = get_database_url()
-    except Exception:
-        return None
-    root, _, _dbname = base.rpartition("/")
-    return f"{root}/fide_orch_test"
+    return os.environ.get("ORCH_TEST_DATABASE_URL") or None
 
 
 def _ensure_test_db(dsn: str) -> None:
-    """Test-Datenbank anlegen, falls sie noch nicht existiert."""
+    """Test-Datenbank anlegen, falls sie noch nicht existiert.
+
+    Der Verwaltungs-Zugriff geht auf dieselbe Instanz wie die Test-DB
+    (Datenbank "postgres"), nie auf DATABASE_URL.
+    """
     try:
         psycopg2.connect(dsn, connect_timeout=3).close()
         return
     except psycopg2.OperationalError as exc:
         if "does not exist" not in str(exc):
             raise
-    from core.config import get_database_url
-    dbname = dsn.rpartition("/")[2]
-    admin = psycopg2.connect(get_database_url(), connect_timeout=3)
+    dbname = psycopg2.extensions.parse_dsn(dsn)["dbname"]
+    admin = psycopg2.connect(psycopg2.extensions.make_dsn(dsn, dbname="postgres"),
+                             connect_timeout=3)
     admin.autocommit = True
     with admin.cursor() as cur:
         cur.execute(f'CREATE DATABASE "{dbname}"')
@@ -109,12 +108,12 @@ class QueueTestDB:
 def queue_dsn() -> str:
     dsn = _resolve_test_dsn()
     if dsn is None:
-        pytest.skip("Keine DATABASE_URL konfiguriert — Queue-Tests übersprungen")
+        pytest.skip("ORCH_TEST_DATABASE_URL not set — DB-Tests übersprungen (Wegwerf-PG nötig)")
     try:
         _ensure_test_db(dsn)
         conn = psycopg2.connect(dsn, connect_timeout=3)
     except psycopg2.OperationalError as exc:
-        pytest.skip(f"Queue-Test-DB nicht erreichbar (Tunnel down?): {exc}")
+        pytest.skip(f"Test-DB aus ORCH_TEST_DATABASE_URL nicht erreichbar: {exc}")
     from orchestrator.setup_db import ensure_schema
     conn.autocommit = True
     ensure_schema(conn)

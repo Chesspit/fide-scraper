@@ -1,11 +1,16 @@
-dash>=2.18
-dash-bootstrap-components>=1.6
-plotly>=5.24
-requests>=2.32
-beautifulsoup4>=4.12
-psycopg2-binary>=2.9
-pyyaml>=6.0
-python-dotenv>=1.0
-rapidfuzz>=3.10
-anthropic>=0.119,<1.0
-pandas>=2.2
+# Worker- und Dashboard-Image (orchestrator/Dockerfile).
+# Feste Versionen = Stand des laufenden Worker-Image vom 14.11.2026
+# (gemessen mit "pip list" im Container; Review F-08). Vorher standen hier nur
+# Mindestversionen, jeder Rebuild konnte neue Hauptversionen ziehen.
+# Anheben: Version hier ändern, Image bauen, Tests fahren.
+dash==4.5.0
+dash-bootstrap-components==2.0.4
+plotly==7.1.0
+requests==2.34.2
+beautifulsoup4==4.15.0
+psycopg2-binary==2.9.13
+pyyaml==6.0.3
+python-dotenv==1.2.4
+rapidfuzz==3.14.6
+anthropic==0.125.0
+pandas==3.1.1

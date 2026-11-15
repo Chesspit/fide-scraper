@@ -135,24 +135,12 @@ services:
       - ../../orchestrator/dataimpulse_gateway.txt:/app/orchestrator/dataimpulse_gateway.txt:ro
     ports:
       - "127.0.0.1:8050:8050"
+    # Die Steuerung ist NICHT öffentlich erreichbar (Entscheid Pit 15.11.2026, Review
+    # F-03): kein Traefik-Router, nur 127.0.0.1:8050 auf dem Server. Zugriff vom Mac
+    # über den SSH-Tunnel (scripts/tunnel.sh) → http://localhost:8051
+    # Wer das Passwort der Analyse-Seiten kennt, erreicht die Steuerung damit nicht.
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.orchestrator.rule=Host(`${DASHBOARD_HOST:-scelo.chesspit.net}`)"
-      - "traefik.http.routers.orchestrator.entrypoints=https"
-      - "traefik.http.routers.orchestrator.tls.certresolver=letsencrypt"
-      # Eigener Zugang für die Steuerung (Review F-03): wer das Passwort der
-      # Analyse-Seiten kennt, soll damit nicht das Scraping steuern können.
-      # Ohne BASICAUTH_USERS_SCELO gilt weiter das gemeinsame Passwort.
-      # Reihenfolge: erst Rate-Limit, dann Passwortprüfung (bcrypt kostet CPU).
-      - "traefik.http.routers.orchestrator.middlewares=scelo-ratelimit,scelo-auth"
-      - "traefik.http.middlewares.scelo-auth.basicauth.users=${BASICAUTH_USERS_SCELO:-${BASICAUTH_USERS}}"
-      # je Client-IP; das Dashboard pollt selbst (10 Intervalle, 10–300 s)
-      - "traefik.http.middlewares.scelo-ratelimit.ratelimit.average=${SCELO_RATELIMIT_AVERAGE:-10}"
-      - "traefik.http.middlewares.scelo-ratelimit.ratelimit.period=1s"
-      - "traefik.http.middlewares.scelo-ratelimit.ratelimit.burst=${SCELO_RATELIMIT_BURST:-50}"
-      # fide-auth (Analyse-Seiten) bleibt hier definiert, weil BASICAUTH_USERS Pflicht ist
-      - "traefik.http.middlewares.fide-auth.basicauth.users=${BASICAUTH_USERS:?BASICAUTH_USERS fehlt in .env}"
-      - "traefik.http.services.orchestrator.loadbalancer.server.port=8050"
+      - "traefik.enable=false"
     mem_limit: 768m
     restart: unless-stopped
     logging: *logging
@@ -225,7 +213,13 @@ services:
       - "traefik.http.routers.frontend.priority=10"
       - "traefik.http.routers.frontend.entrypoints=https"
       - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.frontend.middlewares=fide-auth"
+      # erst Rate-Limit, dann Passwortprüfung (bcrypt kostet CPU)
+      - "traefik.http.routers.frontend.middlewares=intern-ratelimit,fide-auth"
+      - "traefik.http.middlewares.fide-auth.basicauth.users=${BASICAUTH_USERS:?BASICAUTH_USERS fehlt in .env}"
+      # je Client-IP; eine Dash-Seite feuert beim Laden ~10 Callback-Requests
+      - "traefik.http.middlewares.intern-ratelimit.ratelimit.average=${INTERN_RATELIMIT_AVERAGE:-20}"
+      - "traefik.http.middlewares.intern-ratelimit.ratelimit.period=1s"
+      - "traefik.http.middlewares.intern-ratelimit.ratelimit.burst=${INTERN_RATELIMIT_BURST:-60}"
       - "traefik.http.services.frontend.loadbalancer.server.port=8055"
     mem_limit: 1536m
     restart: unless-stopped

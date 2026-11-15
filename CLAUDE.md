@@ -72,8 +72,8 @@ fide-scraper/
 | Stack | `deploy/infomaniak/docker-compose.yml`: `fide-db`, `traefik`, `dashboard`, `worker`, `frontend` |
 | DB lokal | `postgresql://fide:<DB_PASSWORD>@localhost:5434/fidedb` (Passwort nur in `.env`, Server-Wert in `/opt/fide-scraper/.env`) |
 | Tunnel starten | `bash scripts/tunnel.sh` |
-| Orchestrator-Dashboard | https://scelo.chesspit.net (BasicAuth) — Steuerung, Queue, Tabs „Abdeckung" und „QC" |
-| Analyse-Frontend | https://internelo.chesspit.net und https://elo.chesspit.net (gleiche BasicAuth) — beide auf den internen Container (`EDITION=intern`, alle Seiten, seit Umbau-Deploy 01.11.). `elo.chesspit.net` öffentlich ohne Passwort erst mit `frontend-public` (Compose-Profil `public`) nach OK des Users |
+| Orchestrator-Dashboard | http://localhost:8051 über den SSH-Tunnel (`bash scripts/tunnel.sh`) — Steuerung, Queue, Tabs „Abdeckung" und „QC". Seit 15.11.2026 **nicht mehr öffentlich** (`scelo.chesspit.net` hat keinen Traefik-Router mehr) |
+| Analyse-Frontend | https://internelo.chesspit.net und https://elo.chesspit.net (BasicAuth + Rate-Limit) — beide auf den internen Container (`EDITION=intern`, alle Seiten, seit Umbau-Deploy 01.11.). `elo.chesspit.net` öffentlich ohne Passwort erst mit `frontend-public` (Compose-Profil `public`) nach OK des Users |
 
 DB-Container heißt `fide-db` (Port 5432 nur auf `127.0.0.1`), Diagnosen also
 `docker compose -f /opt/fide-scraper/deploy/infomaniak/docker-compose.yml logs …` bzw. `docker exec fide-db psql -U fide -d fidedb`.

@@ -46,6 +46,7 @@ from orchestrator.profile_manager import ProfileManager, PROFILES_PATH
 from orchestrator.proxy_manager import ProxyManager, is_proxy_auth_failure
 from orchestrator.queue_manager import AUTO_RETRY_MAX, Group, QueueManager, get_device_id
 from scraper.db import (
+    SavePeriodError,
     ensure_connection,
     get_connection,
     save_period,
@@ -61,6 +62,126 @@ _EMPTY_QUEUE_SLEEP = 120      # seconds to wait when queue is empty (single-thre
 _THREAD_EMPTY_SLEEP = 30      # seconds to wait when queue is empty (per thread)
 _CIRCUIT_BREAKER_THRESHOLD = 15  # consecutive double-failures before aborting group
 _DC_SLEEP_CHECK_INTERVAL = 600  # seconds between timezone re-checks when DC thread sleeps
+
+
+# Nach HTTP 403 (IP gesperrt) pausiert der betroffene Thread, statt sofort die
+# nächste Gruppe anzufangen und deren Retry-Budget zu verbrauchen (Review F-20).
+_BLOCKED_PAUSE_SECONDS = int(os.getenv("BLOCKED_PAUSE_SECONDS", "1800"))
+
+# Thread-Überwachung (Review F-06): bricht ein Thread mit einer unerwarteten
+# Exception ab (z. B. DB minutenlang weg), wartet er und startet neu. Nach
+# _CRASH_LIMIT Abbrüchen in Folge beendet sich der Prozess mit Fehlercode —
+# Docker startet den Worker neu, reset_stale_running() räumt dann auf.
+_CRASH_BACKOFF_SECONDS = (60, 300)   # 1. Abbruch 1 min, danach je 5 min
+_CRASH_LIMIT = 5
+_CRASH_RESET_AFTER_SECONDS = 1800    # lief der Thread so lange, zählt die Serie neu
+_hard_exit = os._exit                # austauschbar für Tests
+
+# Slot → id der Gruppe, die der Thread gerade geclaimt hat. Bricht der Thread
+# ab, bevor er die Gruppe abschließen konnte, markiert die Überwachung sie als
+# failed (statt sie bis zum nächsten Prozessstart auf "running" zu lassen).
+_claims: dict[int, int] = {}
+_claims_lock = threading.Lock()
+
+
+def _register_claim(slot: int, group_id: int) -> None:
+    with _claims_lock:
+        _claims[slot] = group_id
+
+
+def _release_claim(slot: int) -> None:
+    with _claims_lock:
+        _claims.pop(slot, None)
+
+
+def _settle_orphaned_claim(slot: int, reason: str) -> bool:
+    """Verwaiste Gruppe eines abgebrochenen Threads auf failed setzen.
+
+    True, wenn nichts (mehr) offen ist; False, wenn die DB nicht erreichbar war —
+    dann bleibt der Claim stehen und wird beim nächsten Anlauf erneut versucht.
+    mark_failed (nicht reset_to_pending): eine Gruppe, die den Thread immer
+    wieder zum Absturz bringt, läuft so nach AUTO_RETRY_MAX Versuchen aus.
+    """
+    with _claims_lock:
+        group_id = _claims.get(slot)
+    if group_id is None:
+        return True
+    msg = f"Thread-Abbruch: {reason}"[:500]
+    qm = None
+    try:
+        qm = QueueManager()
+        qm.mark_failed(group_id, msg)
+        qm.log_run(group_id, time.strftime("%Y-%m-%dT%H:%M:%S"), "failed",
+                   error_msg=msg, thread_slot=slot)
+    except Exception:
+        logger.exception("Slot %s: verwaiste Gruppe %s konnte nicht auf failed gesetzt werden",
+                         slot, group_id)
+        return False
+    finally:
+        if qm is not None:
+            try:
+                qm.close()
+            except Exception:
+                pass
+    _release_claim(slot)
+    logger.warning("Slot %s: verwaiste Gruppe %s nach Thread-Abbruch auf failed gesetzt",
+                   slot, group_id)
+    return True
+
+
+def _supervised(target, slot: int, stop_event: threading.Event, *args) -> None:
+    """target(*args) ausführen und nach einer unerwarteten Exception neu starten.
+
+    Kehrt target normal zurück (Stop-Befehl, Limit, per UI deaktiviert), endet
+    auch die Überwachung. Siehe _CRASH_* oben.
+    """
+    crashes = 0
+    reason = "unbekannt"
+
+    def _after_crash() -> None:
+        nonlocal crashes
+        crashes += 1
+        if crashes >= _CRASH_LIMIT:
+            logger.critical("Slot %s: %d Abbrüche in Folge — Worker-Prozess beendet sich "
+                            "(Docker startet ihn neu)", slot, crashes)
+            logging.shutdown()
+            _hard_exit(1)
+        wait = _CRASH_BACKOFF_SECONDS[min(crashes - 1, len(_CRASH_BACKOFF_SECONDS) - 1)]
+        logger.warning("Slot %s: Neustart des Threads in %d s (Abbruch %d/%d in Folge)",
+                       slot, wait, crashes, _CRASH_LIMIT)
+        stop_event.wait(timeout=wait)
+
+    while not stop_event.is_set():
+        if not _settle_orphaned_claim(slot, reason):
+            _after_crash()
+            continue
+        started = time.time()
+        try:
+            target(*args)
+            return
+        except Exception as exc:
+            reason = f"{exc.__class__.__name__}: {exc}"
+            logger.exception("Slot %s: Thread mit unerwarteter Exception abgebrochen", slot)
+            if time.time() - started > _CRASH_RESET_AFTER_SECONDS:
+                crashes = 0
+            _after_crash()
+
+
+def _pause_after_block(slot: int, profile_name: str, stop_event: threading.Event,
+                       log_prefix: str) -> None:
+    """Nach HTTP 403 pausieren (Review F-20). Ein Stop-Befehl weckt den Thread."""
+    until = time.strftime("%H:%M", time.localtime(time.time() + _BLOCKED_PAUSE_SECONDS))
+    logger.warning("%s: HTTP 403 — pausiere %d min (bis %s) vor der nächsten Gruppe",
+                   log_prefix, _BLOCKED_PAUSE_SECONDS // 60, until)
+    _update_thread_slot(slot,
+        profile=profile_name,
+        current_group=f"⛔ 403 – Pause bis {until}",
+        combos_done=0,
+        combos_total=None,
+        player_count=None,
+        group_started_at=None,
+    )
+    stop_event.wait(timeout=_BLOCKED_PAUSE_SECONDS)
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +391,18 @@ def is_confirmed_no_data(html: str | None) -> bool:
     return bool(html) and NO_RECORDS_MARKER in html and "calc_table" not in html
 
 
+def is_complete_html(html: str) -> bool:
+    """False, wenn die Antwort mitten in einer Tabelle abbricht (Review F-15).
+
+    Jede geöffnete <table> muss geschlossen sein. Bricht eine Proxy-Verbindung
+    mitten im Body ab, fehlt das schließende Tag — ohne diese Prüfung wurde die
+    Periode mit den bis dahin lesbaren Partien als vollständig gespeichert.
+    Bewusst keine Annahme über den Inhalt (Summenzeile o. Ä.).
+    """
+    low = html.lower()
+    return low.count("<table") == low.count("</table>")
+
+
 def _proxy_label(proxies: dict | None) -> str:
     """'host:port' from a proxy dict for logging, credentials stripped."""
     if not proxies:
@@ -381,6 +514,22 @@ def _fetch(
                     return None, 0
                 backoff = 4 ** (attempt - 1)
                 logger.warning("Unerwartetes Antwortformat fide_id=%s period=%s (%d Bytes, attempt "
+                               "%d/%d) proxy=%s — retrying in %ds", fide_id, period_str,
+                               len(resp.content), attempt, max_retries, _proxy_label(proxies),
+                               backoff)
+                time.sleep(backoff)
+                continue
+
+            if not is_complete_html(resp.text):
+                # Abgeschnittene Antwort: wie ein unerwartetes Format behandeln,
+                # mit frischer IP wiederholen statt Teil-Daten zu speichern.
+                if attempt == max_retries:
+                    logger.error("Unvollständige Antwort fide_id=%s period=%s (%d Bytes) nach "
+                                 "%d Versuchen: Tabelle nicht geschlossen — als Fehlschlag "
+                                 "gewertet", fide_id, period_str, len(resp.content), max_retries)
+                    return None, 0
+                backoff = 4 ** (attempt - 1)
+                logger.warning("Unvollständige Antwort fide_id=%s period=%s (%d Bytes, attempt "
                                "%d/%d) proxy=%s — retrying in %ds", fide_id, period_str,
                                len(resp.content), attempt, max_retries, _proxy_label(proxies),
                                backoff)
@@ -602,8 +751,17 @@ def scrape_group(
 
         games, k_factor, own_rating = parse_calculations(html, fide_id, period_str)
         if games:
-            pg_conn = save_period(pg_conn, fide_id, period_str, games, k_factor, own_rating)
-            records_found += len(games)
+            try:
+                pg_conn = save_period(pg_conn, fide_id, period_str, games, k_factor,
+                                      own_rating, raise_on_error=True)
+                records_found += len(games)
+            except SavePeriodError as exc:
+                # Speicherfehler ist kein Erfolg: Kombo bleibt offen (status='error'
+                # gilt als pending), die Gruppe endet unten auf failed → Auto-Retry.
+                pg_conn = exc.conn
+                logger.error("Speichern gescheitert fide_id=%s period=%s — Kombo bleibt offen",
+                             fide_id, period_str)
+                _failed_combos += 1
         elif is_confirmed_no_data(html):
             pg_conn = save_period_no_data(pg_conn, fide_id, period_str)
             logger.debug("  → no data fide_id=%s period=%s", fide_id, period_str)
@@ -634,7 +792,7 @@ def scrape_group(
 
     if _failed_combos:
         raise RuntimeError(
-            f"{_failed_combos} von {len(pending)} Abrufen fehlgeschlagen — bleiben offen, "
+            f"{_failed_combos} von {len(pending)} Kombos fehlgeschlagen (Abruf oder Speichern) — bleiben offen, "
             f"Auto-Retry holt sie nach ({records_found} Partien dieses Laufs sind gespeichert)"
         )
 
@@ -728,6 +886,7 @@ def run_slot(
 
             label = f"{group.federation}/{group.year}/{group.elo_min}–{group.elo_max}"
             logger.info("Thread %d: Starte Gruppe %s [%s]", slot, label, profile_name)
+            _register_claim(slot, group.id)
 
             _update_thread_slot(slot,
                 profile=profile_name,
@@ -754,9 +913,11 @@ def run_slot(
 
             except InterruptedError:
                 qm_local.reset_to_pending(group.id)
-                qm_local.log_run(group.id, run_started, "failed",
+                # "stopped", nicht "failed": ein Stopp aus dem Dashboard ist kein Fehler
+                qm_local.log_run(group.id, run_started, "stopped",
                                  error_msg="stopped by user", profile_used=profile_name,
                                  thread_slot=slot)
+                _release_claim(slot)
                 break
 
             except BlockedError as exc:
@@ -765,6 +926,8 @@ def run_slot(
                 qm_local.log_run(group.id, run_started, "failed",
                                  error_msg=str(exc), profile_used=profile_name,
                                  thread_slot=slot)
+                _release_claim(slot)
+                _pause_after_block(slot, profile_name, stop_event, f"Thread {slot}")
 
             except Exception as exc:
                 logger.exception("Thread %d: Fehler bei %s", slot, label)
@@ -775,6 +938,7 @@ def run_slot(
                 pg_conn = ensure_connection(pg_conn)
 
             _clear_thread_slot(slot)
+            _release_claim(slot)
 
     finally:
         if pg_conn:
@@ -937,10 +1101,14 @@ def _run_parallel_loop(
             profile_name = profile_override if (slot == active_slots[0]["slot"] and profile_override) \
                            else slot_cfg.get("profile", "normal")
             futures.append(executor.submit(
-                run_slot, slot, profile_name, device, proxy_manager, stop_event,
+                _supervised, run_slot, slot, stop_event,
+                slot, profile_name, device, proxy_manager, stop_event,
             ))
         for dc_cfg, dc_proxy in active_dc:
-            futures.append(executor.submit(run_dc_slot, dc_cfg, dc_proxy, stop_event))
+            futures.append(executor.submit(
+                _supervised, run_dc_slot, dc_cfg["slot"], stop_event,
+                dc_cfg, dc_proxy, stop_event,
+            ))
 
         for fut in futures:
             try:
@@ -1078,6 +1246,7 @@ def run_dc_slot(
 
             grp_label = f"{group.federation}/{group.year}/{group.elo_min}–{group.elo_max}"
             logger.info("DC-Thread %s: Starte Gruppe %s [%s]", label, grp_label, profile_name)
+            _register_claim(slot, group.id)
 
             _update_thread_slot(slot,
                 profile=profile_name,
@@ -1104,9 +1273,11 @@ def run_dc_slot(
 
             except InterruptedError:
                 qm_local.reset_to_pending(group.id)
-                qm_local.log_run(group.id, run_started, "failed",
+                # "stopped", nicht "failed": ein Stopp aus dem Dashboard ist kein Fehler
+                qm_local.log_run(group.id, run_started, "stopped",
                                  error_msg="stopped by user", profile_used=profile_name,
                                  thread_slot=slot)
+                _release_claim(slot)
                 break
 
             except BlockedError as exc:
@@ -1115,6 +1286,8 @@ def run_dc_slot(
                 qm_local.log_run(group.id, run_started, "failed",
                                  error_msg=str(exc), profile_used=profile_name,
                                  thread_slot=slot)
+                _release_claim(slot)
+                _pause_after_block(slot, profile_name, stop_event, f"DC-Thread {label}")
 
             except Exception as exc:
                 logger.exception("DC-Thread %s: Fehler bei %s", label, grp_label)
@@ -1125,6 +1298,7 @@ def run_dc_slot(
                 pg_conn = ensure_connection(pg_conn)
 
             _clear_thread_slot(slot)
+            _release_claim(slot)
 
     finally:
         if pg_conn:

@@ -194,6 +194,29 @@ class TestRunAudit:
         assert _audit(fewer_threshold_pct=100.0).check("game_count_fewer").severity == SOFT
         assert c.sample[0]["games"] == 2 and c.sample[0]["num_games"] == 3
 
+    def test_fewer_games_chain_open_vs_closed(self, data_db, conn):
+        """F-15-Kennzahl: zu wenige Partien zählen nur dann als Kandidat für eine
+        abgeschnittene Antwort, wenn auch die Rating-Differenz nicht aufgeht."""
+        _green_player(data_db, 1)
+        # Spieler 20: Liste +20 bei 3 Partien, gespeichert 1 Partie mit +8 → Kette offen
+        data_db.insert_rating(20, PREV, published_rating=1800, num_games=0)
+        data_db.insert_rating(20, P, published_rating=1820, num_games=3, std_rating=1800)
+        data_db.insert_period(20, P, status="ok", k_factor=20)
+        data_db.insert_game(20, P, 1, 8.0)
+        # Spieler 21: Liste +8 bei 3 Partien, gespeichert 1 Partie mit +8 → Kette schließt
+        data_db.insert_rating(21, PREV, published_rating=1800, num_games=0)
+        data_db.insert_rating(21, P, published_rating=1808, num_games=3, std_rating=1800)
+        data_db.insert_period(21, P, status="ok", k_factor=20)
+        data_db.insert_game(21, P, 1, 8.0)
+        res = _audit()
+        assert res.check("game_count_fewer").n_findings == 2
+        fo = res.check("game_count_fewer_open")
+        assert fo.n_findings == 1
+        assert fo.severity == SOFT
+        assert [s["fide_id"] for s in fo.sample] == [20]
+        # die Ketten-Statistik zählt weiterhin nur Kombos mit vollständiger Partienzahl
+        assert res.check("chain_matches_list").n_checked == 1
+
     def test_fewer_games_on_first_rating_is_info(self, data_db, conn):
         data_db.insert_player(4)
         data_db.insert_rating(4, P, published_rating=1500, num_games=7)  # keine Vorliste

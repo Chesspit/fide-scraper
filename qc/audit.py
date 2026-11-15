@@ -277,7 +277,16 @@ c AS (
 ),
 k AS (
     SELECT c.*,
-           CASE WHEN c.cat2 IS DISTINCT FROM 'equal' THEN NULL
+           CASE -- Weniger Partien als gelistet (Review F-15): fehlen wirklich Partien
+                -- (abgeschnittene Antwort), fehlt auch ihr Rating-Beitrag und die
+                -- Kette bleibt offen. Schließt sie trotzdem, zählt die Liste nur anders.
+                WHEN c.cat2 = 'fewer' THEN
+                     CASE WHEN c.pub IS NULL OR c.pub_prev IS NULL THEN NULL
+                          WHEN ABS(c.residual) <= %(tol)s
+                               OR (c.ro IS NOT NULL AND ABS(c.residual_ro) <= %(tol)s)
+                          THEN 'fewer_closed'
+                          ELSE 'fewer_open' END
+                WHEN c.cat2 IS DISTINCT FROM 'equal' THEN NULL
                 WHEN c.pub_prev IS NULL OR c.pub IS NULL THEN 'no_prev'
                 WHEN ABS(c.residual) <= %(tol)s THEN 'ok'
                 WHEN c.ro IS NOT NULL AND c.ro <> c.pub_prev
@@ -537,6 +546,12 @@ def run_audit(
         CheckResult("game_count_fewer", 2, "Weniger Partien als in der Liste",
                     "Erst Stichprobe auf ratings.fide.com: zeigt FIDE selbst weniger, ist es eine "
                     "FIDE-Abweichung. Sonst Kombo löschen (scrape_periods + game_results) und neu scrapen"),
+        CheckResult("game_count_fewer_open", 2,
+                    "Weniger Partien als in der Liste und Rating-Differenz geht nicht auf",
+                    "Kandidaten für unvollständig gespeicherte Antworten (Review F-15): es fehlen "
+                    "Partien UND ihr Rating-Beitrag. Kann auch eine nachträgliche FIDE-Korrektur "
+                    "sein → Stichprobe auf ratings.fide.com; bestätigt sich die Lücke, Kombo löschen "
+                    "(scrape_periods + game_results) und neu scrapen"),
         CheckResult("game_count_first_rating", 2, "Weniger Partien bei Erstbewertung",
                     "Erwartbar: die Liste zählt bei Erstbewertung auch Partien früherer Perioden"),
         CheckResult("game_count_more", 2, "Mehr Partien als in der Liste",
@@ -678,6 +693,8 @@ def run_audit(
                             key = {"fewer": "game_count_fewer", "more": "game_count_more",
                                    "fewer_first_rating": "game_count_first_rating"}[cat2]
                             _sample_add(C[key], sample, **extra)
+                            if cat3 == "fewer_open" and not prev_bad:
+                                _sample_add(C["game_count_fewer_open"], sample, **extra)
                         elif cat3 in ("unexplained", "near", "ro_ok") and not prev_bad:
                             _sample_add(C["chain_matches_list"], sample, category=cat3, **extra)
                         if is_jump:
@@ -733,8 +750,18 @@ def run_audit(
                         if cat2 == "equal":
                             by_year[p.year]["complete"] += cnt
                             by_fed[fed]["complete"] += cnt
+                        # F-15-Kennzahl: nur wo die Vorliste brauchbar ist
+                        fo = C["game_count_fewer_open"]
+                        fo.n_checked += cnt
+                        if cat2 == "fewer" and cat3 == "fewer_open" and not prev_bad:
+                            fo.n_findings += cnt
+                            fo.by_year[p.year] += cnt
+                            fo.by_federation[fed] += cnt
+                            by_year[p.year]["fewer_open"] += cnt
+                        elif cat2 == "fewer" and cat3 == "fewer_closed":
+                            by_year[p.year]["fewer_closed"] += cnt
 
-                    if cat3 is not None and cat3 != "no_prev" and not prev_bad:
+                    if cat2 == "equal" and cat3 is not None and cat3 != "no_prev" and not prev_bad:
                         ch = C["chain_matches_list"]
                         ch.n_checked += cnt
                         chain_n += cnt
@@ -810,7 +837,7 @@ def run_audit(
         # Schweregrade Ebene 1–3
         if C["periods_missing"].n_findings:
             C["periods_missing"].raise_to(HARD)
-        for cid in ("game_count_more", "games_not_in_list"):
+        for cid in ("game_count_more", "games_not_in_list", "game_count_fewer_open"):
             if C[cid].n_findings:
                 C[cid].raise_to(SOFT)
         ro = C["ro_matches_list"]

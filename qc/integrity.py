@@ -13,9 +13,11 @@ in CHECKS registrieren — der Kern bleibt unberührt):
 
     ok_without_games            status='ok', aber keine game_results-Zeile
     no_data_with_games          status='no_data', aber Partien vorhanden
-    blocked_error_rows          error-/HTTP-Fehler-Zeilen, die den Retry
-                                dauerhaft blockieren (get_pending_periods
-                                überspringt alles, was in scrape_periods steht)
+    blocked_error_rows          liegengebliebene Fehler-Zeilen: status='error'
+                                (wird seit 15.11.2026 beim nächsten Lauf der
+                                Gruppe wiederholt, bleibt aber liegen, solange
+                                keine Gruppe die Kombo anfasst) und no_data mit
+                                HTTP-Fehlerstatus (blockiert den Retry weiterhin)
     done_groups_missing_combos  Queue-Gruppe 'done', aber Soll-Kombos fehlen
     orphan_games                Partien ohne scrape_periods-Tracking-Zeile
 
@@ -127,10 +129,13 @@ def check_no_data_with_games(conn, since=None, until=None, **_) -> list[dict]:
 # ── Check 3: dauerhaft blockierte Fehler-Zeilen ──────────────────────────────
 
 def check_blocked_error_rows(conn, since=None, until=None, **_) -> list[dict]:
-    """Zeilen, die nie erfolgreich gefetcht wurden, aber jeden Retry blockieren:
-    get_pending_periods (scraper/db.py) gibt nur Kombos zurück, die noch GAR
-    NICHT in scrape_periods stehen — status='error' oder no_data mit
-    HTTP-Fehlerstatus (429/403) bleiben damit für immer liegen.
+    """Zeilen, die nie erfolgreich gefetcht wurden und liegen geblieben sind.
+
+    no_data mit HTTP-Fehlerstatus (429/403, aus dem alten CLI-Backfill) blockiert
+    jeden Retry: get_pending_periods (scraper/db.py) überspringt die Kombo.
+    status='error' gilt seit 15.11.2026 (Review F-14) als offen und wird beim
+    nächsten Lauf einer Gruppe, die die Kombo enthält, erneut geholt — steht die
+    Gruppe aber auf done, bleibt die Zeile bis zu einem Requeue liegen.
     """
     pf, params = _period_filter("sp", since, until)
     with conn.cursor() as cur:
@@ -296,9 +301,10 @@ CHECKS: list[CheckDef] = [
     ),
     CheckDef(
         id="blocked_error_rows",
-        description="error-/HTTP-Fehler-Zeilen blockieren den Retry dauerhaft",
-        fix_hint="Zeilen löschen, damit get_pending_periods sie wieder anbietet "
-                 "(DELETE … WHERE status='error' OR (status='no_data' AND http_status>=400))",
+        description="Liegengebliebene Fehler-Zeilen (status=error bzw. no_data mit HTTP-Fehler)",
+        fix_hint="status='error': zugehörige Gruppe requeuen (wird dann erneut geholt). "
+                 "no_data mit http_status>=400: Zeilen löschen, damit get_pending_periods "
+                 "sie wieder anbietet",
         fn=check_blocked_error_rows,
     ),
     CheckDef(

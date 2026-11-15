@@ -202,3 +202,63 @@ class TestGetPendingPeriods:
 
         pending = get_pending_periods(db_conn, ["2025-04-01"], [99999999])
         assert len(pending) == 0
+
+
+@requires_db
+class TestSaveErrorHandling:
+    """Review F-14: Speicherfehler sind kein Erfolg und werden wiederholt."""
+
+    def test_error_status_counts_as_pending(self, db_conn, setup_tables):
+        from scraper.db import get_pending_periods, mark_period_scraped
+
+        with db_conn:
+            with db_conn.cursor() as cur:
+                mark_period_scraped(cur, 99999999, "2025-05-01", "error")
+        pending = get_pending_periods(db_conn, ["2025-05-01"], [99999999])
+        assert [(fid, str(p)) for fid, p in pending] == [(99999999, "2025-05-01")]
+
+    def test_ok_and_no_data_stay_excluded(self, db_conn, setup_tables):
+        from scraper.db import get_pending_periods, mark_period_scraped
+
+        with db_conn:
+            with db_conn.cursor() as cur:
+                mark_period_scraped(cur, 99999999, "2025-06-01", "ok")
+                mark_period_scraped(cur, 99999999, "2025-07-01", "no_data")
+        assert get_pending_periods(db_conn, ["2025-06-01", "2025-07-01"], [99999999]) == []
+
+    def _bad_game(self):
+        # result ist NOT NULL-/Typ-pflichtig: ein Datum in game_index bricht das INSERT
+        return {
+            "fide_id": 99999999, "period": "2025-08-01",
+            "opponent_name": "Opp", "opponent_title": None,
+            "opponent_women_title": None, "opponent_rating": 2400,
+            "opponent_federation": "GER", "result": "1",
+            "rating_change": 0.35, "rating_change_weighted": 3.5,
+            "color": "W", "tournament_name": "Test", "tournament_location": None,
+            "tournament_start_date": None, "tournament_end_date": None,
+            "game_index": "keine-zahl",
+        }
+
+    def test_save_error_raises_and_marks_error(self, db_conn, setup_tables):
+        from scraper.db import SavePeriodError, get_pending_periods, save_period
+
+        with pytest.raises(SavePeriodError) as info:
+            save_period(db_conn, 99999999, "2025-08-01", [self._bad_game()], 10, 2500,
+                        raise_on_error=True)
+        conn = info.value.conn
+        with conn.cursor() as cur:
+            cur.execute("SELECT status FROM scrape_periods "
+                        "WHERE fide_id = 99999999 AND period = '2025-08-01'")
+            assert cur.fetchone()[0] == "error"
+            cur.execute("SELECT count(*) FROM game_results "
+                        "WHERE fide_id = 99999999 AND period = '2025-08-01'")
+            assert cur.fetchone()[0] == 0
+        # ... und die Kombo ist weiterhin offen
+        assert len(get_pending_periods(conn, ["2025-08-01"], [99999999])) == 1
+
+    def test_default_keeps_old_behaviour(self, db_conn, setup_tables):
+        """Ohne raise_on_error (scraper/main.py, scripts/backfill.py) wird nicht geworfen."""
+        from scraper.db import save_period
+
+        save_period(db_conn, 99999999, "2025-08-01", [self._bad_game()], 10, 2500)
+

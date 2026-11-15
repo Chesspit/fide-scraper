@@ -11,7 +11,7 @@ die übrigen Tests (Parser, Fetcher, …) laufen weiter.
 
 Lokal z. B.:
   docker run -d --name fide-test-pg -e POSTGRES_PASSWORD=test -e POSTGRES_HOST_AUTH_METHOD=trust -p 127.0.0.1:55432:5432 postgres:16
-  export ORCH_TEST_DATABASE_URL=postgresql://postgres:test@localhost:55432/fide_orch_test
+  export ORCH_TEST_DATABASE_URL=postgresql://postgres:test@127.0.0.1:55432/fide_orch_test
 In der CI setzt .github/workflows/tests.yml die Variable.
 """
 

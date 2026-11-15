@@ -200,6 +200,18 @@ def _do_save_period(
     return inserted
 
 
+class SavePeriodError(Exception):
+    """Speichern einer Kombo ist gescheitert (kein Verbindungsabriss).
+
+    conn trägt die (ggf. neu geöffnete) Verbindung, damit der Aufrufer
+    weiterarbeiten kann.
+    """
+
+    def __init__(self, message: str, conn):
+        super().__init__(message)
+        self.conn = conn
+
+
 def save_period(
     conn,
     fide_id: int,
@@ -207,6 +219,7 @@ def save_period(
     games: list[dict],
     k_factor: int | None,
     own_rating: int | None,
+    raise_on_error: bool = False,
 ):
     """Save all data for a (fide_id, period) in a single transaction.
 
@@ -214,6 +227,11 @@ def save_period(
     On connection loss: reopen once and retry.
     On other error: rollback games/rating, still mark scrape_periods(status='error').
     Returns the (possibly reopened) connection — callers should reassign.
+
+    raise_on_error=True (Orchestrator-Worker, Review F-14): nach dem Markieren
+    SavePeriodError werfen, damit der Aufrufer die Kombo als fehlgeschlagen
+    zählt. status='error' gilt in get_pending_periods() als offen, die Kombo
+    wird also beim nächsten Lauf der Gruppe erneut geholt.
     """
     try:
         inserted = _do_save_period(
@@ -228,7 +246,7 @@ def save_period(
         inserted = _do_save_period(
             conn, fide_id, period, games, k_factor, own_rating
         )
-    except Exception:
+    except Exception as exc:
         try:
             conn.rollback()
         except Exception:
@@ -243,6 +261,14 @@ def save_period(
                     mark_period_scraped(cur, fide_id, period, "error", k_factor)
         except Exception:
             logger.exception("Could not mark period as error")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        if raise_on_error:
+            raise SavePeriodError(
+                f"Speichern fehlgeschlagen fide_id={fide_id} period={period}: {exc}", conn
+            ) from exc
         return conn
 
     logger.info(
@@ -363,6 +389,9 @@ def get_pending_periods(
 ) -> list[tuple[int, str]]:
     """Return (fide_id, period) pairs not yet in scrape_periods.
 
+    Zeilen mit status='error' (Speichern gescheitert) zählen als offen und
+    werden erneut geliefert (Review F-14) — früher galten sie als erledigt.
+
     Priority: fide_ids > groups > all analysis players.
     groups accepts analysis_group values plus 'swiss_2026'.
     """
@@ -379,6 +408,7 @@ def get_pending_periods(
                 WHERE NOT EXISTS (
                     SELECT 1 FROM scrape_periods sp
                     WHERE sp.fide_id = p.fide_id AND sp.period = per.period
+                      AND sp.status <> 'error'
                 )
                 ORDER BY per.period, p.fide_id
                 """,
@@ -394,6 +424,7 @@ def get_pending_periods(
                   AND NOT EXISTS (
                     SELECT 1 FROM scrape_periods sp
                     WHERE sp.fide_id = p.fide_id AND sp.period = per.period
+                      AND sp.status <> 'error'
                 )
                 ORDER BY per.period, p.fide_id
                 """,

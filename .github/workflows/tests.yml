@@ -1,0 +1,67 @@
+# Fährt die ganze Testsuite gegen eine Wegwerf-PostgreSQL (Review F-07).
+# Keine Geheimnisse nötig: kein Zugriff auf den VPS, die Produktiv-DB oder FIDE.
+# Die DB-Tests (Queue, Store, Audit, Rollen …) laufen nur mit ORCH_TEST_DATABASE_URL
+# und werden lokal ohne Wegwerf-PG übersprungen — hier laufen sie immer.
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          # tests/test_db_roles.py meldet sich als fide_reader/fide_qc/fide_ingest an;
+          # die Rollen haben in der Test-DB kein Passwort → Anmeldung ohne Passwort.
+          # Nur für diese Wegwerf-Instanz im CI-Lauf.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # Superuser der Wegwerf-Instanz: die Tests legen Datenbanken und Rollen an.
+      ORCH_TEST_DATABASE_URL: postgresql://postgres:test@localhost:5432/fide_orch_test
+      # Platzhalter — core.config verlangt eine DATABASE_URL; die DB-Fixtures biegen
+      # sie je Test auf die Test-DB um. Zeigt bewusst ins Leere.
+      DATABASE_URL: postgresql://unused:unused@127.0.0.1:1/unused
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            scraper/requirements.txt
+            frontend/requirements.txt
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r scraper/requirements.txt -r frontend/requirements.txt
+          pip install -e . --no-deps
+
+      - name: Tests
+        run: python -m pytest -q -rs tests

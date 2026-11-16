@@ -105,15 +105,13 @@ layout = html.Div(
 # Helpers
 # ---------------------------------------------------------------------------
 
-_hist_cache: pd.DataFrame | None = None
 _top100_cache: pd.DataFrame | None = None
 
 
 def _get_hist():
-    global _hist_cache
-    if _hist_cache is None:
-        _hist_cache = load_2700_history()
-    return _hist_cache
+    # kein eigener Zwischenspeicher: data.load_2700_history hält den Stand und
+    # erneuert ihn im Hintergrund — eine Kopie hier bliebe bis zum Neustart alt.
+    return load_2700_history()
 
 
 def _get_top100():

@@ -120,7 +120,12 @@ services:
     build:
       context: ../..
       dockerfile: orchestrator/Dockerfile
-    command: python -m orchestrator.app
+    # gunicorn statt Flask-Entwicklungsserver (Review F-24). Genau ein Prozess:
+    # der Abdeckungs-Cache lebt im Speicher (orchestrator/wsgi.py). Timeout 180 s
+    # wie beim Frontend — einzelne QC-Abfragen brauchen länger als die 30 s Standard.
+    command: >
+      gunicorn orchestrator.wsgi:server --bind 0.0.0.0:8050
+      --workers 1 --threads 4 --timeout 180
     depends_on:
       db:
         condition: service_healthy
@@ -195,10 +200,17 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Nicht als root (Review F-24): läuft als Eigentümer des Checkouts, damit die
+    # Parquet-Caches in frontend/ schreibbar bleiben (Neuaufbau, wenn einer fehlt).
+    user: "${FRONTEND_UID:-1001}:${FRONTEND_GID:-1001}"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     environment:
       EDITION: intern
       DATABASE_URL: postgresql://${READER_DB_USER:-fide}:${READER_DB_PASSWORD:-${DB_PASSWORD}}@db:5432/fidedb
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      HOME: /tmp
     volumes:
       # Code + Parquet-Caches aus dem Checkout (siehe frontend/Dockerfile)
       - ../../frontend:/app/frontend
@@ -214,7 +226,11 @@ services:
       - "traefik.http.routers.frontend.entrypoints=https"
       - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
       # erst Rate-Limit, dann Passwortprüfung (bcrypt kostet CPU)
-      - "traefik.http.routers.frontend.middlewares=intern-ratelimit,fide-auth"
+      - "traefik.http.routers.frontend.middlewares=elo-hsts,intern-ratelimit,fide-auth"
+      # HSTS: Browser merkt sich ein Jahr lang "nur HTTPS" — je Hostname, ohne
+      # Subdomains (unter chesspit.net laufen andere Dienste). Hier definiert,
+      # weil dieser Container immer läuft; frontend-public nutzt dieselbe Middleware.
+      - "traefik.http.middlewares.elo-hsts.headers.stsSeconds=31536000"
       - "traefik.http.middlewares.fide-auth.basicauth.users=${BASICAUTH_USERS:?BASICAUTH_USERS fehlt in .env}"
       # je Client-IP; eine Dash-Seite feuert beim Laden ~10 Callback-Requests
       - "traefik.http.middlewares.intern-ratelimit.ratelimit.average=${INTERN_RATELIMIT_AVERAGE:-20}"
@@ -237,8 +253,21 @@ services:
       EDITION: public
       DATABASE_URL: postgresql://${READER_DB_USER:-fide}:${READER_DB_PASSWORD:-${DB_PASSWORD}}@db:5432/fidedb
       # kein ANTHROPIC_API_KEY: ARPAD ist in der öffentlichen Edition nicht registriert
+      HOME: /tmp
+      PYTHONDONTWRITEBYTECODE: "1"
+    # Härtung für die Seite ohne Passwort (Review F-24): nicht root, keine
+    # Linux-Capabilities, Dateisystem nur lesend (außer /tmp im Speicher), Code und
+    # Caches nur lesend eingehängt. Fehlt ein Parquet-Cache, baut ihn das interne
+    # Frontend — dieses hier kann und soll nichts schreiben.
+    user: "${FRONTEND_UID:-1001}:${FRONTEND_GID:-1001}"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
     volumes:
-      - ../../frontend:/app/frontend
+      - ../../frontend:/app/frontend:ro
       - ../../core:/app/core:ro
       - ../../qc:/app/qc:ro
       - ../../data:/app/data:ro
@@ -250,7 +279,7 @@ services:
       - "traefik.http.routers.frontend-public.priority=100"
       - "traefik.http.routers.frontend-public.entrypoints=https"
       - "traefik.http.routers.frontend-public.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.frontend-public.middlewares=elo-ratelimit"
+      - "traefik.http.routers.frontend-public.middlewares=elo-hsts,elo-ratelimit"
       # je Client-IP; eine Dash-Seite feuert beim Laden ~10 Callback-Requests
       - "traefik.http.middlewares.elo-ratelimit.ratelimit.average=${PUBLIC_RATELIMIT_AVERAGE:-20}"
       - "traefik.http.middlewares.elo-ratelimit.ratelimit.period=1s"

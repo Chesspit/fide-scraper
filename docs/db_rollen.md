@@ -1,10 +1,12 @@
 # DB-Rollen je Block (Phase 2a)
 
-Stand 30.10.2026 · **vorbereitet, nicht angewendet.** Beschluss 18.10.2026, Plan:
+Stand 16.11.2026 · **Migration 022 ist eingespielt; das Frontend (intern) und die Notebooks
+arbeiten als `fide_reader`.** Worker, Dashboard, Monatslauf und QC-Skripte laufen weiter als
+`fide` (Schritte 3.2 zweiter Teil und 3.3 unten stehen aus). Beschluss 18.10.2026, Plan:
 `docs/architektur_vier_bloecke.md` Abschnitt 2.
 
-Heute arbeiten alle Dienste als `fide` (Eigentümer von `fidedb`, volle Schreibrechte) —
-auch das Frontend mit ARPAD. Ziel: jeder Block nur mit den Rechten, die er braucht.
+Bis 16.11.2026 arbeiteten alle Dienste als `fide` (Eigentümer von `fidedb`, volle
+Schreibrechte) — auch das Frontend mit ARPAD. Ziel: jeder Block nur mit den Rechten, die er braucht.
 
 | Rolle | Block | liest | schreibt | Dienste |
 |---|---|---|---|---|
@@ -15,6 +17,12 @@ auch das Frontend mit ARPAD. Ziel: jeder Block nur mit den Rechten, die er brauc
 
 Migration: `migrations/022_db_roles.sql` (idempotent, Rollen entstehen `NOLOGIN`).
 Die Rechte-Matrix ist in `tests/test_db_roles.py` festgeschrieben.
+
+**Grenzen der Leserolle** (`migrations/030_reader_limits.sql`, ebenfalls als Superuser
+einspielen): temporäre Tabellen darf nur noch `fide_ingest` anlegen (und der Eigentümer),
+und Abfragen von `fide_reader` enden nach 60 s. Notebooks heben die Zeitgrenze für ihre
+Sitzung auf (`core.db.connect_analysis()`); sie schützt vor Ausreißern, ist aber keine
+Sicherheitsgrenze, weil jede Sitzung ihren eigenen Wert ändern kann.
 
 ## Wie der Code die Rolle wählt
 

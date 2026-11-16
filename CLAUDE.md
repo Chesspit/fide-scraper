@@ -39,7 +39,7 @@ fide-scraper/
 ├── config.yaml                ← Scraper-Settings (rate limits, retry, Beta-Verteilung)
 ├── scraper/                   ← Block 1: fetcher, parser, db (UPSERT, ensure_connection), main (CLI)
 ├── orchestrator/              ← Block 1: worker, queue/proxy/profile_manager, generate_*, reset_*
-│   ├── app.py, store.py       ← Orchestrator-Dashboard (scelo), darf qc/ lesen
+│   ├── app.py, store.py       ← Orchestrator-Dashboard (scelo), darf qc/ lesen; im Container über wsgi.py unter gunicorn
 │   ├── qc_ui.py, qc_pages/    ← Dashboard-Tab „QC" (Audit-Läufe, Einzelabfrage, Rating-Fenster, Fälle, 2024)
 │   └── check_proxy_pool.py    ← Gateway-Smoke-Test (läuft im Worker-Container)
 ├── qc/                        ← Block 4: audit, integrity, coverage, rating_check, reconcile,
@@ -50,7 +50,7 @@ fide-scraper/
 │   │                             Kachelbilder per build_story_covers.py (assets/analysen/*.png, im Git)
 ├── notebooks/                 ← Block 3: marimo (NN_*.py) + noch nicht überführte .ipynb, _setup.py
 ├── deploy/infomaniak/         ← Produktions-Stack (Compose, bootstrap.sh, memory_watch.sh); Runbook docs/umzug_infomaniak.md
-├── migrations/                ← 001_initial.sql … 029_fn_game_expected.sql (022 vorbereitet, s. docs/db_rollen.md)
+├── migrations/                ← 001_initial.sql … 030_reader_limits.sql (022: Rollen, Frontend seit 16.11.2026 als fide_reader, s. docs/db_rollen.md)
 ├── scripts/
 │   ├── monthly_update.sh      ← FIDE-Liste laden + importieren + VPS-Requeue + Audit (täglich per launchd)
 │   ├── import_rating_snapshots.py, backfill.py, resolve_opponents.py   ← Block 1
@@ -312,6 +312,8 @@ gescrapten Rating-/Partiedaten über 4 feste, sichere Query-Tools (kein Text-to-
 | Fehlerhafte Liste → stiller Datenverlust | Der Pre-Filter in `worker.py::scrape_group()` markiert Kombos mit `num_games = 0` **ohne Abruf** als `no_data`. Nach einem Listen-Neuimport die falschen Zeilen löschen und mit `orchestrator/generate_period_repair_batches.py --period YYYY-MM-01` GAP-Gruppen (nur diese Periode) anlegen — Vorfall 2024-06, `docs/project_status.md` 6.4a |
 | Dashboard zeigt „no available server“ | Das ist der alte Hostinger-Traefik — der Rechner löst `scelo` noch auf die alte IP auf. `/etc/hosts` prüfen (Mac Mini hatte dort einen festen Eintrag), sonst DNS-Cache leeren |
 | Listenkopf `July11` statt `Jul11` (jul11frl.txt) | Rating-Spalte nur über `core.fide_list.MONTH_RATING_PATTERN` suchen — eigene Regex fanden `uly11` (Frontend-Caches: Ratings ohne erste Ziffer) bzw. nichts (DB-Import: Periode 2011-07 fehlt) |
+| Frontend/Dashboard lädt direkt nach Container-Neustart nicht (Log: „path requested is not valid“) | Browser hatte die Startseite im Zwischenspeicher; der frische Prozess kennt die Dash-Skripte erst nach dem ersten eigenen Aufruf von `/`. Seite neu laden (Cmd+Shift+R) |
+| Abfrage als `fide_reader` bricht nach 60 s ab | Zeitgrenze aus Migration 030 (Schutz fürs Frontend). Notebooks: `core.db.connect_analysis()` hebt sie auf; sonst `SET statement_timeout = 0` in der Sitzung |
 | `COALESCE(...) AS x` + `SELECT DISTINCT` | Dann muss `ORDER BY` den **Alias** nutzen, nicht die Ursprungsspalte („ORDER BY expressions must appear in select list") |
 
 ---

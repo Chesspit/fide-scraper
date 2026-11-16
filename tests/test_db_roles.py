@@ -80,6 +80,10 @@ QC_INSERT = ("INSERT INTO qc_audit_runs (started_at, since_period, layers, has_h
                     "VALUES (1, '2024-01-01', 2000)", True),
     ("fide_ingest", "DELETE FROM orchestrator.scrape_runs", True),
     ("fide_ingest", QC_INSERT, False),
+    # Migration 030: temporäre Tabellen nur noch für Block 1
+    ("fide_reader", "CREATE TEMP TABLE t_probe (a int)", False),
+    ("fide_qc", "CREATE TEMP TABLE t_probe (a int)", False),
+    ("fide_ingest", "CREATE TEMP TABLE t_probe (a int)", True),
 ])
 def test_rights_matrix(dsn, role, sql, allowed):
     assert _can(dsn, role, sql) is allowed
@@ -93,3 +97,54 @@ def test_orchestrator_connect_as_ingest(dsn):
         cur.execute("SELECT count(*) FROM scrape_groups")
         assert cur.fetchone()[0] == 0
     conn.close()
+
+
+def _setting(dsn, role, name="statement_timeout"):
+    c = _as(dsn, role)
+    try:
+        with c.cursor() as cur:
+            cur.execute(f"SHOW {name}")
+            return cur.fetchone()[0]
+    finally:
+        c.close()
+
+
+def test_reader_statement_timeout(dsn):
+    """Migration 030: 60 s für die Leserolle, die anderen Rollen unbegrenzt."""
+    assert _setting(dsn, "fide_reader") == "1min"
+    assert _setting(dsn, "fide_ingest") == "0"
+    assert _setting(dsn, "fide_qc") == "0"
+
+
+def test_reader_timeout_cancels_long_query(dsn):
+    c = _as(dsn, "fide_reader")
+    try:
+        with c.cursor() as cur:
+            cur.execute("SET statement_timeout = '200ms'")   # gleiche Mechanik, kurzer Test
+            with pytest.raises(psycopg2.errors.QueryCanceled):
+                cur.execute("SELECT pg_sleep(2)")
+    finally:
+        c.close()
+
+
+def test_connect_analysis_lifts_timeout(dsn, monkeypatch):
+    """Notebooks arbeiten als fide_reader, dürfen aber länger rechnen."""
+    from core import config, db
+    reader = psycopg2.extensions.make_dsn(dsn, user="fide_reader")
+    monkeypatch.setattr(config, "get_notebook_database_url", lambda: reader)
+    conn = db.connect_analysis()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SHOW statement_timeout")
+            assert cur.fetchone()[0] == "0"
+    finally:
+        conn.close()
+
+
+def test_migration_030_idempotent(dsn):
+    conn = psycopg2.connect(dsn)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute((MIGRATIONS / "030_reader_limits.sql").read_text())
+    conn.close()
+    assert _setting(dsn, "fide_reader") == "1min"

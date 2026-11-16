@@ -50,6 +50,9 @@ def connect_analysis():
     conn = connect(get_notebook_database_url())
     with conn.cursor() as cur:
         cur.execute("SET max_parallel_workers_per_gather = 0")
+        # Die Leserolle hat seit Migration 030 eine Zeitgrenze von 60 s je
+        # Abfrage (Schutz für das Frontend). Auswertungen dürfen länger laufen.
+        cur.execute("SET statement_timeout = 0")
     conn.commit()
     return conn
 

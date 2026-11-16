@@ -22,6 +22,7 @@ BLOCK_RULES = [
     ("qc/", "qc"),
     # Orchestrator-Dashboard: darf qc lesen
     ("orchestrator/app.py", "dashboard"),
+    ("orchestrator/wsgi.py", "dashboard"),
     ("orchestrator/store.py", "dashboard"),
     ("orchestrator/qc_ui.py", "dashboard"),
     ("orchestrator/qc_pages/", "dashboard"),

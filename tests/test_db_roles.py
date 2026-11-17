@@ -31,9 +31,10 @@ def dsn():
     dsn = psycopg2.extensions.make_dsn(DB_URL, dbname=DB)
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
+    from core.migrations import apply_sql, list_migrations
+    for m in list_migrations():
+        apply_sql(conn, m)
     with conn.cursor() as cur:
-        for m in sorted(MIGRATIONS.glob("*.sql")):
-            cur.execute(m.read_text())
         cur.execute((MIGRATIONS / "022_db_roles.sql").read_text())   # idempotent
         for role in ("fide_ingest", "fide_qc", "fide_reader"):
             cur.execute(f"ALTER ROLE {role} LOGIN")

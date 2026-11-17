@@ -33,7 +33,6 @@ def schema_dsn():
     schmale Nachbauten von players/game_results an, auf denen scraper.db
     mangels Spalten scheitert.
     """
-    from pathlib import Path
     admin = psycopg2.connect(DB_URL)
     admin.autocommit = True
     with admin.cursor() as cur:
@@ -43,9 +42,9 @@ def schema_dsn():
     dsn = psycopg2.extensions.make_dsn(DB_URL, dbname=SCHEMA_DB)
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
-    with conn.cursor() as cur:
-        for migration in sorted((Path(__file__).parent.parent / "migrations").glob("*.sql")):
-            cur.execute(migration.read_text())
+    from core.migrations import apply_sql, list_migrations
+    for migration in list_migrations():
+        apply_sql(conn, migration)   # 031 u. a. ohne Transaktion, Befehl für Befehl
     conn.close()
     return dsn
 

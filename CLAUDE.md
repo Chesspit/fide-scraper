@@ -35,7 +35,8 @@ fide-scraper/
 │   ├── db.py                  ← connect(), connect_analysis() (Notebooks, .env.notebook)
 │   ├── periods.py             ← is_valid_fide_period, valid_periods_for_year, latest_list_period, Regel „neueste Liste"
 │   ├── elo.py                 ← elo_band, fide_expected, diff_cap (Zwillinge der SQL-Funktionen 017/018)
-│   └── fide_list.py           ← FIDE-Spielerliste (TXT/ZIP) parsen
+│   ├── fide_list.py           ← FIDE-Spielerliste (TXT/ZIP) parsen
+│   └── migrations.py          ← Migrationen einspielen + in schema_migrations protokollieren (CLI: scripts/migrate.py)
 ├── config.yaml                ← Scraper-Settings (rate limits, retry, Beta-Verteilung)
 ├── scraper/                   ← Block 1: fetcher, parser, db (UPSERT, ensure_connection), main (CLI)
 ├── orchestrator/              ← Block 1: worker, queue/proxy/profile_manager, generate_*, reset_*
@@ -50,13 +51,14 @@ fide-scraper/
 │   │                             Kachelbilder per build_story_covers.py (assets/analysen/*.png, im Git)
 ├── notebooks/                 ← Block 3: marimo (NN_*.py) + noch nicht überführte .ipynb, _setup.py
 ├── deploy/infomaniak/         ← Produktions-Stack (Compose, bootstrap.sh, memory_watch.sh); Runbook docs/umzug_infomaniak.md
-├── migrations/                ← 001_initial.sql … 030_reader_limits.sql (022: Rollen, Frontend seit 16.11.2026 als fide_reader, s. docs/db_rollen.md)
+├── migrations/                ← 001_initial.sql … 032_autovacuum_large_tables.sql (022: Rollen, Frontend seit 16.11.2026 als fide_reader, s. docs/db_rollen.md); einspielen mit scripts/migrate.py
 ├── scripts/
 │   ├── monthly_update.sh      ← FIDE-Liste laden + importieren + VPS-Requeue + Audit (täglich per launchd)
 │   ├── import_rating_snapshots.py, backfill.py, resolve_opponents.py   ← Block 1
 │   ├── audit_data.py          ← CLI zu qc/audit.py: Datenprüfung ab Stichtag (--store → Dashboard)
 │   ├── coverage_report.py, quality_check.py, reconcile_ratings.py, verify_scrape_integrity.py ← CLIs zu qc/
 │   ├── tunnel.sh              ← SSH-Tunnel localhost:5434 → VPS:5432
+│   ├── migrate.py             ← Migrationen: --status, --baseline NNN, --only NNN (Logik core/migrations.py)
 │   ├── analysis/              ← Block 3: Export-Skripte (Roster, Stärke-Karten, export_snapshot …)
 │   └── legacy/                ← ⚠️ System A, eingefroren (seed_players, extend_male_control, run_*/chain_*)
 └── data/                      ← FIDE-Listen (gitignored); monthly_update.sh lädt hier ab
@@ -138,6 +140,12 @@ Eine Quelle für Coverage, QC und Notebooks; der Python-Zwilling liegt in
 Migration 018: `fn_fide_expected(diff)` → FIDE-Erwartungswert (Tabelle, nicht gerundete
 Normalverteilung), `fn_fide_diff_cap(period)` → 400 bzw. NULL (keine Kappung 2022-02 bis
 2024-03, aus den Daten abgeleitet). Python-Zwilling in `core/elo.py`.
+
+**Migrationen** (seit Paket 6, Review F-18): `python scripts/migrate.py --status` zeigt, welche
+Dateien laut `schema_migrations` eingespielt, offen oder nachträglich geändert sind; ohne Option spielt
+es die offenen der Reihe nach ein (normale Dateien in einer Transaktion, Dateien mit `CONCURRENTLY`/`VACUUM`
+oder Kopfzeile `-- migrate: no-transaction` Befehl für Befehl). Bestehende DB ohne Protokoll: einmal
+`--baseline NNN`. Läuft als `fide` (DATABASE_URL), lokal über den Tunnel.
 
 Schlüsselentscheide: `game_index` löst Duplikate bei Doppelrunden; `opponent_fide_id` per nachträglichem Lookup (kein ID in AJAX-Response); beide `rating_change`-Felder gespeichert (ungewichtet + K×Δ).
 

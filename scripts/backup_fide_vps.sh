@@ -62,8 +62,6 @@ fi
 
 # ── Rotation: exakt die neuesten KEEP_DUMPS Dumps behalten ────────────────
 ls -1t "$BACKUP_DIR"/fidedb_*.dump 2>/dev/null | tail -n +$((KEEP_DUMPS + 1)) | xargs -r rm -f
-# Alte scraper.db-Sicherungen (vor Review #5) laufen über die Zeit aus:
-find "$BACKUP_DIR" -name 'scraperdb_*.db' -mtime +30 -delete
 
 # ── Betriebskonfiguration (Review F-04) ──────────────────────────────────
 # Je eine aktuelle Kopie, jede Nacht überschrieben. Fehler nur loggen.

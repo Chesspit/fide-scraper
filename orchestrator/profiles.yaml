@@ -12,12 +12,16 @@ dashboard:
   overview_elo_floor: 1400
   overview_elo_ceiling: 2300
 
+# enabled/active_hours der DC-Threads sind nur Defaults; maßgeblich ist
+# /data/runtime_settings.json (Dashboard). Stand 17.11.2026 an den laufenden
+# Betrieb angeglichen (Review F-12: dc_de/dc_us/dc_es ein, Aktivzeiten dc_uk
+# 9–20 und dc_es 9–21), damit ein Neuaufbau ohne Volume mit allen 12 Threads startet.
 concurrency:
   datacenter_threads:
   - active_hours:
     - 9
     - 19
-    enabled: false
+    enabled: true
     federations:
     - POL
     - UKR
@@ -54,8 +58,8 @@ concurrency:
     timezone: Asia/Kolkata
     username_env: PROXY_DI_USERNAME_IN
   - active_hours:
-    - 8
-    - 21
+    - 9
+    - 20
     enabled: true
     federations:
     - ENG
@@ -80,7 +84,7 @@ concurrency:
   - active_hours:
     - 7
     - 23
-    enabled: false
+    enabled: true
     federations:
     - USA
     - CAN
@@ -124,9 +128,9 @@ concurrency:
     timezone: Asia/Hong_Kong
     username_env: PROXY_DI_USERNAME_HK
   - active_hours:
-    - 12
-    - 18
-    enabled: false
+    - 9
+    - 21
+    enabled: true
     federations:
     - ESP
     - ITA

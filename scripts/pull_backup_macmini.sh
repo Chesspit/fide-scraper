@@ -23,7 +23,6 @@ RETENTION_DAYS_PG=5        # ~9 GB bei 1,7-GB-Dumps (Nov. 2026)
 # Checkout auf dem VPS: FIDE_VPS_COMPOSE_DIR ist <repo>/deploy/infomaniak
 VPS_REPO="${FIDE_VPS_COMPOSE_DIR%/deploy/*}"
 PARQUET_DEST="$DEST/parquet"
-RETENTION_DAYS_SQLITE=30
 KEEP_MIN=2                 # diese jeweils neuesten Dateien nie löschen, egal wie alt
                            # (schützt vor Totalverlust nach Urlaub/langem Mac-Aus, falls
                            # der VPS in der Zwischenzeit seine eigene 7-Tage-Rotation
@@ -51,7 +50,6 @@ prune_keep_min() {
 
 if rsync -az --timeout=300 "${VPS}:/home/pit/backups/fide-scraper/" "$DEST/"; then
     prune_keep_min 'fidedb_*.dump'  "$RETENTION_DAYS_PG"
-    prune_keep_min 'scraperdb_*.db' "$RETENTION_DAYS_SQLITE"
     N_PG=$(find "$DEST" -name 'fidedb_*.dump' | wc -l | tr -d ' ')
     # Ein erfolgreiches rsync heißt nicht, dass der VPS noch sichert (Juli–Sept. 2026
     # kam zwei Monate lang derselbe alte Dump) → Alter des neuesten Dumps prüfen.

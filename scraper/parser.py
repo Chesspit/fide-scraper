@@ -77,37 +77,6 @@ def _clean_rating_text(td) -> str:
     return td.get_text(strip=True)
 
 
-def _parse_tournament_header(div_elements, table_index, all_divs):
-    """Find the tournament header divs preceding a calc_table.
-
-    Returns (name, location, start_date, end_date) or (None, None, None, None).
-    """
-    name = None
-    location = None
-    start_date = None
-    end_date = None
-
-    # Walk backwards from current position to find rtng_line01 / rtng_line02
-    for div in div_elements:
-        classes = div.get("class", [])
-        if "rtng_line01" in classes:
-            link = div.find("a")
-            if link:
-                name = link.get_text(strip=True)
-            elif div.find("strong"):
-                pass  # period header, not tournament
-        elif "rtng_line02" in classes:
-            strong = div.find("strong")
-            if strong:
-                location = strong.get_text(strip=True)
-            date_spans = div.find_all("span", class_="dates_span")
-            if len(date_spans) >= 1:
-                start_date = _safe_date(date_spans[0].get_text(strip=True))
-            if len(date_spans) >= 2:
-                end_date = _safe_date(date_spans[1].get_text(strip=True))
-
-    return name, location, start_date, end_date
-
 
 def parse_calculations(
     html: str, fide_id: int, period_str: str

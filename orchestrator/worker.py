@@ -6,7 +6,7 @@ and writes results to the same PostgreSQL database using the scraper's
 parser and DB modules.
 
 Run:
-    python orchestrator/worker.py [--profile conservative|normal|aggressive]
+    python orchestrator/worker.py [--profile conservative|semi_conservative|normal|semi_aggressive|aggressive]
 
 Control (from dashboard or terminal):
     worker_state.json  {"command": "run"} | {"command": "pause"} | {"command": "stopped"}
@@ -1485,7 +1485,8 @@ Parallel-Modus wird automatisch aktiviert wenn profiles.yaml [concurrency] max_w
         """,
     )
     parser.add_argument(
-        "--profile", choices=["conservative", "normal", "aggressive"],
+        "--profile",
+        choices=["conservative", "semi_conservative", "normal", "semi_aggressive", "aggressive"],
         help="Scrape-Profil erzwingen (überschreibt Fuzzy-Auswahl)",
     )
     parser.add_argument(

@@ -5,8 +5,8 @@ Kuratierte Gruppen `female_top`/`male_control` & Co. (`groups`-Tabelle +
 davon lebt". Nicht fortführen; die Skripte bleiben als Methoden-Dokumentation.
 
 Seit Phase 4 des Vier-Blöcke-Umbaus liegen sie hier statt in `scripts/`:
-`seed_players.py`, `extend_male_control.py`, die `run_*`/`chain_*`-Shells und
-`setup_raspi.sh`. Aufruf aus dem Repo-Root, z. B.
+`seed_players.py`, `extend_male_control.py` und die `run_*`/`chain_*`-Shells
+(`setup_raspi.sh` am 17.11.2026 entfernt, Pi seit Juli aus; in der Git-History). Aufruf aus dem Repo-Root, z. B.
 
 ```bash
 python scripts/legacy/seed_players.py --group GRUPPENNAME
